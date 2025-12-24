@@ -196,7 +196,11 @@ header {
 
 /* Table Styles */
 .table-container {
-    overflow-x: auto;
+    width: 100%;
+    overflow-x: hidden;
+    /* Prevent scroll */
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 12px;
 }
 
 table {
@@ -204,22 +208,41 @@ table {
     border-collapse: collapse;
     margin-top: 1rem;
     color: #cbd5e1;
+    table-layout: fixed;
+    /* Force fixed width */
 }
 
 th,
 td {
-    padding: 1rem;
+    padding: 0.8rem;
     text-align: left;
     border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
-th {
-    font-weight: 600;
-    color: var(--accent-color);
-    text-transform: uppercase;
-    font-size: 0.8rem;
-    letter-spacing: 1px;
+/* Column specific widths can be handled here or inline */
+th:nth-child(1) {
+    width: 10%;
 }
+
+/* Lote / ID */
+th:nth-child(2) {
+    width: 20%;
+}
+
+/* Detalle / Wallet */
+th:nth-child(3) {
+    width: 25%;
+}
+
+/* Desc / USDC */
+th:nth-child(4) {
+    width: 15%;
+}
+
+/* Fecha / Hash */
 
 tr:hover {
     background: rgba(255, 255, 255, 0.02);

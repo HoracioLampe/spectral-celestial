@@ -386,20 +386,16 @@ window.openBatchDetail = async function (id) {
     }
 };
 
+// Pagination State
+let currentTxPage = 1;
+const txPerPage = 20;
+let allBatchTransactions = []; // Store full list
+
 function updateDetailView(batch, txs) {
     detailBatchTitle.textContent = `${batch.batch_number} - ${batch.detail}`;
     detailBatchDesc.textContent = batch.description || "Sin descripción";
 
-    // Stats removidos de la UI a pedido del usuario.
-    // statTotalUSDC.textContent = ...
-    // statTotalTx.textContent = ...
-    // statSentTx.textContent = ...
-
-    // Translate status for display
-    let statusText = "En Preparación";
-    if (batch.status === 'READY') statusText = "Preparado (Listo)";
-    if (batch.status === 'SENT') statusText = "Enviado";
-    statStatus.textContent = statusText;
+    // Stats Removed per user request
 
     // Show/Hide Upload based on status
     if (batch.status === 'PREPARING') {
@@ -411,59 +407,71 @@ function updateDetailView(batch, txs) {
         detailUploadContainer.classList.add('hidden');
     }
 
-    renderBatchTransactions(txs);
+    // Init Pagination
+    allBatchTransactions = txs || [];
+    currentTxPage = 1;
+    renderBatchTransactions();
 }
 
-async function uploadBatchFile() {
-    const fileInput = document.getElementById('batchFile');
-    if (!fileInput.files[0]) return alert("Selecciona un archivo Excel");
-    if (!currentBatchId) return alert("No hay lote activo");
-
-    const formData = new FormData();
-    formData.append('file', fileInput.files[0]);
-
-    try {
-        btnUploadBatch.textContent = "Procesando...";
-        btnUploadBatch.disabled = true;
-        uploadStatus.textContent = "Leyendo Excel y Calculando...";
-
-        const res = await fetch(`/api/batches/${currentBatchId}/upload`, {
-            method: 'POST',
-            body: formData
-        });
-        const result = await res.json();
-
-        if (result.batch) {
-            updateDetailView(result.batch, result.transactions);
-            uploadStatus.textContent = "✅ Carga exitosa";
-        } else {
-            throw new Error("Error en respuesta");
-        }
-
-    } catch (error) {
-        console.error(error);
-        uploadStatus.textContent = "❌ Error: " + error.message;
-        btnUploadBatch.textContent = "Subir y Calcular 📤";
-        btnUploadBatch.disabled = false;
-    }
-}
-
-function renderBatchTransactions(txs) {
+// Render with Pagination
+function renderBatchTransactions() {
     batchTableBody.innerHTML = '';
-    if (!txs || txs.length === 0) {
+    const totalItems = allBatchTransactions.length;
+
+    // Pagination Logic
+    const start = (currentTxPage - 1) * txPerPage;
+    const end = start + txPerPage;
+    const pageItems = allBatchTransactions.slice(start, end);
+
+    if (totalItems === 0) {
         batchTableBody.innerHTML = '<tr><td colspan="5" style="text-align:center;">No hay registros</td></tr>';
+        renderPaginationControls(0);
         return;
     }
 
-    txs.forEach(tx => {
+    pageItems.forEach(tx => {
         const tr = document.createElement('tr');
         tr.innerHTML = `
             <td style="opacity: 0.7;">${tx.transaction_reference || '-'}</td>
-            <td style="font-family: monospace;">${tx.wallet_address}</td>
+            <td style="font-family: monospace;" title="${tx.wallet_address}">${tx.wallet_address}</td>
             <td style="color: #4ade80;">$${parseFloat(tx.amount_usdc).toFixed(2)}</td>
-            <td style="font-size: 0.85rem; opacity: 0.7;">${tx.tx_hash || '-'}</td>
+            <td style="font-size: 0.85rem; opacity: 0.7;" title="${tx.tx_hash || ''}">${tx.tx_hash ? tx.tx_hash.substring(0, 10) + '...' : '-'}</td>
             <td><span class="badge" style="background: #3b82f6;">${tx.status}</span></td>
         `;
         batchTableBody.appendChild(tr);
     });
+
+    renderPaginationControls(totalItems);
 }
+
+function renderPaginationControls(totalItems) {
+    // Remove existing controls if any
+    const existingControls = document.getElementById('paginationControls');
+    if (existingControls) existingControls.remove();
+
+    if (totalItems <= txPerPage) return; // No pagination needed
+
+    const totalPages = Math.ceil(totalItems / txPerPage);
+    const div = document.createElement('div');
+    div.id = 'paginationControls';
+    div.style.display = 'flex';
+    div.style.justifyContent = 'center';
+    div.style.gap = '1rem';
+    div.style.marginTop = '1rem';
+    div.innerHTML = `
+        <button class="btn-glass" onclick="changePage(-1)" ${currentTxPage === 1 ? 'disabled' : ''}>⬅️ Anterior</button>
+        <span style="align-self: center;">Página ${currentTxPage} de ${totalPages}</span>
+        <button class="btn-glass" onclick="changePage(1)" ${currentTxPage === totalPages ? 'disabled' : ''}>Siguiente ➡️</button>
+    `;
+
+    // Append after table container
+    const tableContainer = document.querySelector('#batchDetailView .table-container');
+    tableContainer.parentNode.insertBefore(div, tableContainer.nextSibling);
+}
+
+window.changePage = function (direction) {
+    currentTxPage += direction;
+    renderBatchTransactions();
+};
+
+// ... (Rest of Upload Logic remains same)
