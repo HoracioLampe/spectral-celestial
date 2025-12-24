@@ -99,82 +99,120 @@
 
         <!-- SECCIÓN LOTES -->
         <div id="batchSection" class="tab-content hidden">
-            <h2>📦 Nuevo Lote de Envío</h2>
 
-            <!-- Paso 1: Crear Cabecera -->
-            <div id="batchFormContainer" class="transfer-board mb-3">
-                <h3>1. Datos del Lote</h3>
-                <div class="grid-form">
-                    <div class="form-group">
-                        <label>Número de Lote</label>
-                        <input type="text" id="batchNumber" class="input-glass" placeholder="Ej: LOTE-001">
-                    </div>
-                    <div class="form-group">
-                        <label>Detalle</label>
-                        <input type="text" id="batchDetail" class="input-glass" placeholder="Ej: Pago Proveedores">
-                    </div>
-                    <div class="form-group full-width">
-                        <label>Descripción</label>
-                        <textarea id="batchDesc" class="input-glass" rows="2"
-                            placeholder="Notas adicionales..."></textarea>
-                    </div>
-                    <div class="form-group">
-                        <label>Fecha Envío</label>
-                        <input type="date" id="batchDate" class="input-glass">
-                    </div>
-                    <div class="form-group">
-                        <label>Inicio</label>
-                        <input type="time" id="batchStart" class="input-glass">
-                    </div>
-                    <div class="form-group">
-                        <label>Fin</label>
-                        <input type="time" id="batchEnd" class="input-glass">
-                    </div>
-                    <div class="form-group">
-                        <label>Total USDC</label>
-                        <input type="number" id="batchTotal" class="input-glass" placeholder="0.00">
-                    </div>
+            <!-- VISTA: LISTA DE LOTES -->
+            <div id="batchListView">
+                <div class="top-bar">
+                    <h2>📦 Mis Lotes de Envío</h2>
+                    <button id="btnOpenBatchModal" class="btn btn-primary">➕ Nuevo Lote</button>
                 </div>
-                <div style="text-align: right; margin-top: 1rem;">
-                    <button id="btnCreateBatch" class="btn btn-primary">Crear Lote y Continuar ➡️</button>
+                <div class="table-container">
+                    <table id="batchesListTable">
+                        <thead>
+                            <tr>
+                                <th>Lote</th>
+                                <th>Detalle</th>
+                                <th>Estado</th>
+                                <th>Total USDC</th>
+                                <th>Progreso</th>
+                                <th>Acción</th>
+                            </tr>
+                        </thead>
+                        <tbody id="batchesListBody">
+                            <tr>
+                                <td colspan="6" style="text-align:center;">Cargando lote...</td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
             </div>
 
-            <!-- Paso 2: Subir Excel (Oculto al inicio) -->
-            <div id="batchUploadContainer" class="transfer-board mb-3 hidden">
-                <h3>2. Cargar Detalle (Excel)</h3>
-                <p style="opacity: 0.8; font-size: 0.9rem; margin-bottom: 1rem;">
-                    Lote Activo: <strong id="activeBatchLabel" style="color: #4ade80;">-</strong>
-                </p>
-                <div style="display: flex; gap: 1rem; align-items: center;">
-                    <input type="file" id="batchFile" accept=".xlsx, .xls" class="input-glass">
-                    <button id="btnUploadBatch" class="btn btn-primary">Subir Archivo 📤</button>
-                </div>
-                <p id="uploadStatus" class="status-text"></p>
-            </div>
+            <!-- VISTA: DETALLE DE LOTE -->
+            <div id="batchDetailView" class="hidden">
+                <button class="btn-glass mb-3" onclick="showBatchList()">⬅️ Volver a Lista</button>
 
-            <div class="top-bar">
-                <h3>📋 Previsualización de Registros</h3>
-            </div>
-            <div class="table-container">
-                <table id="batchTable">
-                    <thead>
-                        <tr>
-                            <th>ID Ref</th>
-                            <th>Wallet</th>
-                            <th>USDC</th>
-                            <th>Hash (Ref)</th>
-                            <th>Estado</th>
-                        </tr>
-                    </thead>
-                    <tbody id="batchTableBody">
-                        <tr>
-                            <td colspan="4" style="text-align: center;">Crea un lote para comenzar</td>
-                        </tr>
-                    </tbody>
-                </table>
+                <h2 id="detailBatchTitle">Lote #...</h2>
+                <p id="detailBatchDesc" style="opacity: 0.8; margin-bottom: 1.5rem;">...</p>
+
+                <!-- Stats Grid -->
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-value" id="statTotalUSDC">0.00</div>
+                        <div class="stat-label">Total USDC</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="statTotalTx">0</div>
+                        <div class="stat-label">Solicitados</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="statSentTx">0</div>
+                        <div class="stat-label">Enviados</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="statStatus">...</div>
+                        <div class="stat-label">Estado</div>
+                    </div>
+                </div>
+
+                <!-- Carga Archivo (Solo si PREPARING) -->
+                <div id="detailUploadContainer" class="transfer-board mb-3 hidden">
+                    <h3>📂 Cargar Excel (Detalle)</h3>
+                    <div style="display: flex; gap: 1rem; align-items: center;">
+                        <input type="file" id="batchFile" accept=".xlsx, .xls" class="input-glass">
+                        <button id="btnUploadBatch" class="btn btn-primary">Subir y Calcular 📤</button>
+                    </div>
+                    <p id="uploadStatus" class="status-text"></p>
+                </div>
+
+                <!-- Grilla Detalle -->
+                <div class="top-bar">
+                    <h3>📋 Detalle de Transacciones</h3>
+                </div>
+                <div class="table-container">
+                    <table id="batchTable">
+                        <thead>
+                            <tr>
+                                <th>ID Ref</th>
+                                <th>Wallet</th>
+                                <th>USDC</th>
+                                <th>Hash (Ref)</th>
+                                <th>Estado</th>
+                            </tr>
+                        </thead>
+                        <tbody id="batchTableBody">
+                            <tr>
+                                <td colspan="5" style="text-align: center;">Carga un Excel para ver el detalle</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
+
+    </main>
+
+    <!-- MODAL CREAR LOTE -->
+    <div id="batchModal" class="modal">
+        <div class="modal-content">
+            <span class="close-modal" onclick="closeBatchModal()">&times;</span>
+            <h2>📦 Nuevo Lote</h2>
+            <div class="grid-form" style="display: block;"> <!-- Override grid for simple stack -->
+                <div class="form-group" style="margin-bottom: 1rem;">
+                    <label>Número de Lote *</label>
+                    <input type="text" id="newBatchNumber" class="input-glass" placeholder="Ej: LOTE-2024-001">
+                </div>
+                <div class="form-group" style="margin-bottom: 1rem;">
+                    <label>Detalle Corto *</label>
+                    <input type="text" id="newBatchDetail" class="input-glass" placeholder="Ej: Pago Nómina Enero">
+                </div>
+                <div class="form-group" style="margin-bottom: 1.5rem;">
+                    <label>Descripción</label>
+                    <textarea id="newBatchDesc" class="input-glass" rows="3" placeholder="Notas internas..."></textarea>
+                </div>
+                <button id="btnSaveBatch" class="btn btn-primary" style="width: 100%;">Crear Lote</button>
+            </div>
+        </div>
+    </div>
 
     </main>
 

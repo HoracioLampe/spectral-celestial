@@ -22,6 +22,7 @@ let provider, signer, userAddress;
 document.addEventListener('DOMContentLoaded', () => {
     console.log("🚀 Wallet App Iniciada");
     fetchTransactions(); // Cargar historial público al inicio
+    // Note: Batches are loaded when Tab is clicked
 });
 
 // ==========================================
@@ -100,26 +101,19 @@ if (btnDisconnect) {
 }
 
 function disconnectWallet() {
-    // 1. Ocultar info de wallet
     walletInfo.classList.add('hidden');
     btnConnect.style.display = 'block';
-
-    // 2. Limpiar variables locales
     userAddress = null;
     signer = null;
     provider = null;
-
-    // 3. Marcar flag para forzar selección al reconectar
     localStorage.setItem('forceWalletSelect', 'true');
-    console.log("🔌 Desconectado (Simulado). Próxima conexión pedirá cuenta.");
+    console.log("🔌 Desconectado (Simulado).");
 }
 
 async function connectWallet() {
     if (!window.ethereum) return alert("⚠️ Instala MetaMask");
     try {
         const forceSelect = localStorage.getItem('forceWalletSelect');
-
-        // Si venimos de un "Logout", forzamos el selector de cuentas
         if (forceSelect === 'true') {
             await window.ethereum.request({
                 method: "wallet_requestPermissions",
@@ -129,13 +123,9 @@ async function connectWallet() {
         }
 
         provider = new ethers.providers.Web3Provider(window.ethereum);
-
-        // Solicitar cuentas
         await provider.send("eth_requestAccounts", []);
-
         signer = provider.getSigner();
         userAddress = await signer.getAddress();
-
         await checkNetwork();
 
         btnConnect.style.display = 'none';
@@ -148,7 +138,7 @@ async function connectWallet() {
         window.ethereum.on('chainChanged', () => location.reload());
     } catch (error) {
         console.error(error);
-        if (error.code !== 4001) { // 4001 = User Rejected
+        if (error.code !== 4001) {
             alert("Error Wallet: " + error.message);
         }
     }
@@ -209,16 +199,9 @@ async function sendMatic() {
         txStatus.innerHTML = `Tx enviada: <a href="https://polygonscan.com/tx/${tx.hash}" target="_blank">${tx.hash.substring(0, 8)}...</a>`;
 
         const receipt = await tx.wait(); // Esperar confirmación
-
-        // Calcular Gas Cost: Gas Used * Effective Gas Price
-        const gasUsedBN = receipt.gasUsed;
-        const gasPriceBN = receipt.effectiveGasPrice;
-        const gasCostBN = gasUsedBN.mul(gasPriceBN);
-        const gasCostMatic = ethers.utils.formatEther(gasCostBN);
+        const gasCostMatic = ethers.utils.formatEther(receipt.gasUsed.mul(receipt.effectiveGasPrice));
 
         txStatus.textContent = `✅ Confirmada! Gas: ${parseFloat(gasCostMatic).toFixed(6)} MATIC. Guardando...`;
-
-        // Guardar en nuestra DB con Gas
         await saveTransaction(tx.hash, userAddress, to, amount, gasCostMatic);
 
         btnSend.textContent = "Enviar 🚀";
@@ -240,83 +223,190 @@ async function sendMatic() {
 // ==========================================
 
 window.showTab = function (tabName) {
-    // Ocultar todas las secciones
     document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
     document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
 
-    // Mostrar la seleccionada
     if (tabName === 'individual') {
         document.getElementById('individualSection').classList.remove('hidden');
         document.querySelector('.tab-btn:nth-child(1)').classList.add('active');
     } else {
         document.getElementById('batchSection').classList.remove('hidden');
         document.querySelector('.tab-btn:nth-child(2)').classList.add('active');
+        fetchBatches(); // Refresh List
     }
 };
 
 // ==========================================
-// --- GESTIÓN DE LOTES (BATCHES) ---
+// --- GESTIÓN DE LOTES (BATCHES - REFACTOR) ---
 // ==========================================
 
 let currentBatchId = null;
 
-const btnCreateBatch = document.getElementById('btnCreateBatch');
+// Elementos UI Lotes
+const batchListView = document.getElementById('batchListView');
+const batchDetailView = document.getElementById('batchDetailView');
+const batchesListBody = document.getElementById('batchesListBody');
+
+// Modal Elements
+const batchModal = document.getElementById('batchModal');
+const btnOpenBatchModal = document.getElementById('btnOpenBatchModal');
+const btnSaveBatch = document.getElementById('btnSaveBatch');
+
+// Detail Elements
+const detailBatchTitle = document.getElementById('detailBatchTitle');
+const detailBatchDesc = document.getElementById('detailBatchDesc');
+const statTotalUSDC = document.getElementById('statTotalUSDC');
+const statTotalTx = document.getElementById('statTotalTx');
+const statSentTx = document.getElementById('statSentTx');
+const statStatus = document.getElementById('statStatus');
+const detailUploadContainer = document.getElementById('detailUploadContainer');
 const btnUploadBatch = document.getElementById('btnUploadBatch');
-const batchUploadContainer = document.getElementById('batchUploadContainer');
-const activeBatchLabel = document.getElementById('activeBatchLabel');
 const uploadStatus = document.getElementById('uploadStatus');
 const batchTableBody = document.getElementById('batchTableBody');
 
-if (btnCreateBatch) {
-    btnCreateBatch.addEventListener('click', createBatch);
+// Event Listeners
+if (btnOpenBatchModal) btnOpenBatchModal.onclick = () => batchModal.classList.add('active');
+if (btnSaveBatch) btnSaveBatch.onclick = createBatch;
+if (btnUploadBatch) btnUploadBatch.onclick = uploadBatchFile;
+
+// Global functions for HTML access
+window.closeBatchModal = () => batchModal.classList.remove('active');
+
+window.showBatchList = function () {
+    batchDetailView.classList.add('hidden');
+    batchListView.classList.remove('hidden');
+    fetchBatches(); // Refresh list
+};
+
+// Cargar lista al iniciar o cambiar tab
+async function fetchBatches() {
+    try {
+        const res = await fetch('/api/batches');
+        const batches = await res.json();
+        renderBatchesList(batches);
+    } catch (error) {
+        console.error("Error fetching batches:", error);
+    }
 }
 
-if (btnUploadBatch) {
-    btnUploadBatch.addEventListener('click', uploadBatchFile);
+function renderBatchesList(batches) {
+    batchesListBody.innerHTML = '';
+    if (batches.length === 0) {
+        batchesListBody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding: 2rem;">No hay lotes creados. ¡Crea uno nuevo!</td></tr>';
+        return;
+    }
+
+    batches.forEach(b => {
+        const tr = document.createElement('tr');
+        const statusBadge = getStatusBadge(b.status);
+        const progress = `${b.sent_transactions || 0} / ${b.total_transactions || 0}`;
+        const total = b.total_usdc ? `$${parseFloat(b.total_usdc).toFixed(2)}` : '-';
+
+        tr.innerHTML = `
+            <td style="font-weight: bold;">${b.batch_number}</td>
+            <td>${b.detail || '-'}</td>
+            <td>${statusBadge}</td>
+            <td style="color:#4ade80;">${total}</td>
+            <td>${progress}</td>
+            <td>
+                <button class="btn-glass" style="padding: 0.3rem 0.8rem; font-size: 0.8rem;" onclick="openBatchDetail(${b.id})">
+                    Ver Detalle 👁️
+                </button>
+            </td>
+        `;
+        batchesListBody.appendChild(tr);
+    });
+}
+
+function getStatusBadge(status) {
+    if (status === 'READY') return '<span class="badge" style="background: #3b82f6;">Preparado</span>';
+    if (status === 'SENT') return '<span class="badge" style="background: #10b981;">Enviado</span>';
+    return '<span class="badge" style="background: #f59e0b; color: #000;">En Preparación</span>';
 }
 
 async function createBatch() {
-    const batchData = {
-        batch_number: document.getElementById('batchNumber').value,
-        detail: document.getElementById('batchDetail').value,
-        description: document.getElementById('batchDesc').value,
-        scheduled_date: document.getElementById('batchDate').value,
-        start_time: document.getElementById('batchStart').value,
-        end_time: document.getElementById('batchEnd').value,
-        total_usdc: document.getElementById('batchTotal').value
+    const data = {
+        batch_number: document.getElementById('newBatchNumber').value,
+        detail: document.getElementById('newBatchDetail').value,
+        description: document.getElementById('newBatchDesc').value,
     };
 
-    if (!batchData.batch_number || !batchData.total_usdc) {
-        return alert("⚠️ Completa al menos el Número de Lote y Total USDC");
-    }
+    if (!data.batch_number || !data.detail) return alert("Completa Número y Detalle");
 
     try {
-        btnCreateBatch.textContent = "Creando...";
-        btnCreateBatch.disabled = true;
-
-        const res = await fetch('/api/batches', {
+        btnSaveBatch.textContent = "Creando...";
+        await fetch('/api/batches', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(batchData)
+            body: JSON.stringify(data)
         });
-        const newBatch = await res.json();
 
-        if (newBatch.id) {
-            currentBatchId = newBatch.id;
-            activeBatchLabel.textContent = `${newBatch.batch_number} (ID: ${newBatch.id})`;
+        btnSaveBatch.textContent = "Crear Lote";
+        closeBatchModal();
 
-            // Habilitar subida de archivo
-            batchUploadContainer.classList.remove('hidden');
-            btnCreateBatch.textContent = "✅ Lote Creado";
+        // Limpiar form
+        document.getElementById('newBatchNumber').value = '';
+        document.getElementById('newBatchDetail').value = '';
+        document.getElementById('newBatchDesc').value = '';
 
-            alert(`Lote "${newBatch.batch_number}" creado exitosamente. Ahora sube el Excel.`);
-        }
+        fetchBatches(); // Refresh list
+
     } catch (error) {
         console.error(error);
         alert("Error creando lote");
-        btnCreateBatch.disabled = false;
-        btnCreateBatch.textContent = "Crear Lote y Continuar ➡️";
+        btnSaveBatch.textContent = "Crear Lote";
     }
+}
+
+// Global para poder llamarla desde el HTML onclick
+window.openBatchDetail = async function (id) {
+    currentBatchId = id;
+    batchListView.classList.add('hidden');
+    batchDetailView.classList.remove('hidden');
+
+    // Reset view
+    detailBatchTitle.textContent = "Cargando...";
+    batchTableBody.innerHTML = '<tr><td colspan="5" style="text-align: center;">Cargando...</td></tr>';
+
+    try {
+        const res = await fetch(`/api/batches/${id}`);
+        const data = await res.json();
+
+        if (data.batch) {
+            updateDetailView(data.batch, data.transactions);
+        }
+    } catch (error) {
+        console.error(error);
+        alert("Error cargando detalle");
+        showBatchList();
+    }
+};
+
+function updateDetailView(batch, txs) {
+    detailBatchTitle.textContent = `${batch.batch_number} - ${batch.detail}`;
+    detailBatchDesc.textContent = batch.description || "Sin descripción";
+
+    statTotalUSDC.textContent = batch.total_usdc ? `$${parseFloat(batch.total_usdc).toFixed(2)}` : '0.00';
+    statTotalTx.textContent = batch.total_transactions || 0;
+    statSentTx.textContent = batch.sent_transactions || 0;
+
+    // Translate status for display
+    let statusText = "En Preparación";
+    if (batch.status === 'READY') statusText = "Preparado (Listo)";
+    if (batch.status === 'SENT') statusText = "Enviado";
+    statStatus.textContent = statusText;
+
+    // Show/Hide Upload based on status
+    if (batch.status === 'PREPARING') {
+        detailUploadContainer.classList.remove('hidden');
+        uploadStatus.textContent = '';
+        btnUploadBatch.disabled = false;
+        btnUploadBatch.textContent = "Subir y Calcular 📤";
+    } else {
+        detailUploadContainer.classList.add('hidden');
+    }
+
+    renderBatchTransactions(txs);
 }
 
 async function uploadBatchFile() {
@@ -328,9 +418,9 @@ async function uploadBatchFile() {
     formData.append('file', fileInput.files[0]);
 
     try {
-        btnUploadBatch.textContent = "Subiendo...";
+        btnUploadBatch.textContent = "Procesando...";
         btnUploadBatch.disabled = true;
-        uploadStatus.textContent = "Procesando archivo...";
+        uploadStatus.textContent = "Leyendo Excel y Calculando...";
 
         const res = await fetch(`/api/batches/${currentBatchId}/upload`, {
             method: 'POST',
@@ -338,26 +428,24 @@ async function uploadBatchFile() {
         });
         const result = await res.json();
 
-        if (result.transactions) {
-            renderBatchTransactions(result.transactions);
-            uploadStatus.textContent = `✅ ${result.count} registros procesados correctamente.`;
-            btnUploadBatch.textContent = "Subir Archivo 📤";
-            btnUploadBatch.disabled = false;
+        if (result.batch) {
+            updateDetailView(result.batch, result.transactions);
+            uploadStatus.textContent = "✅ Carga exitosa";
         } else {
-            throw new Error(result.error || "Error desconocido");
+            throw new Error("Error en respuesta");
         }
 
     } catch (error) {
         console.error(error);
         uploadStatus.textContent = "❌ Error: " + error.message;
-        btnUploadBatch.textContent = "Subir Archivo 📤";
+        btnUploadBatch.textContent = "Subir y Calcular 📤";
         btnUploadBatch.disabled = false;
     }
 }
 
 function renderBatchTransactions(txs) {
     batchTableBody.innerHTML = '';
-    if (txs.length === 0) {
+    if (!txs || txs.length === 0) {
         batchTableBody.innerHTML = '<tr><td colspan="5" style="text-align:center;">No hay registros</td></tr>';
         return;
     }
@@ -367,7 +455,7 @@ function renderBatchTransactions(txs) {
         tr.innerHTML = `
             <td style="opacity: 0.7;">${tx.transaction_reference || '-'}</td>
             <td style="font-family: monospace;">${tx.wallet_address}</td>
-            <td style="color: #4ade80;">$${tx.amount_usdc}</td>
+            <td style="color: #4ade80;">$${parseFloat(tx.amount_usdc).toFixed(2)}</td>
             <td style="font-size: 0.85rem; opacity: 0.7;">${tx.tx_hash || '-'}</td>
             <td><span class="badge" style="background: #3b82f6;">${tx.status}</span></td>
         `;

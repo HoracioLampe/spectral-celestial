@@ -66,17 +66,17 @@ const initDB = async () => {
                     timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
             `);
-            // Tablas para Gestión de Lotes
+            // Tablas para Gestión de Lotes (Refactored)
             await client.query(`
                 CREATE TABLE IF NOT EXISTS batches (
                     id SERIAL PRIMARY KEY,
                     batch_number VARCHAR(50),
                     detail TEXT,
                     description TEXT,
-                    scheduled_date VARCHAR(50),
-                    start_time VARCHAR(50),
-                    end_time VARCHAR(50),
-                    total_usdc NUMERIC,
+                    total_usdc NUMERIC DEFAULT 0,
+                    total_transactions INTEGER DEFAULT 0,
+                    sent_transactions INTEGER DEFAULT 0,
+                    status VARCHAR(20) DEFAULT 'PREPARING',
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
             `);
@@ -87,17 +87,21 @@ const initDB = async () => {
                     wallet_address VARCHAR(100),
                     amount_usdc NUMERIC,
                     tx_hash VARCHAR(100),
+                    transaction_reference VARCHAR(100),
                     status VARCHAR(20) DEFAULT 'PENDING'
                 );
             `);
 
-            // Migración segura: Agregar columna si no existe
+            // Migración segura: Agregar columnas nuevas si faltan
             await client.query(`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS gas_used VARCHAR(50)`);
+            await client.query(`ALTER TABLE batch_transactions ADD COLUMN IF NOT EXISTS transaction_reference VARCHAR(100)`);
 
-            console.log("✅ Tabla 'courses' verificada/creada.");
-            console.log("✅ Tabla 'users' verificada/creada.");
-            console.log("✅ Tabla 'transactions' verificada/creada + Columna gas_used.");
-            console.log("✅ Tablas 'batches' y 'batch_transactions' verificadas/creadas.");
+            // Migración Lotes Refactor
+            await client.query(`ALTER TABLE batches ADD COLUMN IF NOT EXISTS total_transactions INTEGER DEFAULT 0`);
+            await client.query(`ALTER TABLE batches ADD COLUMN IF NOT EXISTS sent_transactions INTEGER DEFAULT 0`);
+            await client.query(`ALTER TABLE batches ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'PREPARING'`);
+
+            console.log("✅ Tablas verificadas/actualizadas correctamente.");
         } finally {
             client.release();
         }
@@ -111,18 +115,16 @@ initDB();
 app.get('/setup', async (req, res) => {
     try {
         const client = await pool.connect();
-        // ... (Tablas anteriores omitidas por brevedad, initDB ya las maneja)
-        // Solo asegurar las nuevas aquí también si se llama manual
         await client.query(`
              CREATE TABLE IF NOT EXISTS batches (
                     id SERIAL PRIMARY KEY,
                     batch_number VARCHAR(50),
                     detail TEXT,
                     description TEXT,
-                    scheduled_date VARCHAR(50),
-                    start_time VARCHAR(50),
-                    end_time VARCHAR(50),
-                    total_usdc NUMERIC,
+                    total_usdc NUMERIC DEFAULT 0,
+                    total_transactions INTEGER DEFAULT 0,
+                    sent_transactions INTEGER DEFAULT 0,
+                    status VARCHAR(20) DEFAULT 'PREPARING',
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
             CREATE TABLE IF NOT EXISTS batch_transactions (
@@ -131,30 +133,99 @@ app.get('/setup', async (req, res) => {
                     wallet_address VARCHAR(100),
                     amount_usdc NUMERIC,
                     tx_hash VARCHAR(100),
+                    transaction_reference VARCHAR(100),
                     status VARCHAR(20) DEFAULT 'PENDING'
                 );
+            ALTER TABLE batch_transactions ADD COLUMN IF NOT EXISTS transaction_reference VARCHAR(100);
+            ALTER TABLE batches ADD COLUMN IF NOT EXISTS total_transactions INTEGER DEFAULT 0;
+            ALTER TABLE batches ADD COLUMN IF NOT EXISTS sent_transactions INTEGER DEFAULT 0;
+            ALTER TABLE batches ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'PREPARING';
         `);
         client.release();
-        res.send("<h1>✅ Tablas de Lotes actualizadas.</h1>");
+        res.send("<h1>✅ Tablas de Lotes actualizadas (Refactor).</h1>");
     } catch (err) {
         res.status(500).json(err);
     }
 });
 
-// ... (API Endpoints: USUARIOS y CURSOS sin cambios) ...
-// ... (API Endpoints: TRANSACCIONES sin cambios) ...
-
-// --- API Endpoints: GESTIÓN DE LOTES ---
-
-// POST: Crear nuevo Lote (Cabecera)
-app.post('/api/batches', async (req, res) => {
-    const { batch_number, detail, description, scheduled_date, start_time, end_time, total_usdc } = req.body;
+// ... (API Endpoints: USUARIOS y CURSOS) ...
+app.get('/api/users', async (req, res) => {
     try {
-        const query = `
-            INSERT INTO batches (batch_number, detail, description, scheduled_date, start_time, end_time, total_usdc) 
-            VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *
-        `;
-        const values = [batch_number, detail, description, scheduled_date, start_time, end_time, total_usdc];
+        if (!process.env.DATABASE_URL) return res.json([]);
+        const result = await pool.query('SELECT * FROM users ORDER BY id DESC');
+        res.json(result.rows);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+app.post('/api/users', async (req, res) => {
+    const { nombre, apellido, dni, edad, sexo } = req.body;
+    try {
+        const query = 'INSERT INTO users (nombre, apellido, dni, edad, sexo) VALUES ($1, $2, $3, $4, $5) RETURNING *';
+        const values = [nombre, apellido, dni, edad, sexo];
+        const result = await pool.query(query, values);
+        res.status(201).json(result.rows[0]);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+app.put('/api/users/:id', async (req, res) => {
+    const { id } = req.params;
+    const { nombre, apellido, dni, edad, sexo } = req.body;
+    try {
+        const query = 'UPDATE users SET nombre=$1, apellido=$2, dni=$3, edad=$4, sexo=$5 WHERE id=$6 RETURNING *';
+        const result = await pool.query(query, [nombre, apellido, dni, edad, sexo, id]);
+        res.json(result.rows[0]);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+app.delete('/api/users/:id', async (req, res) => {
+    try { await pool.query('DELETE FROM users WHERE id=$1', [req.params.id]); res.json({ message: "Usuario eliminado" }); }
+    catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.get('/api/courses', async (req, res) => {
+    try {
+        if (!process.env.DATABASE_URL) return res.json([]);
+        const result = await pool.query('SELECT * FROM courses ORDER BY id DESC');
+        res.json(result.rows);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+app.post('/api/courses', async (req, res) => {
+    const { nombre, descripcion, nivel, fecha_inicio, duracion_semanas } = req.body;
+    try {
+        const query = 'INSERT INTO courses (nombre, descripcion, nivel, fecha_inicio, duracion_semanas) VALUES ($1, $2, $3, $4, $5) RETURNING *';
+        const result = await pool.query(query, [nombre, descripcion, nivel, fecha_inicio, duracion_semanas]);
+        res.status(201).json(result.rows[0]);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+app.put('/api/courses/:id', async (req, res) => {
+    const { id } = req.params;
+    const { nombre, descripcion, nivel, fecha_inicio, duracion_semanas } = req.body;
+    try {
+        const query = 'UPDATE courses SET nombre=$1, descripcion=$2, nivel=$3, fecha_inicio=$4, duracion_semanas=$5 WHERE id=$6 RETURNING *';
+        const result = await pool.query(query, [nombre, descripcion, nivel, fecha_inicio, duracion_semanas, id]);
+        res.json(result.rows[0]);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+app.delete('/api/courses/:id', async (req, res) => {
+    try { await pool.query('DELETE FROM courses WHERE id=$1', [req.params.id]); res.json({ message: "Curso eliminado" }); }
+    catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// --- API Endpoints: TRANSACCIONES ---
+
+app.get('/api/transactions', async (req, res) => {
+    try {
+        if (!process.env.DATABASE_URL) return res.json([]);
+        const result = await pool.query('SELECT * FROM transactions ORDER BY timestamp DESC');
+        res.json(result.rows);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/transactions', async (req, res) => {
+    const { tx_hash, from_address, to_address, amount, gas_used } = req.body;
+    try {
+        const query = 'INSERT INTO transactions (tx_hash, from_address, to_address, amount, gas_used) VALUES ($1, $2, $3, $4, $5) RETURNING *';
+        const values = [tx_hash, from_address, to_address, amount.toString(), gas_used ? gas_used.toString() : "0"];
         const result = await pool.query(query, values);
         res.status(201).json(result.rows[0]);
     } catch (err) {
@@ -163,7 +234,27 @@ app.post('/api/batches', async (req, res) => {
     }
 });
 
-// POST: Subir Excel para un Lote
+// --- API Endpoints: GESTIÓN DE LOTES (Refactored) ---
+
+// POST: Crear nuevo Lote (Solo Cabecera Básica)
+app.post('/api/batches', async (req, res) => {
+    const { batch_number, detail, description } = req.body;
+    try {
+        // Status por defecto: PREPARING
+        const query = `
+            INSERT INTO batches (batch_number, detail, description, status) 
+            VALUES ($1, $2, $3, 'PREPARING') RETURNING *
+        `;
+        const values = [batch_number, detail, description];
+        const result = await pool.query(query, values);
+        res.status(201).json(result.rows[0]);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST: Subir Excel + Calcular Totales + Actualizar Estado a READY
 app.post('/api/batches/:id/upload', upload.single('file'), async (req, res) => {
     const batchId = req.params.id;
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
@@ -175,34 +266,48 @@ app.post('/api/batches/:id/upload', upload.single('file'), async (req, res) => {
         const sheet = workbook.Sheets[sheetName];
         const data = xlsx.utils.sheet_to_json(sheet);
 
-        // Validar e insertar registros
         const client = await pool.connect();
         try {
             await client.query('BEGIN');
 
+            let totalAmount = 0;
+            let totalCount = 0;
+
             for (const row of data) {
-                // Mapear columnas del Excel según imagen del usuario
-                // "Address Wallet", "USDC", "Hash"
+                // "TransactionID", "Address Wallet", "USDC", "Hash"
+                const txRef = row['TransactionID'] || row['TransactionId'] || '';
                 const wallet = row['Address Wallet'];
-                const amount = row['USDC'];
+                const amount = parseFloat(row['USDC']);
                 const hash = row['Hash'] || '';
 
-                if (wallet && amount) {
+                if (wallet && !isNaN(amount)) {
                     await client.query(
-                        `INSERT INTO batch_transactions (batch_id, wallet_address, amount_usdc, tx_hash) VALUES ($1, $2, $3, $4)`,
-                        [batchId, wallet, amount, hash]
+                        `INSERT INTO batch_transactions (batch_id, wallet_address, amount_usdc, tx_hash, transaction_reference) VALUES ($1, $2, $3, $4, $5)`,
+                        [batchId, wallet, amount, hash, txRef]
                     );
+                    totalAmount += amount;
+                    totalCount++;
                 }
             }
 
-            await client.query('COMMIT');
+            // Actualizar Cabecera del Lote
+            await client.query(
+                `UPDATE batches SET total_usdc = $1, total_transactions = $2, status = 'READY' WHERE id = $3`,
+                [totalAmount, totalCount, batchId]
+            );
 
-            // Eliminar archivo temporal
+            await client.query('COMMIT');
             fs.unlinkSync(req.file.path);
 
-            // Devolver las transacciones creadas para mostrarlas
-            const result = await client.query('SELECT * FROM batch_transactions WHERE batch_id = $1', [batchId]);
-            res.json({ message: 'Lote procesado exitosamente', count: data.length, transactions: result.rows });
+            const updatedBatch = await client.query('SELECT * FROM batches WHERE id = $1', [batchId]);
+            const txs = await client.query('SELECT * FROM batch_transactions WHERE batch_id = $1', [batchId]);
+
+            res.json({
+                message: 'Lote procesado y calculado',
+                batch: updatedBatch.rows[0],
+                transactions: txs.rows
+            });
+
         } catch (dbErr) {
             await client.query('ROLLBACK');
             throw dbErr;
@@ -240,172 +345,7 @@ app.get('/api/batches/:id', async (req, res) => {
     }
 });
 
-// Fallback, etc...
-
-
-// ... (API Endpoints: USUARIOS y CURSOS sin cambios) ...
-
-// --- API Endpoints: TRANSACCIONES ---
-
-// GET: Obtener historial
-app.get('/api/transactions', async (req, res) => {
-    try {
-        if (!process.env.DATABASE_URL) return res.json([]);
-        const result = await pool.query('SELECT * FROM transactions ORDER BY timestamp DESC');
-        res.json(result.rows);
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// POST: Guardar transacción
-app.post('/api/transactions', async (req, res) => {
-    const { tx_hash, from_address, to_address, amount, gas_used } = req.body;
-    try {
-        const query = 'INSERT INTO transactions (tx_hash, from_address, to_address, amount, gas_used) VALUES ($1, $2, $3, $4, $5) RETURNING *';
-        const values = [tx_hash, from_address, to_address, amount.toString(), gas_used ? gas_used.toString() : "0"];
-        const result = await pool.query(query, values);
-        res.status(201).json(result.rows[0]);
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// --- API Endpoints: USUARIOS ---
-
-// GET: Obtener todos los usuarios
-app.get('/api/users', async (req, res) => {
-    try {
-        if (!process.env.DATABASE_URL) return res.json([]); // Modo mock local
-        const result = await pool.query('SELECT * FROM users ORDER BY id DESC');
-        res.json(result.rows);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// POST: Crear usuario
-app.post('/api/users', async (req, res) => {
-    const { nombre, apellido, dni, edad, sexo } = req.body;
-    try {
-        const query = 'INSERT INTO users (nombre, apellido, dni, edad, sexo) VALUES ($1, $2, $3, $4, $5) RETURNING *';
-        const values = [nombre, apellido, dni, edad, sexo];
-        const result = await pool.query(query, values);
-        res.status(201).json(result.rows[0]);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// PUT: Editar usuario
-app.put('/api/users/:id', async (req, res) => {
-    const { id } = req.params;
-    const { nombre, apellido, dni, edad, sexo } = req.body;
-    try {
-        const query = 'UPDATE users SET nombre=$1, apellido=$2, dni=$3, edad=$4, sexo=$5 WHERE id=$6 RETURNING *';
-        const values = [nombre, apellido, dni, edad, sexo, id];
-        const result = await pool.query(query, values);
-        if (result.rows.length === 0) return res.status(404).json({ error: "Usuario no encontrado" });
-        res.json(result.rows[0]);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// DELETE: Borrar usuario
-app.delete('/api/users/:id', async (req, res) => {
-    const { id } = req.params;
-    try {
-        await pool.query('DELETE FROM users WHERE id=$1', [id]);
-        res.json({ message: "Usuario eliminado" });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// --- API Endpoints: CURSOS ---
-
-// GET: Obtener todos los cursos
-app.get('/api/courses', async (req, res) => {
-    try {
-        if (!process.env.DATABASE_URL) return res.json([]);
-        const result = await pool.query('SELECT * FROM courses ORDER BY id DESC');
-        res.json(result.rows);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// POST: Crear curso
-app.post('/api/courses', async (req, res) => {
-    const { nombre, descripcion, nivel, fecha_inicio, duracion_semanas } = req.body;
-    try {
-        const query = 'INSERT INTO courses (nombre, descripcion, nivel, fecha_inicio, duracion_semanas) VALUES ($1, $2, $3, $4, $5) RETURNING *';
-        const values = [nombre, descripcion, nivel, fecha_inicio, duracion_semanas];
-        const result = await pool.query(query, values);
-        res.status(201).json(result.rows[0]);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// PUT: Editar curso
-app.put('/api/courses/:id', async (req, res) => {
-    const { id } = req.params;
-    const { nombre, descripcion, nivel, fecha_inicio, duracion_semanas } = req.body;
-    try {
-        const query = 'UPDATE courses SET nombre=$1, descripcion=$2, nivel=$3, fecha_inicio=$4, duracion_semanas=$5 WHERE id=$6 RETURNING *';
-        const values = [nombre, descripcion, nivel, fecha_inicio, duracion_semanas, id];
-        const result = await pool.query(query, values);
-        if (result.rows.length === 0) return res.status(404).json({ error: "Curso no encontrado" });
-        res.json(result.rows[0]);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// DELETE: Borrar curso
-app.delete('/api/courses/:id', async (req, res) => {
-    const { id } = req.params;
-    try {
-        await pool.query('DELETE FROM courses WHERE id=$1', [id]);
-        res.json({ message: "Curso eliminado" });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// --- API Endpoints: TRANSACCIONES ---
-
-// GET: Obtener historial
-app.get('/api/transactions', async (req, res) => {
-    try {
-        if (!process.env.DATABASE_URL) return res.json([]);
-        const result = await pool.query('SELECT * FROM transactions ORDER BY timestamp DESC');
-        res.json(result.rows);
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// POST: Guardar transacción
-app.post('/api/transactions', async (req, res) => {
-    const { tx_hash, from_address, to_address, amount } = req.body;
-    try {
-        const query = 'INSERT INTO transactions (tx_hash, from_address, to_address, amount) VALUES ($1, $2, $3, $4) RETURNING *';
-        const values = [tx_hash, from_address, to_address, amount.toString()];
-        const result = await pool.query(query, values);
-        res.status(201).json(result.rows[0]);
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// Fallback para SPA (si fuera necesario router frontend, pero aquí es simple)
+// Fallback para SPA
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
