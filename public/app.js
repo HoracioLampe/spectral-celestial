@@ -277,7 +277,7 @@ const merkleStatus = document.getElementById('merkleStatus');
 // New Stats elements
 const merkleTotalAmount = document.getElementById('merkleTotalAmount');
 const merkleFounderBalance = document.getElementById('merkleFounderBalance');
-const merkleResultTotal = document.getElementById('merkleResultTotal');
+const merkleResultBalance = document.getElementById('merkleResultBalance');
 const merkleResultFunder = document.getElementById('merkleResultFunder');
 
 const batchTableBody = document.getElementById('batchTableBody');
@@ -447,19 +447,27 @@ function updateDetailView(batch, txs) {
             merkleContainer.classList.remove('hidden');
             merkleStatus.textContent = '';
 
-            // Populate Total in Merkle Section
+            // Populate Total in Input Section (still Total Amount)
             let totalVal = (batch.total_usdc !== null && batch.total_usdc !== undefined) ? parseFloat(batch.total_usdc) : 0;
             const totalDisplay = `$${(totalVal / 1000000).toFixed(6)}`;
             if (merkleTotalAmount) merkleTotalAmount.textContent = totalDisplay;
-            if (merkleResultTotal) merkleResultTotal.textContent = totalDisplay;
 
             if (batch.merkle_root) {
                 // Already generated
                 merkleInputZone.classList.add('hidden');
                 merkleResultZone.classList.remove('hidden');
                 displayMerkleRoot.textContent = batch.merkle_root;
+
                 if (batch.funder_address) {
                     if (merkleResultFunder) merkleResultFunder.textContent = batch.funder_address;
+
+                    // Fetch Funder Balance for Result View
+                    if (merkleResultBalance) {
+                        merkleResultBalance.textContent = "Cargando...";
+                        fetchUSDCBalance(batch.funder_address).then(bal => {
+                            merkleResultBalance.textContent = bal;
+                        });
+                    }
                 }
             } else {
                 // Not generated yet
@@ -652,30 +660,35 @@ async function checkFounderBalance() {
     if (merkleFounderBalance) merkleFounderBalance.textContent = "Cargando...";
 
     try {
-        // Try using window.ethereum if available, else standard provider
-        let provider;
-        if (window.ethereum) {
-            provider = new ethers.providers.Web3Provider(window.ethereum);
-        } else {
-            // Fallback public RPC for Polygon
-            provider = new ethers.providers.JsonRpcProvider("https://polygon-rpc.com");
-        }
-
-        const usdcAddress = "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359"; // Polygon USDC Native
-        const minABI = [
-            "function balanceOf(address owner) view returns (uint256)"
-        ];
-        const contract = new ethers.Contract(usdcAddress, minABI, provider);
-        const usdcBal = await contract.balanceOf(address);
-        const usdcFormatted = ethers.utils.formatUnits(usdcBal, 6); // USDC is 6 decimals
-
+        const balanceStr = await fetchUSDCBalance(address);
         if (merkleFounderBalance) {
-            merkleFounderBalance.textContent = `$${parseFloat(usdcFormatted).toFixed(6)} USDC`;
+            merkleFounderBalance.textContent = balanceStr;
         }
-
     } catch (error) {
         console.error("Balance Error:", error);
         if (merkleFounderBalance) merkleFounderBalance.textContent = "Error";
     }
 }
 window.checkFounderBalance = checkFounderBalance;
+
+async function fetchUSDCBalance(address) {
+    if (!address || !ethers.utils.isAddress(address)) return "---";
+    try {
+        let provider;
+        if (window.ethereum) {
+            provider = new ethers.providers.Web3Provider(window.ethereum);
+        } else {
+            provider = new ethers.providers.JsonRpcProvider("https://polygon-rpc.com");
+        }
+        const usdcAddress = "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359";
+        const minABI = ["function balanceOf(address owner) view returns (uint256)"];
+        const contract = new ethers.Contract(usdcAddress, minABI, provider);
+        const usdcBal = await contract.balanceOf(address);
+        const usdcFormatted = ethers.utils.formatUnits(usdcBal, 6);
+        return `$${parseFloat(usdcFormatted).toFixed(6)} USDC`;
+    } catch (e) {
+        console.error("Fetch Balance Error", e);
+        return "Error";
+    }
+}
+window.fetchUSDCBalance = fetchUSDCBalance;
