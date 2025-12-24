@@ -112,6 +112,76 @@ h1 {
 }
 
 /* Glass Panel */
+/* Header con Flexbox para Wallet */
+header {
+    margin-bottom: 2rem;
+    position: relative;
+    z-index: 10;
+}
+
+.header-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.wallet-controls {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.btn-glass {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: white;
+    padding: 0.6rem 1.2rem;
+    border-radius: 12px;
+    cursor: pointer;
+    backdrop-filter: blur(10px);
+    transition: all 0.3s ease;
+    font-weight: 500;
+}
+
+.btn-glass:hover {
+    background: rgba(255, 255, 255, 0.2);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(111, 66, 193, 0.3);
+}
+
+.wallet-info {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.25rem;
+}
+
+.wallet-info.hidden {
+    display: none;
+}
+
+.badge-address {
+    background: rgba(111, 66, 193, 0.3);
+    padding: 0.3rem 0.8rem;
+    border-radius: 20px;
+    font-size: 0.9rem;
+    border: 1px solid rgba(139, 92, 246, 0.3);
+}
+
+.balances {
+    display: flex;
+    gap: 0.8rem;
+    font-size: 0.85rem;
+    opacity: 0.9;
+}
+
+.balance-item {
+    font-weight: 500;
+}
+
+/* Glass Panel */
 .glass-panel {
     background: var(--glass-bg);
     backdrop-filter: blur(16px);

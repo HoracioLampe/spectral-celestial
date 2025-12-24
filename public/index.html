@@ -9,6 +9,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
 </head>
 
 <body>
@@ -19,8 +20,22 @@
     </div>
 
     <header>
-        <h1>Gestión de Usuarios</h1>
-        <p class="subtitle">Mockup conectado con PostgreSQL en Railway</p>
+        <div class="header-content">
+            <div>
+                <h1>Gestión de Usuarios</h1>
+                <p class="subtitle">Mockup conectado con PostgreSQL en Railway</p>
+            </div>
+            <div class="wallet-controls">
+                <button id="btnConnect" class="btn-glass">🦊 Conectar Wallet</button>
+                <div id="walletInfo" class="wallet-info hidden">
+                    <span id="walletAddress" class="badge-address">0x...</span>
+                    <div class="balances">
+                        <span class="balance-item">🟣 <span id="balanceMatic">0.00</span> POL</span>
+                        <span class="balance-item">💵 <span id="balanceUsdc">0.00</span> USDC</span>
+                    </div>
+                </div>
+            </div>
+        </div>
     </header>
 
     <main class="glass-panel">

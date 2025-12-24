@@ -276,3 +276,107 @@ if (courseModal) {
         if (e.target === courseModal) closeCourseModal();
     });
 }
+
+// ==========================================
+// --- INTEGRACIÓN WEB3 (METAMASK) ---
+// ==========================================
+
+const POLYGON_CHAIN_ID = '0x89'; // 137 en hex
+const USDC_ADDRESS = '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359'; // Native USDC en Polygon
+const USDC_ABI = [
+    "function balanceOf(address owner) view returns (uint256)",
+    "function decimals() view returns (uint8)"
+];
+
+const btnConnect = document.getElementById('btnConnect');
+const walletInfo = document.getElementById('walletInfo');
+const walletAddress = document.getElementById('walletAddress');
+const balanceMatic = document.getElementById('balanceMatic');
+const balanceUsdc = document.getElementById('balanceUsdc');
+
+let provider, signer, userAddress;
+
+if (btnConnect) {
+    btnConnect.addEventListener('click', connectWallet);
+}
+
+async function connectWallet() {
+    if (!window.ethereum) {
+        alert("⚠️ MetaMask no está instalado.");
+        return;
+    }
+
+    try {
+        // 1. Conectar Provider
+        provider = new ethers.providers.Web3Provider(window.ethereum);
+        await provider.send("eth_requestAccounts", []);
+        signer = provider.getSigner();
+        userAddress = await signer.getAddress();
+
+        // 2. Verificar Red (Polygon)
+        await checkNetwork();
+
+        // 3. UI Update
+        btnConnect.style.display = 'none';
+        walletInfo.classList.remove('hidden');
+        walletAddress.textContent = `${userAddress.substring(0, 6)}...${userAddress.substring(38)}`;
+
+        // 4. Leer Balances
+        fetchBalances();
+
+        // Listeners para cambios
+        window.ethereum.on('accountsChanged', (accounts) => {
+            if (accounts.length === 0) location.reload();
+            else connectWallet(); // Reconectar con nueva cuenta
+        });
+
+        window.ethereum.on('chainChanged', () => {
+            window.location.reload();
+        });
+
+    } catch (error) {
+        console.error("Error Web3:", error);
+        alert("Error conectando wallet: " + error.message);
+    }
+}
+
+async function checkNetwork() {
+    const network = await provider.getNetwork();
+    if (network.chainId !== 137) {
+        try {
+            await window.ethereum.request({
+                method: 'wallet_switchEthereumChain',
+                params: [{ chainId: POLYGON_CHAIN_ID }],
+            });
+        } catch (switchError) {
+            // Si la red no existe, agregarla (Opcional, pero recomendado)
+            if (switchError.code === 4902) {
+                alert("Por favor agrega la red Polygon Mainnet a tu MetaMask");
+            } else {
+                alert("Debes cambiar a la red Polygon para usar esta App.");
+                throw switchError;
+            }
+        }
+    }
+}
+
+async function fetchBalances() {
+    try {
+        // A. Balance Nativo (MATIC/POL)
+        const balance = await provider.getBalance(userAddress);
+        const matic = ethers.utils.formatEther(balance);
+        balanceMatic.textContent = parseFloat(matic).toFixed(2);
+
+        // B. Balance USDC
+        const usdcContract = new ethers.Contract(USDC_ADDRESS, USDC_ABI, provider);
+        const usdcRaw = await usdcContract.balanceOf(userAddress);
+        const decimals = await usdcContract.decimals(); // Generalmente 6
+        const usdc = ethers.utils.formatUnits(usdcRaw, decimals);
+        balanceUsdc.textContent = parseFloat(usdc).toFixed(2);
+
+    } catch (error) {
+        console.error("Error leyendo balances:", error);
+        balanceMatic.textContent = "Err";
+        balanceUsdc.textContent = "Err";
+    }
+}
