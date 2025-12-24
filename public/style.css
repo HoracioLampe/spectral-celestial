@@ -197,8 +197,8 @@ header {
 /* Table Styles Updated */
 .table-container {
     width: 100%;
-    /* overflow-x: auto;  <-- Re-enable scroll if strictly needed, but let's try to fit first */
-    overflow-x: hidden;
+    overflow-x: auto;
+    /* Allow scroll so buttons are never hidden */
     background: rgba(0, 0, 0, 0.2);
     border-radius: 12px;
 }
@@ -209,6 +209,8 @@ table {
     margin-top: 1rem;
     color: #cbd5e1;
     table-layout: auto;
+    font-size: 0.9rem;
+    /* Slightly smaller text to fit more cols */
     /* Let browser decide widths based on content */
 }
 
