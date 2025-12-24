@@ -1,342 +1,117 @@
-const API_USERS = '/api/users';
-const API_COURSES = '/api/courses';
-let isEditingUser = false;
-let isEditingCourse = false;
+const API_TRANSACTIONS = '/api/transactions';
 
-// --- Elementos DOM (Usuarios) ---
-const userTableBody = document.getElementById('userTableBody');
-const userModal = document.getElementById('userModal');
-const userForm = document.getElementById('userForm');
-const userModalTitle = document.getElementById('modalTitle');
+// --- Elementos DOM ---
+const transactionsTableBody = document.getElementById('transactionsTableBody');
+const btnConnect = document.getElementById('btnConnect');
+const walletInfo = document.getElementById('walletInfo');
+const walletAddress = document.getElementById('walletAddress');
+const balanceMatic = document.getElementById('balanceMatic');
+const balanceUsdc = document.getElementById('balanceUsdc');
+const btnSend = document.getElementById('btnSend');
+const txTo = document.getElementById('txTo');
+const txAmount = document.getElementById('txAmount');
+const txStatus = document.getElementById('txStatus');
 
-// --- Elementos DOM (Cursos) ---
-const courseTableBody = document.getElementById('coursesTableBody');
-const courseModal = document.getElementById('courseModal');
-const courseForm = document.getElementById('courseForm');
-const courseModalTitle = document.getElementById('courseModalTitle');
+// --- Web3 Constants ---
+const POLYGON_CHAIN_ID = '0x89'; // 137
+const USDC_ADDRESS = '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359';
+const USDC_ABI = ["function balanceOf(address owner) view returns (uint256)", "function decimals() view returns (uint8)"];
+let provider, signer, userAddress;
 
 document.addEventListener('DOMContentLoaded', () => {
-    console.log("🚀 Aplicación iniciada. Cargando datos...");
-    fetchUsers();
-    fetchCourses();
+    console.log("🚀 Wallet App Iniciada");
+    fetchTransactions(); // Cargar historial público al inicio
 });
 
 // ==========================================
-// --- GESTIÓN DE USUARIOS ---
+// --- GESTIÓN DE TRANSACCIONES (BACKEND) ---
 // ==========================================
 
-async function fetchUsers() {
-    if (!userTableBody) return console.error("❌ Error: No se encontró userTableBody");
-
+async function fetchTransactions() {
+    if (!transactionsTableBody) return;
     try {
-        const res = await fetch(API_USERS);
-        if (!res.ok) throw new Error('Error en respuesta API');
-        const users = await res.json();
-        renderUsers(users);
+        const res = await fetch(API_TRANSACTIONS);
+        const transactions = await res.json();
+        renderTransactions(transactions);
     } catch (error) {
-        console.error('❌ Error cargando usuarios:', error);
-        userTableBody.innerHTML = '<tr><td colspan="7" style="color: #ff6b6b; text-align: center;">Error cargando datos. Ver consola.</td></tr>';
+        console.error("Error cargando historial:", error);
+        transactionsTableBody.innerHTML = '<tr><td colspan="5" style="color: #ff6b6b; text-align: center;">Error cargando historial</td></tr>';
     }
 }
 
-function renderUsers(users) {
-    userTableBody.innerHTML = '';
-    if (!Array.isArray(users) || users.length === 0) {
-        userTableBody.innerHTML = '<tr><td colspan="7" style="text-align:center; opacity: 0.7;">No hay usuarios registrados</td></tr>';
+function renderTransactions(transactions) {
+    transactionsTableBody.innerHTML = '';
+    if (!transactions || transactions.length === 0) {
+        transactionsTableBody.innerHTML = '<tr><td colspan="5" style="text-align:center; opacity: 0.7;">No hay transacciones registradas</td></tr>';
         return;
     }
 
-    users.forEach(user => {
+    transactions.forEach(tx => {
         const tr = document.createElement('tr');
+        const date = new Date(tx.timestamp).toLocaleString();
+        const shortHash = `${tx.tx_hash.substring(0, 8)}...${tx.tx_hash.substring(60)}`;
+        const shortFrom = `${tx.from_address.substring(0, 6)}...`;
+        const shortTo = `${tx.to_address.substring(0, 6)}...`;
+
         tr.innerHTML = `
-            <td>#${user.id}</td>
-            <td><strong>${user.nombre}</strong></td>
-            <td>${user.apellido}</td>
-            <td>${user.dni}</td>
-            <td>${user.edad}</td>
-            <td>${user.sexo}</td>
-            <td>
-                <button class="btn btn-sm btn-edit" onclick='openUserModal(${JSON.stringify(user).replace(/"/g, "&quot;")})'>✏️</button>
-                <button class="btn btn-sm btn-delete" onclick="deleteUser(${user.id})">🗑️</button>
-            </td>
+            <td><a href="https://polygonscan.com/tx/${tx.tx_hash}" target="_blank" class="hash-link">🔗 ${shortHash}</a></td>
+            <td>${shortFrom}</td>
+            <td>${shortTo}</td>
+            <td style="color: #4ade80; font-weight: bold;">${tx.amount} MATIC</td>
+            <td style="font-size: 0.85rem; opacity: 0.8;">${date}</td>
         `;
-        userTableBody.appendChild(tr);
+        transactionsTableBody.appendChild(tr);
     });
 }
 
-// Guardar Usuario
-if (userForm) {
-    userForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-
-        const data = {
-            nombre: document.getElementById('nombre').value,
-            apellido: document.getElementById('apellido').value,
-            dni: document.getElementById('dni').value,
-            edad: document.getElementById('edad').value,
-            sexo: document.getElementById('sexo').value
-        };
-
-        const id = document.getElementById('userId').value;
-        const method = isEditingUser ? 'PUT' : 'POST';
-        const url = isEditingUser ? `${API_USERS}/${id}` : API_USERS;
-
-        try {
-            const res = await fetch(url, {
-                method: method,
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data)
-            });
-
-            if (res.ok) {
-                closeUserModal();
-                fetchUsers();
-            } else {
-                const err = await res.json();
-                alert('Error: ' + (err.error || 'Desconocido'));
-            }
-        } catch (error) {
-            console.error(error);
-            alert('Error de red al guardar usuario');
-        }
-    });
-}
-
-// Borrar Usuario
-window.deleteUser = async function (id) {
-    if (!confirm('¿Eliminar usuario?')) return;
+async function saveTransaction(txHash, from, to, amount) {
     try {
-        await fetch(`${API_USERS}/${id}`, { method: 'DELETE' });
-        fetchUsers();
+        await fetch(API_TRANSACTIONS, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                tx_hash: txHash,
+                from_address: from,
+                to_address: to,
+                amount: amount
+            })
+        });
+        console.log("✅ Transacción guardada en DB");
+        fetchTransactions(); // Recargar tabla
     } catch (error) {
-        console.error("Error borrando:", error);
+        console.error("❌ Error guardando en DB:", error);
     }
-};
-
-// Modal Usuario
-window.openModal = function () { // Llamado desde HTML (+ Nuevo Usuario)
-    openUserModal();
-};
-
-window.openUserModal = function (user = null) {
-    userModal.classList.add('active');
-    if (user) {
-        isEditingUser = true;
-        userModalTitle.textContent = "Editar Usuario";
-        document.getElementById('userId').value = user.id;
-        document.getElementById('nombre').value = user.nombre;
-        document.getElementById('apellido').value = user.apellido;
-        document.getElementById('dni').value = user.dni;
-        document.getElementById('edad').value = user.edad;
-        document.getElementById('sexo').value = user.sexo;
-    } else {
-        isEditingUser = false;
-        userModalTitle.textContent = "Nuevo Usuario";
-        userForm.reset();
-        document.getElementById('userId').value = '';
-    }
-};
-
-window.closeModal = function () {
-    closeUserModal();
-};
-
-function closeUserModal() {
-    userModal.classList.remove('active');
-}
-
-// Click fuera para cerrar (Usuario)
-if (userModal) {
-    userModal.addEventListener('click', (e) => {
-        if (e.target === userModal) closeUserModal();
-    });
-}
-
-
-// ==========================================
-// --- GESTIÓN DE CURSOS ---
-// ==========================================
-
-async function fetchCourses() {
-    if (!courseTableBody) return console.error("❌ Error: No se encontró courseTableBody");
-
-    try {
-        const res = await fetch(API_COURSES);
-        if (!res.ok) throw new Error('Error en respuesta API Cursos');
-        const courses = await res.json();
-        renderCourses(courses);
-    } catch (error) {
-        console.error('❌ Error cargando cursos:', error);
-        courseTableBody.innerHTML = '<tr><td colspan="6" style="color: #ff6b6b; text-align: center;">Error cargando cursos.</td></tr>';
-    }
-}
-
-function renderCourses(courses) {
-    courseTableBody.innerHTML = '';
-    if (!Array.isArray(courses) || courses.length === 0) {
-        courseTableBody.innerHTML = '<tr><td colspan="6" style="text-align:center; opacity: 0.7;">No hay cursos registrados</td></tr>';
-        return;
-    }
-
-    courses.forEach(c => {
-        const row = document.createElement('tr');
-        const fecha = c.fecha_inicio ? new Date(c.fecha_inicio).toLocaleDateString() : '-';
-
-        row.innerHTML = `
-            <td>#${c.id}</td>
-            <td><strong>${c.nombre}</strong></td>
-            <td>${c.nivel}</td>
-            <td>${fecha}</td>
-            <td>${c.duracion_semanas} sem</td>
-            <td>
-                <button class="btn btn-sm btn-edit" onclick='openCourseModal(${JSON.stringify(c).replace(/"/g, "&quot;")})'>✏️</button>
-                <button class="btn btn-sm btn-delete" onclick="deleteCourse(${c.id})">🗑️</button>
-            </td>
-        `;
-        courseTableBody.appendChild(row);
-    });
-}
-
-// Guardar Curso
-if (courseForm) {
-    courseForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-
-        const data = {
-            nombre: document.getElementById('courseNombre').value,
-            descripcion: document.getElementById('courseDescripcion').value,
-            nivel: document.getElementById('courseNivel').value,
-            fecha_inicio: document.getElementById('courseFecha').value,
-            duracion_semanas: document.getElementById('courseDuracion').value
-        };
-
-        const id = document.getElementById('courseId').value;
-        const method = isEditingCourse ? 'PUT' : 'POST';
-        const url = isEditingCourse ? `${API_COURSES}/${id}` : API_COURSES;
-
-        try {
-            const res = await fetch(url, {
-                method: method,
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data)
-            });
-
-            if (res.ok) {
-                closeCourseModal();
-                fetchCourses();
-            } else {
-                const err = await res.json();
-                alert('Error: ' + (err.error || 'Desconocido'));
-            }
-        } catch (error) {
-            console.error(error);
-            alert('Error de red al guardar curso');
-        }
-    });
-}
-
-// Borrar Curso
-window.deleteCourse = async function (id) {
-    if (!confirm('¿Eliminar curso?')) return;
-    try {
-        await fetch(`${API_COURSES}/${id}`, { method: 'DELETE' });
-        fetchCourses();
-    } catch (error) {
-        console.error("Error borrando curso:", error);
-    }
-};
-
-// Modal Curso
-window.openCourseModal = function (course = null) {
-    courseModal.classList.add('active');
-    if (course && course.id) { // Fix: check if it's a course object or event (if called w/o args)
-        isEditingCourse = true;
-        courseModalTitle.textContent = "Editar Curso";
-        document.getElementById('courseId').value = course.id;
-        document.getElementById('courseNombre').value = course.nombre;
-        document.getElementById('courseDescripcion').value = course.descripcion || '';
-        document.getElementById('courseNivel').value = course.nivel;
-        if (course.fecha_inicio) document.getElementById('courseFecha').value = course.fecha_inicio.split('T')[0];
-        document.getElementById('courseDuracion').value = course.duracion_semanas;
-    } else {
-        isEditingCourse = false;
-        courseModalTitle.textContent = "Nuevo Curso";
-        courseForm.reset();
-        document.getElementById('courseId').value = '';
-    }
-};
-
-window.closeCourseModal = function () {
-    courseModal.classList.remove('active');
-};
-
-// Click fuera para cerrar (Curso)
-if (courseModal) {
-    courseModal.addEventListener('click', (e) => {
-        if (e.target === courseModal) closeCourseModal();
-    });
 }
 
 // ==========================================
 // --- INTEGRACIÓN WEB3 (METAMASK) ---
 // ==========================================
 
-const POLYGON_CHAIN_ID = '0x89'; // 137 en hex
-const USDC_ADDRESS = '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359'; // Native USDC en Polygon
-const USDC_ABI = [
-    "function balanceOf(address owner) view returns (uint256)",
-    "function decimals() view returns (uint8)"
-];
-
-const btnConnect = document.getElementById('btnConnect');
-const walletInfo = document.getElementById('walletInfo');
-const walletAddress = document.getElementById('walletAddress');
-const balanceMatic = document.getElementById('balanceMatic');
-const balanceUsdc = document.getElementById('balanceUsdc');
-
-let provider, signer, userAddress;
-
 if (btnConnect) {
     btnConnect.addEventListener('click', connectWallet);
 }
 
 async function connectWallet() {
-    if (!window.ethereum) {
-        alert("⚠️ MetaMask no está instalado.");
-        return;
-    }
-
+    if (!window.ethereum) return alert("⚠️ Instala MetaMask");
     try {
-        // 1. Conectar Provider
         provider = new ethers.providers.Web3Provider(window.ethereum);
         await provider.send("eth_requestAccounts", []);
         signer = provider.getSigner();
         userAddress = await signer.getAddress();
 
-        // 2. Verificar Red (Polygon)
         await checkNetwork();
 
-        // 3. UI Update
         btnConnect.style.display = 'none';
         walletInfo.classList.remove('hidden');
         walletAddress.textContent = `${userAddress.substring(0, 6)}...${userAddress.substring(38)}`;
 
-        // 4. Leer Balances
         fetchBalances();
 
-        // Listeners para cambios
-        window.ethereum.on('accountsChanged', (accounts) => {
-            if (accounts.length === 0) location.reload();
-            else connectWallet(); // Reconectar con nueva cuenta
-        });
-
-        window.ethereum.on('chainChanged', () => {
-            window.location.reload();
-        });
-
+        window.ethereum.on('accountsChanged', () => location.reload());
+        window.ethereum.on('chainChanged', () => location.reload());
     } catch (error) {
-        console.error("Error Web3:", error);
-        alert("Error conectando wallet: " + error.message);
+        console.error(error);
+        alert("Error Wallet: " + error.message);
     }
 }
 
@@ -344,106 +119,73 @@ async function checkNetwork() {
     const network = await provider.getNetwork();
     if (network.chainId !== 137) {
         try {
-            await window.ethereum.request({
-                method: 'wallet_switchEthereumChain',
-                params: [{ chainId: POLYGON_CHAIN_ID }],
-            });
-        } catch (switchError) {
-            // Si la red no existe, agregarla (Opcional, pero recomendado)
-            if (switchError.code === 4902) {
-                alert("Por favor agrega la red Polygon Mainnet a tu MetaMask");
-            } else {
-                alert("Debes cambiar a la red Polygon para usar esta App.");
-                throw switchError;
-            }
+            await window.ethereum.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: POLYGON_CHAIN_ID }] });
+        } catch (e) {
+            alert("Cambia a Polygon Mainnet");
         }
     }
 }
 
 async function fetchBalances() {
     try {
-        // A. Balance Nativo (MATIC/POL)
         const balance = await provider.getBalance(userAddress);
-        const matic = ethers.utils.formatEther(balance);
-        balanceMatic.textContent = parseFloat(matic).toFixed(2);
+        balanceMatic.textContent = parseFloat(ethers.utils.formatEther(balance)).toFixed(2);
 
-        // B. Balance USDC
         const usdcContract = new ethers.Contract(USDC_ADDRESS, USDC_ABI, provider);
         const usdcRaw = await usdcContract.balanceOf(userAddress);
-        const decimals = await usdcContract.decimals(); // Generalmente 6
-        const usdc = ethers.utils.formatUnits(usdcRaw, decimals);
-        balanceUsdc.textContent = parseFloat(usdc).toFixed(2);
-
-    } catch (error) {
-        console.error("Error leyendo balances:", error);
-        balanceMatic.textContent = "Err";
-        balanceUsdc.textContent = "Err";
+        balanceUsdc.textContent = parseFloat(ethers.utils.formatUnits(usdcRaw, 6)).toFixed(2);
+    } catch (e) {
+        console.error(e);
     }
 }
 
-// 5. Enviar Tokens (MATIC)
-const btnSend = document.getElementById('btnSend');
-const txTo = document.getElementById('txTo');
-const txAmount = document.getElementById('txAmount');
-const txStatus = document.getElementById('txStatus');
+// ==========================================
+// --- ENVIAR TOKENS ---
+// ==========================================
 
 if (btnSend) {
     btnSend.addEventListener('click', sendMatic);
 }
 
 async function sendMatic() {
-    if (!signer) return alert("❌ Primero conecta tu Wallet");
+    if (!signer) return alert("❌ Conecta tu Wallet primero");
 
     const to = txTo.value.trim();
     const amount = txAmount.value;
 
-    // Validaciones
-    if (!ethers.utils.isAddress(to)) {
-        alert("❌ Dirección de billetera inválida");
-        return;
-    }
-    if (!amount || amount <= 0) {
-        alert("❌ Ingresa un monto válido");
-        return;
-    }
+    if (!ethers.utils.isAddress(to)) return alert("❌ Dirección inválida");
+    if (!amount || amount <= 0) return alert("❌ Monto inválido");
 
     try {
         btnSend.disabled = true;
         btnSend.textContent = "Firmando... ✍️";
-        txStatus.textContent = "Esperando confirmación en Wallet...";
+        txStatus.textContent = "Esperando confirmación...";
 
-        // Parsear monto a Wei (18 decimales)
-        const value = ethers.utils.parseEther(amount);
-
-        // Enviar Transacción
         const tx = await signer.sendTransaction({
             to: to,
-            value: value
+            value: ethers.utils.parseEther(amount)
         });
 
         btnSend.textContent = "Enviando... 🚀";
-        txStatus.innerHTML = `Tx enviada! Hash: <a href="https://polygonscan.com/tx/${tx.hash}" target="_blank" style="color: #4ade80;">${tx.hash.substring(0, 10)}...</a>`;
+        txStatus.innerHTML = `Tx enviada: <a href="https://polygonscan.com/tx/${tx.hash}" target="_blank">${tx.hash.substring(0, 8)}...</a>`;
 
-        // Esperar recibo
-        await tx.wait();
+        await tx.wait(); // Esperar confirmación en Blockchain
+
+        txStatus.textContent = "✅ Confirmada! Guardando...";
+
+        // Guardar en nuestra DB
+        await saveTransaction(tx.hash, userAddress, to, amount);
 
         btnSend.textContent = "Enviar 🚀";
         btnSend.disabled = false;
-        txStatus.textContent = "✅ Transacción confirmada exitosamente!";
         txTo.value = '';
         txAmount.value = '';
-
-        fetchBalances(); // Actualizar saldo
+        fetchBalances();
 
     } catch (error) {
         console.error(error);
         btnSend.disabled = false;
         btnSend.textContent = "Enviar 🚀";
-
-        if (error.code === 4001) {
-            txStatus.textContent = "❌ Usuario rechazó la transacción";
-        } else {
-            txStatus.textContent = "❌ Error: " + (error.reason || error.message);
-        }
+        txStatus.textContent = "❌ Error: " + (error.reason || error.message);
     }
 }
