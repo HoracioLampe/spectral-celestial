@@ -480,4 +480,38 @@ window.changePage = function (direction) {
     renderBatchTransactions();
 };
 
-// ... (Rest of Upload Logic remains same)
+// Upload Logic restored
+async function uploadBatchFile() {
+    const fileInput = document.getElementById('batchFile');
+    if (!fileInput.files[0]) return alert("Selecciona un archivo Excel");
+    if (!currentBatchId) return alert("No hay lote activo");
+
+    const formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+
+    try {
+        btnUploadBatch.textContent = "Procesando...";
+        btnUploadBatch.disabled = true;
+        uploadStatus.textContent = "Leyendo Excel y Calculando...";
+
+        const res = await fetch(`/api/batches/${currentBatchId}/upload`, {
+            method: 'POST',
+            body: formData
+        });
+        const result = await res.json();
+
+        if (result.batch) {
+            updateDetailView(result.batch, result.transactions);
+            uploadStatus.textContent = "✅ Carga exitosa";
+        } else {
+            throw new Error(result.error || "Error en respuesta");
+        }
+
+    } catch (error) {
+        console.error(error);
+        uploadStatus.textContent = "❌ Error: " + error.message;
+    } finally {
+        btnUploadBatch.textContent = "Subir y Calcular 📤";
+        btnUploadBatch.disabled = false;
+    }
+}
