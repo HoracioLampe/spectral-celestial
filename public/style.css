@@ -65,6 +65,52 @@ body {
     animation-delay: -5s;
 }
 
+/* Hash Links */
+.hash-link {
+    color: #ffffff;
+    /* White for better contrast */
+    text-decoration: none;
+    border-bottom: 1px dotted rgba(255, 255, 255, 0.5);
+    transition: all 0.3s ease;
+}
+
+.hash-link:hover {
+    color: var(--secondary-accent);
+    border-bottom: 1px solid var(--secondary-accent);
+}
+
+/* Batch Table Specific Widths */
+#batchTable th:nth-child(1) {
+    width: 10%;
+}
+
+/* ID Ref */
+#batchTable th:nth-child(2) {
+    width: 35%;
+}
+
+/* Wallet - Wider */
+#batchTable th:nth-child(3) {
+    width: 15%;
+}
+
+/* USDC */
+#batchTable th:nth-child(4) {
+    width: 25%;
+}
+
+/* Hash */
+#batchTable th:nth-child(5) {
+    width: 15%;
+}
+
+/* Estado */
+
+/* Ensure wallet cell doesn't wrap */
+#batchTable td:nth-child(2) {
+    white-space: nowrap;
+}
+
 .orb-3 {
     width: 300px;
     height: 300px;
