@@ -47,6 +47,28 @@ const initDB = async () => {
 };
 initDB();
 
+// Endpoint de Ayuda: Forzar creación de tabla manualmente
+app.get('/setup', async (req, res) => {
+    try {
+        const client = await pool.connect();
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                nombre VARCHAR(100),
+                apellido VARCHAR(100),
+                dni VARCHAR(20) UNIQUE,
+                edad INTEGER,
+                sexo VARCHAR(20),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+        client.release();
+        res.send("<h1>✅ Tabla 'users' creada/verificada correctamente.</h1><p>Ya puedes volver atrás y guardar usuarios.</p>");
+    } catch (err) {
+        res.status(500).send(`<h1>❌ Error creando tabla:</h1><pre>${err.message}</pre>`);
+    }
+});
+
 // --- API Endpoints ---
 
 // GET: Obtener todos los usuarios
