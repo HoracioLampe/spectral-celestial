@@ -373,6 +373,7 @@ window.openBatchDetail = async function (id) {
     currentBatchId = id;
     batchListView.classList.add('hidden');
     batchDetailView.classList.remove('hidden');
+    window.scrollTo(0, 0); // Scroll to top for better ux
 
     // Reset view
     detailBatchTitle.textContent = "Cargando...";

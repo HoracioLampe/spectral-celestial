@@ -151,15 +151,16 @@ header {
     box-shadow: 0 4px 15px rgba(111, 66, 193, 0.3);
 }
 
+/* Utility Classes */
+.hidden {
+    display: none !important;
+}
+
 .wallet-info {
     display: flex;
     flex-direction: column;
     align-items: flex-end;
     gap: 0.25rem;
-}
-
-.wallet-info.hidden {
-    display: none;
 }
 
 .badge-address {
