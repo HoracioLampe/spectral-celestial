@@ -93,26 +93,43 @@ if (btnConnect) {
 }
 
 if (btnDisconnect) {
-    btnDisconnect.addEventListener('click', switchAccount);
+    btnDisconnect.addEventListener('click', disconnectWallet);
 }
 
-async function switchAccount() {
-    try {
-        await window.ethereum.request({
-            method: "wallet_requestPermissions",
-            params: [{ eth_accounts: {} }]
-        });
-        // La app se recargará automáticamente por el evento 'accountsChanged'
-    } catch (error) {
-        console.error("Error cambiando cuenta:", error);
-    }
+function disconnectWallet() {
+    // 1. Ocultar info de wallet
+    walletInfo.classList.add('hidden');
+    btnConnect.style.display = 'block';
+
+    // 2. Limpiar variables locales
+    userAddress = null;
+    signer = null;
+    provider = null;
+
+    // 3. Marcar flag para forzar selección al reconectar
+    localStorage.setItem('forceWalletSelect', 'true');
+    console.log("🔌 Desconectado (Simulado). Próxima conexión pedirá cuenta.");
 }
 
 async function connectWallet() {
     if (!window.ethereum) return alert("⚠️ Instala MetaMask");
     try {
+        const forceSelect = localStorage.getItem('forceWalletSelect');
+
+        // Si venimos de un "Logout", forzamos el selector de cuentas
+        if (forceSelect === 'true') {
+            await window.ethereum.request({
+                method: "wallet_requestPermissions",
+                params: [{ eth_accounts: {} }]
+            });
+            localStorage.removeItem('forceWalletSelect');
+        }
+
         provider = new ethers.providers.Web3Provider(window.ethereum);
+
+        // Solicitar cuentas (si ya hay permisos, las devuelve directo)
         await provider.send("eth_requestAccounts", []);
+
         signer = provider.getSigner();
         userAddress = await signer.getAddress();
 
@@ -128,7 +145,10 @@ async function connectWallet() {
         window.ethereum.on('chainChanged', () => location.reload());
     } catch (error) {
         console.error(error);
-        alert("Error Wallet: " + error.message);
+        // Si el usuario cancela, no mostramos alerta intrusiva
+        if (error.code !== 4001) {
+            alert("Error Wallet: " + error.message);
+        }
     }
 }
 
