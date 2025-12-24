@@ -273,7 +273,13 @@ const merkleResultZone = document.getElementById('merkleResultZone');
 const batchFunderAddress = document.getElementById('batchFunderAddress');
 const btnGenerateMerkle = document.getElementById('btnGenerateMerkle');
 const displayMerkleRoot = document.getElementById('displayMerkleRoot');
+const displayMerkleRoot = document.getElementById('displayMerkleRoot');
 const merkleStatus = document.getElementById('merkleStatus');
+// New Stats elements
+const merkleTotalAmount = document.getElementById('merkleTotalAmount');
+const merkleFounderBalance = document.getElementById('merkleFounderBalance');
+const merkleResultTotal = document.getElementById('merkleResultTotal');
+const merkleResultFunder = document.getElementById('merkleResultFunder');
 
 const batchTableBody = document.getElementById('batchTableBody');
 
@@ -631,3 +637,41 @@ async function generateMerkleTree() {
         btnGenerateMerkle.textContent = "Generar Merkle Tree ⚙️";
     }
 }
+
+async function checkFounderBalance() {
+    const address = batchFunderAddress.value.trim();
+    if (!address || !ethers.utils.isAddress(address)) {
+        if (merkleFounderBalance) merkleFounderBalance.textContent = "---";
+        return;
+    }
+
+    if (merkleFounderBalance) merkleFounderBalance.textContent = "Cargando...";
+
+    try {
+        // Try using window.ethereum if available, else standard provider
+        let provider;
+        if (window.ethereum) {
+            provider = new ethers.providers.Web3Provider(window.ethereum);
+        } else {
+            // Fallback public RPC for Polygon
+            provider = new ethers.providers.JsonRpcProvider("https://polygon-rpc.com");
+        }
+
+        const usdcAddress = "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359"; // Polygon USDC Native
+        const minABI = [
+            "function balanceOf(address owner) view returns (uint256)"
+        ];
+        const contract = new ethers.Contract(usdcAddress, minABI, provider);
+        const usdcBal = await contract.balanceOf(address);
+        const usdcFormatted = ethers.utils.formatUnits(usdcBal, 6); // USDC is 6 decimals
+
+        if (merkleFounderBalance) {
+            merkleFounderBalance.textContent = `$${parseFloat(usdcFormatted).toFixed(2)} USDC`;
+        }
+
+    } catch (error) {
+        console.error("Balance Error:", error);
+        if (merkleFounderBalance) merkleFounderBalance.textContent = "Error";
+    }
+}
+window.checkFounderBalance = checkFounderBalance;
