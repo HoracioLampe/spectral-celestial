@@ -217,6 +217,34 @@ app.delete('/api/courses/:id', async (req, res) => {
     }
 });
 
+// --- API Endpoints: TRANSACCIONES ---
+
+// GET: Obtener historial
+app.get('/api/transactions', async (req, res) => {
+    try {
+        if (!process.env.DATABASE_URL) return res.json([]);
+        const result = await pool.query('SELECT * FROM transactions ORDER BY timestamp DESC');
+        res.json(result.rows);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST: Guardar transacción
+app.post('/api/transactions', async (req, res) => {
+    const { tx_hash, from_address, to_address, amount } = req.body;
+    try {
+        const query = 'INSERT INTO transactions (tx_hash, from_address, to_address, amount) VALUES ($1, $2, $3, $4) RETURNING *';
+        const values = [tx_hash, from_address, to_address, amount.toString()];
+        const result = await pool.query(query, values);
+        res.status(201).json(result.rows[0]);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // Fallback para SPA (si fuera necesario router frontend, pero aquí es simple)
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
