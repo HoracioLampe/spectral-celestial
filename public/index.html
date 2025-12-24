@@ -50,47 +50,123 @@
                 </tbody>
             </table>
         </div>
+
+        <!-- SECCIÓN CURSOS -->
+        <hr style="margin: 3rem 0; border: 0; border-top: 1px solid rgba(255,255,255,0.1);">
+
+        <div class="top-bar">
+            <h2>📚 Cursos de Tecnología</h2>
+            <button class="btn btn-primary" onclick="openCourseModal()">+ Nuevo Curso</button>
+        </div>
+
+        <div class="table-container">
+            <table id="coursesTable">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Nombre</th>
+                        <th>Nivel</th>
+                        <th>Fecha Inicio</th>
+                        <th>Duración</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody id="coursesTableBody">
+                    <tr>
+                        <td colspan="6" style="text-align: center;">Cargando cursos...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
     </main>
 
-    <!-- Modal Formulario -->
+    <!-- Modal Formulario Usuario -->
     <div class="modal" id="userModal">
+        <!-- ... (contenido existente) ... -->
+    </div>
+
+    <!-- Modal Formulario Curso -->
+    <div class="modal" id="courseModal">
         <div class="modal-content">
             <div class="modal-header">
-                <h2 id="modalTitle">Nuevo Usuario</h2>
-                <button class="close-modal" onclick="closeModal()">×</button>
+                <h2 id="courseModalTitle">Nuevo Curso</h2>
+                <button class="close-modal" onclick="closeCourseModal()">×</button>
             </div>
-            <form id="userForm">
-                <input type="hidden" id="userId">
+            <form id="courseForm">
+                <input type="hidden" id="courseId">
+
                 <div class="form-group">
-                    <label>Nombre</label>
-                    <input type="text" id="nombre" required>
+                    <label>Nombre del Curso</label>
+                    <input type="text" id="courseNombre" required placeholder="Ej: Fullstack Python">
                 </div>
+
                 <div class="form-group">
-                    <label>Apellido</label>
-                    <input type="text" id="apellido" required>
+                    <label>Descripción</label>
+                    <textarea id="courseDescripcion" rows="3" placeholder="Breve temario..."></textarea>
                 </div>
+
                 <div class="form-group">
-                    <label>DNI</label>
-                    <input type="text" id="dni" required>
+                    <label>Nivel</label>
+                    <select id="courseNivel">
+                        <option value="Básico">Básico</option>
+                        <option value="Intermedio">Intermedio</option>
+                        <option value="Avanzado">Avanzado</option>
+                    </select>
                 </div>
+
                 <div class="form-group" style="display: flex; gap: 1rem;">
                     <div style="flex: 1;">
-                        <label>Edad</label>
-                        <input type="number" id="edad" required>
+                        <label>Fecha Inicio</label>
+                        <input type="date" id="courseFecha">
                     </div>
                     <div style="flex: 1;">
-                        <label>Sexo</label>
-                        <select id="sexo" required>
-                            <option value="">Seleccionar</option>
-                            <option value="M">Masculino</option>
-                            <option value="F">Femenino</option>
-                            <option value="O">Otro</option>
-                        </select>
+                        <label>Duración (Semanas)</label>
+                        <input type="number" id="courseDuracion" min="1" placeholder="Ej: 12">
                     </div>
                 </div>
-                <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 1rem;">Guardar</button>
+
+                <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 1rem;">Guardar
+                    Curso</button>
             </form>
         </div>
+    </div>
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2 id="modalTitle">Nuevo Usuario</h2>
+            <button class="close-modal" onclick="closeModal()">×</button>
+        </div>
+        <form id="userForm">
+            <input type="hidden" id="userId">
+            <div class="form-group">
+                <label>Nombre</label>
+                <input type="text" id="nombre" required>
+            </div>
+            <div class="form-group">
+                <label>Apellido</label>
+                <input type="text" id="apellido" required>
+            </div>
+            <div class="form-group">
+                <label>DNI</label>
+                <input type="text" id="dni" required>
+            </div>
+            <div class="form-group" style="display: flex; gap: 1rem;">
+                <div style="flex: 1;">
+                    <label>Edad</label>
+                    <input type="number" id="edad" required>
+                </div>
+                <div style="flex: 1;">
+                    <label>Sexo</label>
+                    <select id="sexo" required>
+                        <option value="">Seleccionar</option>
+                        <option value="M">Masculino</option>
+                        <option value="F">Femenino</option>
+                        <option value="O">Otro</option>
+                    </select>
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 1rem;">Guardar</button>
+        </form>
+    </div>
     </div>
 
     <script src="app.js"></script>

@@ -37,6 +37,18 @@ const initDB = async () => {
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
             `);
+            await client.query(`
+                CREATE TABLE IF NOT EXISTS courses (
+                    id SERIAL PRIMARY KEY,
+                    nombre VARCHAR(150),
+                    descripcion TEXT,
+                    nivel VARCHAR(50),
+                    fecha_inicio DATE,
+                    duracion_semanas INTEGER,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            `);
+            console.log("✅ Tabla 'courses' verificada/creada.");
             console.log("✅ Tabla 'users' verificada/creada.");
         } finally {
             client.release();
@@ -47,7 +59,7 @@ const initDB = async () => {
 };
 initDB();
 
-// Endpoint de Ayuda: Forzar creación de tabla manualmente
+// Endpoint de Ayuda: Forzar creación de tablas manualmente
 app.get('/setup', async (req, res) => {
     try {
         const client = await pool.connect();
@@ -61,19 +73,28 @@ app.get('/setup', async (req, res) => {
                 sexo VARCHAR(20),
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
+            CREATE TABLE IF NOT EXISTS courses (
+                id SERIAL PRIMARY KEY,
+                nombre VARCHAR(150),
+                descripcion TEXT,
+                nivel VARCHAR(50),
+                fecha_inicio DATE,
+                duracion_semanas INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
         `);
         client.release();
-        res.send("<h1>✅ Tabla 'users' creada/verificada correctamente.</h1><p>Ya puedes volver atrás y guardar usuarios.</p>");
+        res.send("<h1>✅ Tablas 'users' y 'courses' creadas/verificadas.</h1><p>Todo listo.</p>");
     } catch (err) {
         res.status(500).send(`
-            <h1>❌ Error creando tabla:</h1>
+            <h1>❌ Error creando tablas:</h1>
             <p><strong>Mensaje:</strong> ${err.message}</p>
             <pre>${JSON.stringify(err, null, 2)}</pre>
         `);
     }
 });
 
-// --- API Endpoints ---
+// --- API Endpoints: USUARIOS ---
 
 // GET: Obtener todos los usuarios
 app.get('/api/users', async (req, res) => {
@@ -120,6 +141,58 @@ app.delete('/api/users/:id', async (req, res) => {
     try {
         await pool.query('DELETE FROM users WHERE id=$1', [id]);
         res.json({ message: "Usuario eliminado" });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// --- API Endpoints: CURSOS ---
+
+// GET: Obtener todos los cursos
+app.get('/api/courses', async (req, res) => {
+    try {
+        if (!process.env.DATABASE_URL) return res.json([]);
+        const result = await pool.query('SELECT * FROM courses ORDER BY id DESC');
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST: Crear curso
+app.post('/api/courses', async (req, res) => {
+    const { nombre, descripcion, nivel, fecha_inicio, duracion_semanas } = req.body;
+    try {
+        const query = 'INSERT INTO courses (nombre, descripcion, nivel, fecha_inicio, duracion_semanas) VALUES ($1, $2, $3, $4, $5) RETURNING *';
+        const values = [nombre, descripcion, nivel, fecha_inicio, duracion_semanas];
+        const result = await pool.query(query, values);
+        res.status(201).json(result.rows[0]);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// PUT: Editar curso
+app.put('/api/courses/:id', async (req, res) => {
+    const { id } = req.params;
+    const { nombre, descripcion, nivel, fecha_inicio, duracion_semanas } = req.body;
+    try {
+        const query = 'UPDATE courses SET nombre=$1, descripcion=$2, nivel=$3, fecha_inicio=$4, duracion_semanas=$5 WHERE id=$6 RETURNING *';
+        const values = [nombre, descripcion, nivel, fecha_inicio, duracion_semanas, id];
+        const result = await pool.query(query, values);
+        if (result.rows.length === 0) return res.status(404).json({ error: "Curso no encontrado" });
+        res.json(result.rows[0]);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// DELETE: Borrar curso
+app.delete('/api/courses/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        await pool.query('DELETE FROM courses WHERE id=$1', [id]);
+        res.json({ message: "Curso eliminado" });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
