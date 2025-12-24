@@ -292,7 +292,7 @@ async function fetchBatches() {
 function renderBatchesList(batches) {
     batchesListBody.innerHTML = '';
     if (batches.length === 0) {
-        batchesListBody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding: 2rem;">No hay lotes creados. ¡Crea uno nuevo!</td></tr>';
+        batchesListBody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding: 2rem;">No hay lotes creados. ¡Crea uno nuevo!</td></tr>';
         return;
     }
 
@@ -300,11 +300,15 @@ function renderBatchesList(batches) {
         const tr = document.createElement('tr');
         const statusBadge = getStatusBadge(b.status);
         const progress = `${b.sent_transactions || 0} / ${b.total_transactions || 0}`;
-        const total = b.total_usdc ? `$${parseFloat(b.total_usdc).toFixed(2)}` : '-';
+        // Fix: Check strict null so 0 is displayed
+        const total = (b.total_usdc !== null && b.total_usdc !== undefined) ? `$${parseFloat(b.total_usdc).toFixed(2)}` : '-';
+        const date = new Date(b.created_at).toLocaleDateString() + ' ' + new Date(b.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
         tr.innerHTML = `
             <td style="font-weight: bold;">${b.batch_number}</td>
             <td>${b.detail || '-'}</td>
+            <td style="font-size: 0.85rem; opacity: 0.8; max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${b.description || ''}">${b.description || '-'}</td>
+            <td style="font-size: 0.8rem; opacity: 0.7;">${date}</td>
             <td>${statusBadge}</td>
             <td style="color:#4ade80;">${total}</td>
             <td>${progress}</td>
