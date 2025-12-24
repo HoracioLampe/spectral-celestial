@@ -129,6 +129,8 @@ function closeModal() {
 form.addEventListener('submit', saveUser);
 
 // Cerrar al hacer click fuera
+modal.addEventListener('click', (e) => {
+    if (e.target === modal) closeModal();
 });
 
 // ==========================================
@@ -263,4 +265,6 @@ window.editCourse = function (c) {
 // Cerrar modal curso al click afuera
 courseModal.addEventListener('click', (e) => {
     if (e.target === courseModal) closeCourseModal();
+});
+});
 
