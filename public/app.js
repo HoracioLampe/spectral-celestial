@@ -273,7 +273,6 @@ const merkleResultZone = document.getElementById('merkleResultZone');
 const batchFunderAddress = document.getElementById('batchFunderAddress');
 const btnGenerateMerkle = document.getElementById('btnGenerateMerkle');
 const displayMerkleRoot = document.getElementById('displayMerkleRoot');
-const displayMerkleRoot = document.getElementById('displayMerkleRoot');
 const merkleStatus = document.getElementById('merkleStatus');
 // New Stats elements
 const merkleTotalAmount = document.getElementById('merkleTotalAmount');
@@ -284,8 +283,6 @@ const merkleResultFunder = document.getElementById('merkleResultFunder');
 const batchTableBody = document.getElementById('batchTableBody');
 
 // Event Listeners
-if (btnOpenBatchModal) btnOpenBatchModal.onclick = () => batchModal.classList.add('active');
-if (btnSaveBatch) btnSaveBatch.onclick = createBatch;
 if (btnOpenBatchModal) btnOpenBatchModal.onclick = () => batchModal.classList.add('active');
 if (btnSaveBatch) btnSaveBatch.onclick = createBatch;
 if (btnUploadBatch) btnUploadBatch.onclick = uploadBatchFile;

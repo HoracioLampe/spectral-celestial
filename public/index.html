@@ -170,11 +170,22 @@
                     <h3>🌳 Merkle Tree Verification</h3>
 
                     <div id="merkleInputZone">
-                        <label>Funder Wallet (Quien enviará el lote)</label>
-                        <div style="display: flex; gap: 1rem; margin-top: 0.5rem;">
-                            <input type="text" id="batchFunderAddress" class="input-glass" placeholder="0x...">
+                        <label>Founder Wallet (Quien enviará el lote)</label>
+                        <div style="display: flex; gap: 1rem; margin-top: 0.5rem; align-items: center;">
+                            <input type="text" id="batchFunderAddress" class="input-glass" placeholder="0x..."
+                                onchange="checkFounderBalance()">
                             <button id="btnGenerateMerkle" class="btn btn-primary" style="white-space: nowrap;">Generar
                                 Merkle Tree ⚙️</button>
+                        </div>
+                        <div style="display: flex; gap: 2rem; margin-top: 1rem; font-size: 0.9rem; opacity: 0.9;">
+                            <div>
+                                <span style="color: #94a3b8;">Total a Transferir:</span>
+                                <span id="merkleTotalAmount" style="color: #4ade80; font-weight: bold;">$0.00</span>
+                            </div>
+                            <div>
+                                <span style="color: #94a3b8;">Balance Founder:</span>
+                                <span id="merkleFounderBalance" style="color: #f472b6; font-weight: bold;">---</span>
+                            </div>
                         </div>
                     </div>
 
@@ -183,6 +194,16 @@
                         <div
                             style="background: rgba(0,0,0,0.3); padding: 0.8rem; border-radius: 8px; font-family: monospace; word-break: break-all; color: #a78bfa; border: 1px dashed #8b5cf6;">
                             <span id="displayMerkleRoot">Not Generated</span>
+                        </div>
+                        <div style="display: flex; gap: 2rem; margin-top: 1rem; font-size: 0.9rem; opacity: 0.9;">
+                            <div>
+                                <span style="color: #94a3b8;">Total Lote:</span>
+                                <span id="merkleResultTotal" style="color: #4ade80; font-weight: bold;">$0.00</span>
+                            </div>
+                            <div>
+                                <span style="color: #94a3b8;">Funder:</span>
+                                <span id="merkleResultFunder" style="color: #cbd5e1; font-family: monospace;">---</span>
+                            </div>
                         </div>
                     </div>
                     <p id="merkleStatus" class="status-text"></p>
