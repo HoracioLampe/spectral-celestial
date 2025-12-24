@@ -194,11 +194,11 @@ header {
     margin-bottom: 2rem;
 }
 
-/* Table Styles */
+/* Table Styles Updated */
 .table-container {
     width: 100%;
+    /* overflow-x: auto;  <-- Re-enable scroll if strictly needed, but let's try to fit first */
     overflow-x: hidden;
-    /* Prevent scroll */
     background: rgba(0, 0, 0, 0.2);
     border-radius: 12px;
 }
@@ -208,45 +208,40 @@ table {
     border-collapse: collapse;
     margin-top: 1rem;
     color: #cbd5e1;
-    table-layout: fixed;
-    /* Force fixed width */
+    table-layout: auto;
+    /* Let browser decide widths based on content */
 }
 
 th,
 td {
-    padding: 0.8rem;
+    padding: 0.8rem 1rem;
+    /* More horizontal padding */
     text-align: left;
     border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    white-space: nowrap;
+    /* Prevent vertical stacking of headers */
+    vertical-align: middle;
+}
+
+/* Specific overrides for long text columns */
+td:nth-child(2),
+/* Detalle */
+td:nth-child(3) {
+    /* Descripcion */
     white-space: normal;
-    /* Allow wrapping */
-    word-break: break-word;
-    /* Break long words like hashes */
-    overflow: visible;
-    /* Show content */
-    vertical-align: top;
+    /* Allow text to wrap only in these long columns */
+    max-width: 200px;
+    /* Limit width to force wrap instead of scroll */
 }
 
-/* Column specific widths can be handled here or inline */
-th:nth-child(1) {
-    width: 10%;
+th {
+    font-weight: 600;
+    color: var(--accent-color);
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    /* Slightly smaller to fit */
+    letter-spacing: 0.5px;
 }
-
-/* Lote / ID */
-th:nth-child(2) {
-    width: 25%;
-}
-
-/* Detalle / Wallet */
-th:nth-child(3) {
-    width: 35%;
-}
-
-/* Desc / USDC */
-th:nth-child(4) {
-    width: 15%;
-}
-
-/* Fecha / Hash */
 
 tr:hover {
     background: rgba(255, 255, 255, 0.02);
