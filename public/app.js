@@ -3,6 +3,7 @@ const API_TRANSACTIONS = '/api/transactions';
 // --- Elementos DOM ---
 const transactionsTableBody = document.getElementById('transactionsTableBody');
 const btnConnect = document.getElementById('btnConnect');
+const btnDisconnect = document.getElementById('btnDisconnect'); // Nuevo botón
 const walletInfo = document.getElementById('walletInfo');
 const walletAddress = document.getElementById('walletAddress');
 const balanceMatic = document.getElementById('balanceMatic');
@@ -89,6 +90,22 @@ async function saveTransaction(txHash, from, to, amount) {
 
 if (btnConnect) {
     btnConnect.addEventListener('click', connectWallet);
+}
+
+if (btnDisconnect) {
+    btnDisconnect.addEventListener('click', switchAccount);
+}
+
+async function switchAccount() {
+    try {
+        await window.ethereum.request({
+            method: "wallet_requestPermissions",
+            params: [{ eth_accounts: {} }]
+        });
+        // La app se recargará automáticamente por el evento 'accountsChanged'
+    } catch (error) {
+        console.error("Error cambiando cuenta:", error);
+    }
 }
 
 async function connectWallet() {
