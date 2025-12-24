@@ -243,17 +243,22 @@ app.post('/api/transactions', async (req, res) => {
 app.post('/api/batches', async (req, res) => {
     const { batch_number, detail, description } = req.body;
     try {
-        // Status por defecto: PREPARING
+        // Status por defecto: PREPARING. Defaults para stats.
         const query = `
-            INSERT INTO batches (batch_number, detail, description, status) 
-            VALUES ($1, $2, $3, 'PREPARING') RETURNING *
+            INSERT INTO batches (
+                batch_number, detail, description, status, 
+                total_usdc, total_transactions, sent_transactions, created_at
+            ) 
+            VALUES ($1, $2, $3, 'PREPARING', 0, 0, 0, NOW()) 
+            RETURNING *
         `;
         const values = [batch_number, detail, description];
         const result = await pool.query(query, values);
         res.status(201).json(result.rows[0]);
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: err.message });
+        console.error("Error creating batch:", err);
+        // Return exact error to client for debugging
+        res.status(500).json({ error: err.message || "Database Error" });
     }
 });
 

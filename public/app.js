@@ -339,25 +339,31 @@ async function createBatch() {
 
     try {
         btnSaveBatch.textContent = "Creando...";
-        await fetch('/api/batches', {
+        const res = await fetch('/api/batches', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data)
         });
+        const responseData = await res.json();
 
-        btnSaveBatch.textContent = "Crear Lote";
+        if (responseData.error) {
+            throw new Error(responseData.error);
+        }
+
+        // Éxito
         closeBatchModal();
-
         // Limpiar form
         document.getElementById('newBatchNumber').value = '';
         document.getElementById('newBatchDetail').value = '';
         document.getElementById('newBatchDesc').value = '';
 
-        fetchBatches(); // Refresh list
+        fetchBatches(); // Recargar lista
+        alert("Lote creado exitosamente ✅");
 
     } catch (error) {
         console.error(error);
-        alert("Error creando lote");
+        alert("Error creando lote: " + error.message);
+    } finally {
         btnSaveBatch.textContent = "Crear Lote";
     }
 }
