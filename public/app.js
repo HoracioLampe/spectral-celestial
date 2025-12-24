@@ -300,8 +300,9 @@ function renderBatchesList(batches) {
         const tr = document.createElement('tr');
         const statusBadge = getStatusBadge(b.status);
         const progress = `${b.sent_transactions || 0} / ${b.total_transactions || 0}`;
-        // Fix: Check strict null so 0 is displayed
-        const total = (b.total_usdc !== null && b.total_usdc !== undefined) ? `$${parseFloat(b.total_usdc).toFixed(2)}` : '-';
+        // Fix: Divide by 1,000,000 for display
+        let totalVal = (b.total_usdc !== null && b.total_usdc !== undefined) ? parseFloat(b.total_usdc) : 0;
+        const total = (b.total_usdc !== null) ? `$${(totalVal / 1000000).toFixed(6)}` : '-';
         const date = new Date(b.created_at).toLocaleDateString() + ' ' + new Date(b.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
         tr.innerHTML = `
