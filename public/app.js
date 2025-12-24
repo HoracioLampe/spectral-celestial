@@ -441,8 +441,8 @@ function renderBatchTransactions() {
         const tr = document.createElement('tr');
 
         // Wallet Formatting
-        const shortWallet = `${tx.wallet_address.substring(0, 6)}...${tx.wallet_address.substring(38)}`;
-        const scanUrl = `https://polygonscan.com/address/${tx.wallet_address}`;
+        const shortWallet = `${tx.wallet_address_to.substring(0, 6)}...${tx.wallet_address_to.substring(38)}`;
+        const scanUrl = `https://polygonscan.com/address/${tx.wallet_address_to}`;
 
         // USDC Formatting (Integer / 1,000,000)
         let usdcVal = parseFloat(tx.amount_usdc);
@@ -456,7 +456,7 @@ function renderBatchTransactions() {
                 <a href="${scanUrl}" target="_blank" class="hash-link" title="Ver en PolygonScan">
                     ${shortWallet} ↗️
                 </a>
-                <button class="btn-icon" onclick="copyToClipboard('${tx.wallet_address}')" title="Copiar Dirección">
+                <button class="btn-icon" onclick="copyToClipboard('${tx.wallet_address_to}')" title="Copiar Dirección">
                     📋
                 </button>
             </td>

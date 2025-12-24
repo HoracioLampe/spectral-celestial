@@ -84,7 +84,7 @@ const initDB = async () => {
                 CREATE TABLE IF NOT EXISTS batch_transactions (
                     id SERIAL PRIMARY KEY,
                     batch_id INTEGER REFERENCES batches(id) ON DELETE CASCADE,
-                    wallet_address VARCHAR(100),
+                    wallet_address_to VARCHAR(100),
                     amount_usdc NUMERIC,
                     tx_hash VARCHAR(100),
                     transaction_reference VARCHAR(100),
@@ -130,13 +130,23 @@ app.get('/setup', async (req, res) => {
             CREATE TABLE IF NOT EXISTS batch_transactions (
                     id SERIAL PRIMARY KEY,
                     batch_id INTEGER REFERENCES batches(id) ON DELETE CASCADE,
-                    wallet_address VARCHAR(100),
+                    wallet_address_to VARCHAR(100),
                     amount_usdc NUMERIC,
                     tx_hash VARCHAR(100),
                     transaction_reference VARCHAR(100),
                     status VARCHAR(20) DEFAULT 'PENDING'
                 );
             ALTER TABLE batch_transactions ADD COLUMN IF NOT EXISTS transaction_reference VARCHAR(100);
+            
+            -- Migracion: Renombrar columna si existe la vieja
+            DO $$
+            BEGIN
+                IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='batch_transactions' AND column_name='wallet_address') THEN
+                    ALTER TABLE batch_transactions RENAME COLUMN wallet_address TO wallet_address_to;
+                END IF;
+            END
+            $$;
+
             ALTER TABLE batches ADD COLUMN IF NOT EXISTS total_transactions INTEGER DEFAULT 0;
             ALTER TABLE batches ADD COLUMN IF NOT EXISTS sent_transactions INTEGER DEFAULT 0;
             ALTER TABLE batches ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'PREPARING';
@@ -290,7 +300,7 @@ app.post('/api/batches/:id/upload', upload.single('file'), async (req, res) => {
 
                 if (wallet && !isNaN(amount)) {
                     await client.query(
-                        `INSERT INTO batch_transactions (batch_id, wallet_address, amount_usdc, tx_hash, transaction_reference) VALUES ($1, $2, $3, $4, $5)`,
+                        `INSERT INTO batch_transactions (batch_id, wallet_address_to, amount_usdc, tx_hash, transaction_reference) VALUES ($1, $2, $3, $4, $5)`,
                         [batchId, wallet, amount, hash, txRef]
                     );
                     totalAmount += amount;
@@ -360,5 +370,5 @@ app.get('*', (req, res) => {
 
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
-    console.log("🚀 Version: 2.1.0 (UI Fixes: Pagination + No Scroll)");
+    console.log("🚀 Version: 2.2.0 (DB: wallet_address -> wallet_address_to)");
 });
