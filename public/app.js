@@ -3,7 +3,7 @@ const API_TRANSACTIONS = '/api/transactions';
 // --- Elementos DOM ---
 const transactionsTableBody = document.getElementById('transactionsTableBody');
 const btnConnect = document.getElementById('btnConnect');
-const btnDisconnect = document.getElementById('btnDisconnect'); // Nuevo botón
+const btnDisconnect = document.getElementById('btnDisconnect');
 const walletInfo = document.getElementById('walletInfo');
 const walletAddress = document.getElementById('walletAddress');
 const balanceMatic = document.getElementById('balanceMatic');
@@ -36,11 +36,10 @@ async function fetchTransactions() {
         renderTransactions(transactions);
     } catch (error) {
         console.error("Error cargando historial:", error);
-        transactionsTableBody.innerHTML = '<tr><td colspan="5" style="color: #ff6b6b; text-align: center;">Error cargando historial</td></tr>';
+        transactionsTableBody.innerHTML = '<tr><td colspan="6" style="color: #ff6b6b; text-align: center;">Error cargando historial</td></tr>';
     }
 }
 
-// ...
 function renderTransactions(transactions) {
     transactionsTableBody.innerHTML = '';
     if (!transactions || transactions.length === 0) {
@@ -87,23 +86,6 @@ async function saveTransaction(txHash, from, to, amount, gasUsed) {
         console.error("❌ Error guardando en DB:", error);
     }
 }
-//...
-// (Inside sendMatic)
-const receipt = await tx.wait(); // Esperar confirmación
-
-// Calcular Gas Cost: Gas Used * Effective Gas Price
-const gasUsedBN = receipt.gasUsed;
-const gasPriceBN = receipt.effectiveGasPrice;
-const gasCostBN = gasUsedBN.mul(gasPriceBN);
-const gasCostMatic = ethers.utils.formatEther(gasCostBN);
-
-txStatus.textContent = "✅ Confirmada! Guardando...";
-
-// Guardar en nuestra DB con Gas
-await saveTransaction(tx.hash, userAddress, to, amount, gasCostMatic);
-
-btnSend.textContent = "Enviar 🚀";
-//...
 
 // ==========================================
 // --- INTEGRACIÓN WEB3 (METAMASK) ---
@@ -148,7 +130,7 @@ async function connectWallet() {
 
         provider = new ethers.providers.Web3Provider(window.ethereum);
 
-        // Solicitar cuentas (si ya hay permisos, las devuelve directo)
+        // Solicitar cuentas
         await provider.send("eth_requestAccounts", []);
 
         signer = provider.getSigner();
@@ -166,8 +148,7 @@ async function connectWallet() {
         window.ethereum.on('chainChanged', () => location.reload());
     } catch (error) {
         console.error(error);
-        // Si el usuario cancela, no mostramos alerta intrusiva
-        if (error.code !== 4001) {
+        if (error.code !== 4001) { // 4001 = User Rejected
             alert("Error Wallet: " + error.message);
         }
     }
@@ -227,12 +208,18 @@ async function sendMatic() {
         btnSend.textContent = "Enviando... 🚀";
         txStatus.innerHTML = `Tx enviada: <a href="https://polygonscan.com/tx/${tx.hash}" target="_blank">${tx.hash.substring(0, 8)}...</a>`;
 
-        await tx.wait(); // Esperar confirmación en Blockchain
+        const receipt = await tx.wait(); // Esperar confirmación
 
-        txStatus.textContent = "✅ Confirmada! Guardando...";
+        // Calcular Gas Cost: Gas Used * Effective Gas Price
+        const gasUsedBN = receipt.gasUsed;
+        const gasPriceBN = receipt.effectiveGasPrice;
+        const gasCostBN = gasUsedBN.mul(gasPriceBN);
+        const gasCostMatic = ethers.utils.formatEther(gasCostBN);
 
-        // Guardar en nuestra DB
-        await saveTransaction(tx.hash, userAddress, to, amount);
+        txStatus.textContent = `✅ Confirmada! Gas: ${parseFloat(gasCostMatic).toFixed(6)} MATIC. Guardando...`;
+
+        // Guardar en nuestra DB con Gas
+        await saveTransaction(tx.hash, userAddress, to, amount, gasCostMatic);
 
         btnSend.textContent = "Enviar 🚀";
         btnSend.disabled = false;
