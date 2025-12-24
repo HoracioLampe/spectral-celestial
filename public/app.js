@@ -390,9 +390,10 @@ function updateDetailView(batch, txs) {
     detailBatchTitle.textContent = `${batch.batch_number} - ${batch.detail}`;
     detailBatchDesc.textContent = batch.description || "Sin descripción";
 
-    statTotalUSDC.textContent = batch.total_usdc ? `$${parseFloat(batch.total_usdc).toFixed(2)}` : '0.00';
-    statTotalTx.textContent = batch.total_transactions || 0;
-    statSentTx.textContent = batch.sent_transactions || 0;
+    // Stats removidos de la UI a pedido del usuario.
+    // statTotalUSDC.textContent = ...
+    // statTotalTx.textContent = ...
+    // statSentTx.textContent = ...
 
     // Translate status for display
     let statusText = "En Preparación";
