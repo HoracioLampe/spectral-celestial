@@ -45,11 +45,13 @@ async function saveUser(e) {
             body: JSON.stringify(userData)
         });
 
+        const data = await res.json();
+
         if (res.ok) {
             closeModal();
             fetchUsers();
         } else {
-            alert('Error guardando usuario');
+            alert('Error: ' + (data.error || 'Error guardando usuario'));
         }
     } catch (error) {
         console.error('Error:', error);
