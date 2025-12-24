@@ -48,8 +48,19 @@ const initDB = async () => {
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
             `);
+            await client.query(`
+                CREATE TABLE IF NOT EXISTS transactions (
+                    id SERIAL PRIMARY KEY,
+                    tx_hash VARCHAR(66) UNIQUE NOT NULL,
+                    from_address VARCHAR(42) NOT NULL,
+                    to_address VARCHAR(42) NOT NULL,
+                    amount VARCHAR(50) NOT NULL,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            `);
             console.log("✅ Tabla 'courses' verificada/creada.");
             console.log("✅ Tabla 'users' verificada/creada.");
+            console.log("✅ Tabla 'transactions' verificada/creada.");
         } finally {
             client.release();
         }
@@ -82,9 +93,17 @@ app.get('/setup', async (req, res) => {
                 duracion_semanas INTEGER,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
+            CREATE TABLE IF NOT EXISTS transactions (
+                id SERIAL PRIMARY KEY,
+                tx_hash VARCHAR(66) UNIQUE NOT NULL,
+                from_address VARCHAR(42) NOT NULL,
+                to_address VARCHAR(42) NOT NULL,
+                amount VARCHAR(50) NOT NULL,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
         `);
         client.release();
-        res.send("<h1>✅ Tablas 'users' y 'courses' creadas/verificadas.</h1><p>Todo listo.</p>");
+        res.send("<h1>✅ Tablas 'users', 'courses' y 'transactions' creadas/verificadas.</h1><p>Todo listo.</p>");
     } catch (err) {
         res.status(500).send(`
             <h1>❌ Error creando tablas:</h1>
