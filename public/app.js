@@ -266,5 +266,5 @@ window.editCourse = function (c) {
 courseModal.addEventListener('click', (e) => {
     if (e.target === courseModal) closeCourseModal();
 });
-});
+
 
