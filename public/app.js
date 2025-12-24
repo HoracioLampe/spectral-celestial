@@ -262,6 +262,9 @@ const statStatus = document.getElementById('statStatus');
 const detailUploadContainer = document.getElementById('detailUploadContainer');
 const btnUploadBatch = document.getElementById('btnUploadBatch');
 const uploadStatus = document.getElementById('uploadStatus');
+const batchStatsContainer = document.getElementById('batchStatsContainer');
+const detailTotalAmount = document.getElementById('detailTotalAmount');
+const detailTotalTx = document.getElementById('detailTotalTx');
 const batchTableBody = document.getElementById('batchTableBody');
 
 // Event Listeners
@@ -403,7 +406,15 @@ function updateDetailView(batch, txs) {
     detailBatchTitle.textContent = `${batch.batch_number} - ${batch.detail}`;
     detailBatchDesc.textContent = batch.description || "Sin descripción";
 
-    // Stats Removed per user request
+    // Stats logic
+    if (batchStatsContainer) {
+        batchStatsContainer.classList.remove('hidden');
+        detailTotalTx.textContent = batch.total_transactions || 0;
+
+        let totalVal = (batch.total_usdc !== null && batch.total_usdc !== undefined) ? parseFloat(batch.total_usdc) : 0;
+        const totalDisplay = (totalVal / 1000000).toFixed(6);
+        detailTotalAmount.textContent = `$${totalDisplay}`;
+    }
 
     // Show/Hide Upload based on status
     if (batch.status === 'PREPARING') {

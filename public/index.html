@@ -137,7 +137,22 @@
                 <p id="detailBatchDesc" style="opacity: 0.8; margin-bottom: 1.5rem;">...</p>
 
                 <!-- Stats Grid removido a pedido del usuario -->
-                <div id="statsPlaceholder" class="hidden"></div>
+                <!-- Stats Grid -->
+                <div id="batchStatsContainer" class="stats-grid hidden"
+                    style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 2rem;">
+                    <div class="glass-panel"
+                        style="padding: 1.5rem; text-align: center; border: 1px solid rgba(255,255,255,0.1);">
+                        <h3 style="margin: 0 0 0.5rem 0; font-size: 1rem; opacity: 0.8;">💰 Monto Total</h3>
+                        <p id="detailTotalAmount"
+                            style="font-size: 2rem; font-weight: bold; color: #4ade80; margin: 0;">$0.00</p>
+                    </div>
+                    <div class="glass-panel"
+                        style="padding: 1.5rem; text-align: center; border: 1px solid rgba(255,255,255,0.1);">
+                        <h3 style="margin: 0 0 0.5rem 0; font-size: 1rem; opacity: 0.8;">🔢 Total Transacciones</h3>
+                        <p id="detailTotalTx" style="font-size: 2rem; font-weight: bold; color: #f472b6; margin: 0;">0
+                        </p>
+                    </div>
+                </div>
 
                 <!-- Carga Archivo (Solo si PREPARING) -->
                 <div id="detailUploadContainer" class="transfer-board mb-3 hidden">
