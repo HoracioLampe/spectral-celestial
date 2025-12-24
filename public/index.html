@@ -1,14 +1,16 @@
 <!DOCTYPE html>
 <html lang="es">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Spectral Celestial | Railway Mockup</title>
+    <title>Panel de Usuarios | Spectral Celestial</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
 </head>
+
 <body>
     <div class="background-orbs">
         <div class="orb orb-1"></div>
@@ -16,35 +18,82 @@
         <div class="orb orb-3"></div>
     </div>
 
-    <main class="container">
-        <div class="glass-card">
-            <header>
-                <div class="badge">Deploy Ready</div>
-                <h1>Spectral Celestial</h1>
-                <p class="subtitle">Mockup de alta fidelidad desplegado en segundos.</p>
-            </header>
-            
-            <div class="content">
-                <p>Este proyecto está configurado para un despliegue instantáneo en <strong>Railway</strong>. Combina Node.js para el backend y un frontend con estética moderna.</p>
-                
-                <div class="features">
-                    <div class="feature-item">
-                        <span class="icon">🚀</span>
-                        <span>Node.js Server</span>
-                    </div>
-                    <div class="feature-item">
-                        <span class="icon">🎨</span>
-                        <span>Glassmorphism UI</span>
-                    </div>
-                    <div class="feature-item">
-                        <span class="icon">⚡</span>
-                        <span>Railway Compatible</span>
-                    </div>
-                </div>
+    <header>
+        <h1>Gestión de Usuarios</h1>
+        <p class="subtitle">Mockup conectado con PostgreSQL en Railway</p>
+    </header>
 
-                <a href="#" class="cta-button">Empezar Ahora</a>
-            </div>
+    <main class="glass-panel">
+        <div class="top-bar">
+            <h2>Lista de Usuarios</h2>
+            <button class="btn btn-primary" onclick="openModal()">+ Nuevo Usuario</button>
+        </div>
+
+        <div class="table-container">
+            <table id="usersTable">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Nombre</th>
+                        <th>Apellido</th>
+                        <th>DNI</th>
+                        <th>Edad</th>
+                        <th>Sexo</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- JS llenará esto -->
+                    <tr>
+                        <td colspan="7" style="text-align: center; padding: 2rem;">Cargando datos...</td>
+                    </tr>
+                </tbody>
+            </table>
         </div>
     </main>
+
+    <!-- Modal Formulario -->
+    <div class="modal" id="userModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modalTitle">Nuevo Usuario</h2>
+                <button class="close-modal" onclick="closeModal()">×</button>
+            </div>
+            <form id="userForm">
+                <input type="hidden" id="userId">
+                <div class="form-group">
+                    <label>Nombre</label>
+                    <input type="text" id="nombre" required>
+                </div>
+                <div class="form-group">
+                    <label>Apellido</label>
+                    <input type="text" id="apellido" required>
+                </div>
+                <div class="form-group">
+                    <label>DNI</label>
+                    <input type="text" id="dni" required>
+                </div>
+                <div class="form-group" style="display: flex; gap: 1rem;">
+                    <div style="flex: 1;">
+                        <label>Edad</label>
+                        <input type="number" id="edad" required>
+                    </div>
+                    <div style="flex: 1;">
+                        <label>Sexo</label>
+                        <select id="sexo" required>
+                            <option value="">Seleccionar</option>
+                            <option value="M">Masculino</option>
+                            <option value="F">Femenino</option>
+                            <option value="O">Otro</option>
+                        </select>
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 1rem;">Guardar</button>
+            </form>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
 </body>
+
 </html>
