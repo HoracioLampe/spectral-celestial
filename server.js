@@ -7,8 +7,8 @@ const PORT = process.env.PORT || 3000;
 // Configuración de PostgreSQL
 // Railway provee automáticamente la variable DATABASE_URL
 const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false
+    connectionString: process.env.DATABASE_URL || 'postgresql://postgres:mYWKriiIoggzUBmIzVywdMXRYKNKzOYa@postgres.railway.internal:5432/railway',
+    ssl: false
 });
 
 // Middleware para parsear JSON
