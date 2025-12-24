@@ -1,0 +1,16 @@
+{
+  "name": "spectral-celestial-mockup",
+  "version": "1.0.0",
+  "description": "Mockup premium para despliegue en Railway",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "keywords": [],
+  "author": "Antigravity",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}
