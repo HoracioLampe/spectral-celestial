@@ -163,7 +163,10 @@ app.post('/api/users', async (req, res) => {
         const values = [nombre, apellido, dni, edad, sexo];
         const result = await pool.query(query, values);
         res.status(201).json(result.rows[0]);
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) {
+        console.error("Error creating batch:", err); // Log for Railway
+        res.status(500).json({ error: err.message });
+    }
 });
 app.put('/api/users/:id', async (req, res) => {
     const { id } = req.params;
