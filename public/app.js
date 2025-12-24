@@ -234,3 +234,142 @@ async function sendMatic() {
         txStatus.textContent = "❌ Error: " + (error.reason || error.message);
     }
 }
+
+// ==========================================
+// --- GESTIÓN DE PESTAÑAS (TABS) ---
+// ==========================================
+
+window.showTab = function (tabName) {
+    // Ocultar todas las secciones
+    document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+    document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+
+    // Mostrar la seleccionada
+    if (tabName === 'individual') {
+        document.getElementById('individualSection').classList.remove('hidden');
+        document.querySelector('.tab-btn:nth-child(1)').classList.add('active');
+    } else {
+        document.getElementById('batchSection').classList.remove('hidden');
+        document.querySelector('.tab-btn:nth-child(2)').classList.add('active');
+    }
+};
+
+// ==========================================
+// --- GESTIÓN DE LOTES (BATCHES) ---
+// ==========================================
+
+let currentBatchId = null;
+
+const btnCreateBatch = document.getElementById('btnCreateBatch');
+const btnUploadBatch = document.getElementById('btnUploadBatch');
+const batchUploadContainer = document.getElementById('batchUploadContainer');
+const activeBatchLabel = document.getElementById('activeBatchLabel');
+const uploadStatus = document.getElementById('uploadStatus');
+const batchTableBody = document.getElementById('batchTableBody');
+
+if (btnCreateBatch) {
+    btnCreateBatch.addEventListener('click', createBatch);
+}
+
+if (btnUploadBatch) {
+    btnUploadBatch.addEventListener('click', uploadBatchFile);
+}
+
+async function createBatch() {
+    const batchData = {
+        batch_number: document.getElementById('batchNumber').value,
+        detail: document.getElementById('batchDetail').value,
+        description: document.getElementById('batchDesc').value,
+        scheduled_date: document.getElementById('batchDate').value,
+        start_time: document.getElementById('batchStart').value,
+        end_time: document.getElementById('batchEnd').value,
+        total_usdc: document.getElementById('batchTotal').value
+    };
+
+    if (!batchData.batch_number || !batchData.total_usdc) {
+        return alert("⚠️ Completa al menos el Número de Lote y Total USDC");
+    }
+
+    try {
+        btnCreateBatch.textContent = "Creando...";
+        btnCreateBatch.disabled = true;
+
+        const res = await fetch('/api/batches', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(batchData)
+        });
+        const newBatch = await res.json();
+
+        if (newBatch.id) {
+            currentBatchId = newBatch.id;
+            activeBatchLabel.textContent = `${newBatch.batch_number} (ID: ${newBatch.id})`;
+
+            // Habilitar subida de archivo
+            batchUploadContainer.classList.remove('hidden');
+            btnCreateBatch.textContent = "✅ Lote Creado";
+
+            alert(`Lote "${newBatch.batch_number}" creado exitosamente. Ahora sube el Excel.`);
+        }
+    } catch (error) {
+        console.error(error);
+        alert("Error creando lote");
+        btnCreateBatch.disabled = false;
+        btnCreateBatch.textContent = "Crear Lote y Continuar ➡️";
+    }
+}
+
+async function uploadBatchFile() {
+    const fileInput = document.getElementById('batchFile');
+    if (!fileInput.files[0]) return alert("Selecciona un archivo Excel");
+    if (!currentBatchId) return alert("No hay lote activo");
+
+    const formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+
+    try {
+        btnUploadBatch.textContent = "Subiendo...";
+        btnUploadBatch.disabled = true;
+        uploadStatus.textContent = "Procesando archivo...";
+
+        const res = await fetch(`/api/batches/${currentBatchId}/upload`, {
+            method: 'POST',
+            body: formData
+        });
+        const result = await res.json();
+
+        if (result.transactions) {
+            renderBatchTransactions(result.transactions);
+            uploadStatus.textContent = `✅ ${result.count} registros procesados correctamente.`;
+            btnUploadBatch.textContent = "Subir Archivo 📤";
+            btnUploadBatch.disabled = false;
+        } else {
+            throw new Error(result.error || "Error desconocido");
+        }
+
+    } catch (error) {
+        console.error(error);
+        uploadStatus.textContent = "❌ Error: " + error.message;
+        btnUploadBatch.textContent = "Subir Archivo 📤";
+        btnUploadBatch.disabled = false;
+    }
+}
+
+function renderBatchTransactions(txs) {
+    batchTableBody.innerHTML = '';
+    if (txs.length === 0) {
+        batchTableBody.innerHTML = '<tr><td colspan="4" style="text-align:center;">No hay registros</td></tr>';
+        return;
+    }
+
+    txs.forEach(tx => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td style="font-family: monospace;">${tx.wallet_address}</td>
+            <td style="color: #4ade80;">$${tx.amount_usdc}</td>
+            <td style="font-size: 0.85rem; opacity: 0.7;">${tx.tx_hash || '-'}</td>
+            <td><span class="badge" style="background: #3b82f6;">${tx.status}</span></td>
+        `;
+        batchTableBody.appendChild(tr);
+    });
+}
