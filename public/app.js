@@ -692,3 +692,44 @@ async function fetchUSDCBalance(address) {
     }
 }
 window.fetchUSDCBalance = fetchUSDCBalance;
+
+// Relayer Processing Handler
+const btnProcessBatch = document.getElementById('btnProcessBatch');
+const relayerCountSelect = document.getElementById('relayerCount');
+const processStatus = document.getElementById('processStatus');
+
+if (btnProcessBatch) {
+    btnProcessBatch.addEventListener('click', async () => {
+        if (!currentBatchId) return;
+
+        const count = parseInt(relayerCountSelect.value);
+        if (!confirm(`¿Estás seguro de iniciar la distribución con ${count} Relayers?\nEsto consumirá gas del Faucet.`)) return;
+
+        btnProcessBatch.disabled = true;
+        processStatus.textContent = "Iniciando motor de relayers... ⏳";
+
+        try {
+            const response = await fetch(`/api/batches/${currentBatchId}/process`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ relayerCount: count })
+            });
+            const res = await response.json();
+
+            if (response.ok) {
+                processStatus.textContent = "✅ Procesando en segundo plano. Los relayers están trabajando.";
+                processStatus.style.color = "#4ade80";
+                // Optional: Start polling for status here
+            } else {
+                processStatus.textContent = "❌ Error: " + res.error;
+                processStatus.style.color = "#ef4444";
+                btnProcessBatch.disabled = false;
+            }
+        } catch (err) {
+            console.error(err);
+            processStatus.textContent = "❌ Error de conexión";
+            btnProcessBatch.disabled = false;
+        }
+    });
+}
+

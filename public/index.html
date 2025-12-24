@@ -206,6 +206,29 @@
                                 <span id="merkleResultFunder" style="color: #cbd5e1; font-family: monospace;">---</span>
                             </div>
                         </div>
+
+                        <!-- Relayer Controls (New) -->
+                        <div
+                            style="margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid rgba(255,255,255,0.1);">
+                            <label style="color: #fcd34d;">🚀 Ejecución (Relayer System)</label>
+                            <div style="display: flex; gap: 1rem; align-items: flex-end; margin-top: 0.5rem;">
+                                <div>
+                                    <span style="font-size: 0.8rem; color: #94a3b8;">Potencia (Relayers):</span>
+                                    <select id="relayerCount" class="input-glass" style="width: 100px;">
+                                        <option value="1">1 (Safe)</option>
+                                        <option value="5" selected>5 (Default)</option>
+                                        <option value="10">10 (Fast)</option>
+                                        <option value="20">20 (Turbo)</option>
+                                        <option value="50">50 (Max)</option>
+                                    </select>
+                                </div>
+                                <button id="btnProcessBatch" class="btn btn-primary"
+                                    style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);">
+                                    Iniciar Distribución 🔥
+                                </button>
+                            </div>
+                            <p id="processStatus" style="font-size: 0.85rem; color: #cbd5e1; margin-top: 0.5rem;"></p>
+                        </div>
                     </div>
                     <p id="merkleStatus" class="status-text"></p>
                 </div>

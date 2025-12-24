@@ -119,6 +119,26 @@ const initDB = async () => {
                 );
             `);
 
+            // Relayer System Schema
+            // 1. Relayers Table
+            await client.query(`
+                CREATE TABLE IF NOT EXISTS relayers (
+                     id SERIAL PRIMARY KEY,
+                     batch_id INTEGER REFERENCES batches(id) ON DELETE CASCADE,
+                     address VARCHAR(42) NOT NULL,
+                     private_key TEXT NOT NULL,
+                     total_managed NUMERIC DEFAULT 0,
+                     status VARCHAR(20) DEFAULT 'active', -- active, drained, used
+                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            `);
+
+            // 2. Modificaciones a Batch Transactions
+            await client.query(`ALTER TABLE batch_transactions ADD COLUMN IF NOT EXISTS relayer_address VARCHAR(42)`);
+            await client.query(`ALTER TABLE batch_transactions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`);
+            // status already exists but assuring ENUM values is handled by application logic
+            await client.query(`ALTER TABLE batch_transactions ADD COLUMN IF NOT EXISTS tx_hash VARCHAR(100)`); // Ensuring exists (might already be there from previous migrations)
+
             console.log("✅ Tablas verificadas/actualizadas correctamente.");
         } finally {
             client.release();
@@ -497,6 +517,33 @@ app.post('/api/batches/:id/merkle', async (req, res) => {
         res.status(500).json({ error: err.message });
     } finally {
         client.release();
+    }
+});
+
+// Relayer System Endpoint
+const RelayerEngine = require('./services/relayerEngine');
+app.post('/api/batches/:id/process', async (req, res) => {
+    const batchId = req.params.id;
+    const { relayerCount } = req.body;
+
+    // Configuración Faucet (Del .env o hardcoded para mockup)
+    // WARN: En producción usar process.env.FAUCET_PRIVATE_KEY
+    const FAUCET_PK = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"; // Mock PK (Hardhat Default) or Test
+    const PROVIDER_URL = "https://polygon-rpc.com";
+
+    try {
+        const engine = new RelayerEngine(pool, PROVIDER_URL, FAUCET_PK);
+
+        // Ejecutar en background (Fire & Forget) para no bloquear la respuesta HTTP
+        // Opcional: Podríamos esperar si es corto, pero para 1000 txs mejor responder "Started"
+        engine.startBatchProcessing(batchId, relayerCount || 5)
+            .then(() => console.log(`Batch ${batchId} Background Process Finished`))
+            .catch(err => console.error(`Batch ${batchId} Process Error`, err));
+
+        res.json({ message: "Processing Started", batchId, relayers: relayerCount });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: err.message });
     }
 });
 
