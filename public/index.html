@@ -41,52 +41,140 @@
         </div>
     </header>
 
+    <!-- TABS DE NAVEGACIÓN -->
+    <div class="tabs-container">
+        <button class="tab-btn active" onclick="showTab('individual')">Transferencia Individual</button>
+        <button class="tab-btn" onclick="showTab('batch')">Gestión de Lotes 📦</button>
+    </div>
+
     <main class="glass-panel">
-        <!-- SECCIÓN TRANSFERENCIA -->
-        <div class="transfer-board mb-3">
-            <h3>💸 Transferir Polygon (MATIC)</h3>
-            <div class="transfer-controls">
-                <div class="form-group" style="flex: 2;">
-                    <label>Wallet Destino</label>
-                    <input type="text" id="txTo" placeholder="0x..." class="input-glass">
+
+        <!-- SECCIÓN INDIVIDUAL -->
+        <div id="individualSection" class="tab-content">
+            <div class="transfer-board mb-3">
+                <h3>💸 Transferir Polygon (MATIC)</h3>
+                <div class="transfer-controls">
+                    <div class="form-group" style="flex: 2;">
+                        <label>Wallet Destino</label>
+                        <input type="text" id="txTo" placeholder="0x..." class="input-glass">
+                    </div>
+                    <div class="form-group" style="flex: 1;">
+                        <label>Monto</label>
+                        <input type="number" id="txAmount" placeholder="0.00" step="0.001" class="input-glass">
+                    </div>
+                    <button id="btnSend" class="btn btn-primary"
+                        style="align-self: flex-end; margin-bottom: 1rem;">Enviar 🚀</button>
                 </div>
-                <div class="form-group" style="flex: 1;">
-                    <label>Monto</label>
-                    <input type="number" id="txAmount" placeholder="0.00" step="0.001" class="input-glass">
-                </div>
-                <button id="btnSend" class="btn btn-primary" style="align-self: flex-end; margin-bottom: 1rem;">Enviar
-                    🚀</button>
+                <p id="txStatus" class="status-text"></p>
             </div>
-            <p id="txStatus" class="status-text"></p>
+
+            <hr style="margin: 2rem 0; border: 0; border-top: 1px solid rgba(255,255,255,0.1);">
+
+            <!-- SECCIÓN HISTORIAL -->
+            <div class="top-bar">
+                <h2>📜 Historial de Transacciones</h2>
+                <button class="btn-glass" onclick="fetchTransactions()">🔄 Actualizar</button>
+            </div>
+
+            <div class="table-container">
+                <table id="transactionsTable">
+                    <thead>
+                        <tr>
+                            <th>Hash</th>
+                            <th>De</th>
+                            <th>Para</th>
+                            <th>Monto (MATIC)</th>
+                            <th>Gas (MATIC)</th>
+                            <th>Fecha</th>
+                        </tr>
+                    </thead>
+                    <tbody id="transactionsTableBody">
+                        <tr>
+                            <td colspan="6" style="text-align: center; padding: 2rem;">Cargando historial...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
         </div>
 
-        <hr style="margin: 2rem 0; border: 0; border-top: 1px solid rgba(255,255,255,0.1);">
+        <!-- SECCIÓN LOTES -->
+        <div id="batchSection" class="tab-content hidden">
+            <h2>📦 Nuevo Lote de Envío</h2>
 
-        <!-- SECCIÓN HISTORIAL -->
-        <div class="top-bar">
-            <h2>📜 Historial de Transacciones</h2>
-            <button class="btn-glass" onclick="fetchTransactions()">🔄 Actualizar</button>
+            <!-- Paso 1: Crear Cabecera -->
+            <div id="batchFormContainer" class="transfer-board mb-3">
+                <h3>1. Datos del Lote</h3>
+                <div class="grid-form">
+                    <div class="form-group">
+                        <label>Número de Lote</label>
+                        <input type="text" id="batchNumber" class="input-glass" placeholder="Ej: LOTE-001">
+                    </div>
+                    <div class="form-group">
+                        <label>Detalle</label>
+                        <input type="text" id="batchDetail" class="input-glass" placeholder="Ej: Pago Proveedores">
+                    </div>
+                    <div class="form-group full-width">
+                        <label>Descripción</label>
+                        <textarea id="batchDesc" class="input-glass" rows="2"
+                            placeholder="Notas adicionales..."></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>Fecha Envío</label>
+                        <input type="date" id="batchDate" class="input-glass">
+                    </div>
+                    <div class="form-group">
+                        <label>Inicio</label>
+                        <input type="time" id="batchStart" class="input-glass">
+                    </div>
+                    <div class="form-group">
+                        <label>Fin</label>
+                        <input type="time" id="batchEnd" class="input-glass">
+                    </div>
+                    <div class="form-group">
+                        <label>Total USDC</label>
+                        <input type="number" id="batchTotal" class="input-glass" placeholder="0.00">
+                    </div>
+                </div>
+                <div style="text-align: right; margin-top: 1rem;">
+                    <button id="btnCreateBatch" class="btn btn-primary">Crear Lote y Continuar ➡️</button>
+                </div>
+            </div>
+
+            <!-- Paso 2: Subir Excel (Oculto al inicio) -->
+            <div id="batchUploadContainer" class="transfer-board mb-3 hidden">
+                <h3>2. Cargar Detalle (Excel)</h3>
+                <p style="opacity: 0.8; font-size: 0.9rem; margin-bottom: 1rem;">
+                    Lote Activo: <strong id="activeBatchLabel" style="color: #4ade80;">-</strong>
+                </p>
+                <div style="display: flex; gap: 1rem; align-items: center;">
+                    <input type="file" id="batchFile" accept=".xlsx, .xls" class="input-glass">
+                    <button id="btnUploadBatch" class="btn btn-primary">Subir Archivo 📤</button>
+                </div>
+                <p id="uploadStatus" class="status-text"></p>
+            </div>
+
+            <div class="top-bar">
+                <h3>📋 Previsualización de Registros</h3>
+            </div>
+            <div class="table-container">
+                <table id="batchTable">
+                    <thead>
+                        <tr>
+                            <th>Wallet</th>
+                            <th>USDC</th>
+                            <th>Hash (Ref)</th>
+                            <th>Estado</th>
+                        </tr>
+                    </thead>
+                    <tbody id="batchTableBody">
+                        <tr>
+                            <td colspan="4" style="text-align: center;">Crea un lote para comenzar</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
         </div>
 
-        <div class="table-container">
-            <table id="transactionsTable">
-                <thead>
-                    <tr>
-                        <th>Hash</th>
-                        <th>De</th>
-                        <th>Para</th>
-                        <th>Monto (MATIC)</th>
-                        <th>Gas (MATIC)</th>
-                        <th>Fecha</th>
-                    </tr>
-                </thead>
-                <tbody id="transactionsTableBody">
-                    <tr>
-                        <td colspan="5" style="text-align: center; padding: 2rem;">Cargando historial...</td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
     </main>
 
     <script src="app.js"></script>

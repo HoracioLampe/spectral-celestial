@@ -1,8 +1,15 @@
 const express = require('express');
 const path = require('path');
 const { Pool } = require('pg');
+const multer = require('multer');
+const xlsx = require('xlsx');
+const fs = require('fs');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Configuración de Multer para subida de archivos
+const upload = multer({ dest: 'uploads/' });
 
 // Configuración de PostgreSQL
 // Railway provee automáticamente la variable DATABASE_URL
@@ -59,12 +66,38 @@ const initDB = async () => {
                     timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
             `);
+            // Tablas para Gestión de Lotes
+            await client.query(`
+                CREATE TABLE IF NOT EXISTS batches (
+                    id SERIAL PRIMARY KEY,
+                    batch_number VARCHAR(50),
+                    detail TEXT,
+                    description TEXT,
+                    scheduled_date VARCHAR(50),
+                    start_time VARCHAR(50),
+                    end_time VARCHAR(50),
+                    total_usdc NUMERIC,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            `);
+            await client.query(`
+                CREATE TABLE IF NOT EXISTS batch_transactions (
+                    id SERIAL PRIMARY KEY,
+                    batch_id INTEGER REFERENCES batches(id) ON DELETE CASCADE,
+                    wallet_address VARCHAR(100),
+                    amount_usdc NUMERIC,
+                    tx_hash VARCHAR(100),
+                    status VARCHAR(20) DEFAULT 'PENDING'
+                );
+            `);
+
             // Migración segura: Agregar columna si no existe
             await client.query(`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS gas_used VARCHAR(50)`);
 
             console.log("✅ Tabla 'courses' verificada/creada.");
             console.log("✅ Tabla 'users' verificada/creada.");
             console.log("✅ Tabla 'transactions' verificada/creada + Columna gas_used.");
+            console.log("✅ Tablas 'batches' y 'batch_transactions' verificadas/creadas.");
         } finally {
             client.release();
         }
@@ -78,46 +111,137 @@ initDB();
 app.get('/setup', async (req, res) => {
     try {
         const client = await pool.connect();
+        // ... (Tablas anteriores omitidas por brevedad, initDB ya las maneja)
+        // Solo asegurar las nuevas aquí también si se llama manual
         await client.query(`
-            CREATE TABLE IF NOT EXISTS users (
-                id SERIAL PRIMARY KEY,
-                nombre VARCHAR(100),
-                apellido VARCHAR(100),
-                dni VARCHAR(20) UNIQUE,
-                edad INTEGER,
-                sexo VARCHAR(20),
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-            CREATE TABLE IF NOT EXISTS courses (
-                id SERIAL PRIMARY KEY,
-                nombre VARCHAR(150),
-                descripcion TEXT,
-                nivel VARCHAR(50),
-                fecha_inicio DATE,
-                duracion_semanas INTEGER,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-            CREATE TABLE IF NOT EXISTS transactions (
-                id SERIAL PRIMARY KEY,
-                tx_hash VARCHAR(66) UNIQUE NOT NULL,
-                from_address VARCHAR(42) NOT NULL,
-                to_address VARCHAR(42) NOT NULL,
-                amount VARCHAR(50) NOT NULL,
-                gas_used VARCHAR(50),
-                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-            ALTER TABLE transactions ADD COLUMN IF NOT EXISTS gas_used VARCHAR(50);
+             CREATE TABLE IF NOT EXISTS batches (
+                    id SERIAL PRIMARY KEY,
+                    batch_number VARCHAR(50),
+                    detail TEXT,
+                    description TEXT,
+                    scheduled_date VARCHAR(50),
+                    start_time VARCHAR(50),
+                    end_time VARCHAR(50),
+                    total_usdc NUMERIC,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            CREATE TABLE IF NOT EXISTS batch_transactions (
+                    id SERIAL PRIMARY KEY,
+                    batch_id INTEGER REFERENCES batches(id) ON DELETE CASCADE,
+                    wallet_address VARCHAR(100),
+                    amount_usdc NUMERIC,
+                    tx_hash VARCHAR(100),
+                    status VARCHAR(20) DEFAULT 'PENDING'
+                );
         `);
         client.release();
-        res.send("<h1>✅ Tablas actualizadas (incluyendo gas_used).</h1><p>Todo listo.</p>");
+        res.send("<h1>✅ Tablas de Lotes actualizadas.</h1>");
     } catch (err) {
-        res.status(500).send(`
-            <h1>❌ Error creando tablas:</h1>
-            <p><strong>Mensaje:</strong> ${err.message}</p>
-            <pre>${JSON.stringify(err, null, 2)}</pre>
-        `);
+        res.status(500).json(err);
     }
 });
+
+// ... (API Endpoints: USUARIOS y CURSOS sin cambios) ...
+// ... (API Endpoints: TRANSACCIONES sin cambios) ...
+
+// --- API Endpoints: GESTIÓN DE LOTES ---
+
+// POST: Crear nuevo Lote (Cabecera)
+app.post('/api/batches', async (req, res) => {
+    const { batch_number, detail, description, scheduled_date, start_time, end_time, total_usdc } = req.body;
+    try {
+        const query = `
+            INSERT INTO batches (batch_number, detail, description, scheduled_date, start_time, end_time, total_usdc) 
+            VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *
+        `;
+        const values = [batch_number, detail, description, scheduled_date, start_time, end_time, total_usdc];
+        const result = await pool.query(query, values);
+        res.status(201).json(result.rows[0]);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST: Subir Excel para un Lote
+app.post('/api/batches/:id/upload', upload.single('file'), async (req, res) => {
+    const batchId = req.params.id;
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+
+    try {
+        // Leer archivo Excel
+        const workbook = xlsx.readFile(req.file.path);
+        const sheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[sheetName];
+        const data = xlsx.utils.sheet_to_json(sheet);
+
+        // Validar e insertar registros
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+
+            for (const row of data) {
+                // Mapear columnas del Excel según imagen del usuario
+                // "Address Wallet", "USDC", "Hash"
+                const wallet = row['Address Wallet'];
+                const amount = row['USDC'];
+                const hash = row['Hash'] || '';
+
+                if (wallet && amount) {
+                    await client.query(
+                        `INSERT INTO batch_transactions (batch_id, wallet_address, amount_usdc, tx_hash) VALUES ($1, $2, $3, $4)`,
+                        [batchId, wallet, amount, hash]
+                    );
+                }
+            }
+
+            await client.query('COMMIT');
+
+            // Eliminar archivo temporal
+            fs.unlinkSync(req.file.path);
+
+            // Devolver las transacciones creadas para mostrarlas
+            const result = await client.query('SELECT * FROM batch_transactions WHERE batch_id = $1', [batchId]);
+            res.json({ message: 'Lote procesado exitosamente', count: data.length, transactions: result.rows });
+        } catch (dbErr) {
+            await client.query('ROLLBACK');
+            throw dbErr;
+        } finally {
+            client.release();
+        }
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET: Obtener todos los lotes
+app.get('/api/batches', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM batches ORDER BY id DESC');
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET: Obtener detalle de un lote
+app.get('/api/batches/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const batch = await pool.query('SELECT * FROM batches WHERE id = $1', [id]);
+        if (batch.rows.length === 0) return res.status(404).json({ error: 'Lote no encontrado' });
+
+        const txs = await pool.query('SELECT * FROM batch_transactions WHERE batch_id = $1', [id]);
+
+        res.json({ batch: batch.rows[0], transactions: txs.rows });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Fallback, etc...
+
 
 // ... (API Endpoints: USUARIOS y CURSOS sin cambios) ...
 
