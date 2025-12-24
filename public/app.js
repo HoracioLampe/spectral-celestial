@@ -438,11 +438,31 @@ function renderBatchTransactions() {
 
     pageItems.forEach(tx => {
         const tr = document.createElement('tr');
+
+        // Wallet Formatting
+        const shortWallet = `${tx.wallet_address.substring(0, 6)}...${tx.wallet_address.substring(38)}`;
+        const scanUrl = `https://polygonscan.com/address/${tx.wallet_address}`;
+
+        // USDC Formatting (Integer / 1,000,000)
+        let usdcVal = parseFloat(tx.amount_usdc);
+        // User said it's an integer in DB, need to divide. assuming standard 6 decimals for USDC.
+        // If DB has 1000000 for 1 USDC:
+        const usdcDisplay = (usdcVal / 1000000).toFixed(6);
+
         tr.innerHTML = `
             <td style="opacity: 0.7;">${tx.transaction_reference || '-'}</td>
-            <td style="font-family: monospace;" title="${tx.wallet_address}">${tx.wallet_address}</td>
-            <td style="color: #4ade80;">$${parseFloat(tx.amount_usdc).toFixed(2)}</td>
-            <td style="font-size: 0.85rem; opacity: 0.7;" title="${tx.tx_hash || ''}">${tx.tx_hash ? tx.tx_hash.substring(0, 10) + '...' : '-'}</td>
+            <td style="font-family: monospace; display: flex; align-items: center; gap: 0.5rem;">
+                <a href="${scanUrl}" target="_blank" class="hash-link" title="Ver en PolygonScan">
+                    ${shortWallet} ↗️
+                </a>
+                <button class="btn-icon" onclick="copyToClipboard('${tx.wallet_address}')" title="Copiar Dirección">
+                    📋
+                </button>
+            </td>
+            <td style="color: #4ade80; font-weight: bold;">$${usdcDisplay}</td>
+            <td style="font-size: 0.85rem; opacity: 0.7;" title="${tx.tx_hash || ''}">
+                ${tx.tx_hash ? `<a href="https://polygonscan.com/tx/${tx.tx_hash}" target="_blank" class="hash-link">${tx.tx_hash.substring(0, 10)}...</a>` : '-'}
+            </td>
             <td><span class="badge" style="background: #3b82f6;">${tx.status}</span></td>
         `;
         batchTableBody.appendChild(tr);
@@ -450,6 +470,14 @@ function renderBatchTransactions() {
 
     renderPaginationControls(totalItems);
 }
+
+// Helper to copy
+window.copyToClipboard = function (text) {
+    navigator.clipboard.writeText(text).then(() => {
+        // Could show a toast, for now just simple alert or subtle indication
+        // alert("Copiado!"); // Too intrusive
+    }).catch(err => console.error('Error copying:', err));
+};
 
 function renderPaginationControls(totalItems) {
     // Remove existing controls if any
