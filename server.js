@@ -50,6 +50,10 @@ initDB();
 // Endpoint de Ayuda: Forzar creación de tabla manualmente
 app.get('/setup', async (req, res) => {
     try {
+        if (!process.env.DATABASE_URL) {
+            throw new Error("⚠️ La variable de entorno DATABASE_URL no está definida. \n\nSolución: Ve a Railway -> Variables y asegúrate de que esté ahí, luego Reinicia el servicio.");
+        }
+
         const client = await pool.connect();
         await client.query(`
             CREATE TABLE IF NOT EXISTS users (
@@ -65,7 +69,11 @@ app.get('/setup', async (req, res) => {
         client.release();
         res.send("<h1>✅ Tabla 'users' creada/verificada correctamente.</h1><p>Ya puedes volver atrás y guardar usuarios.</p>");
     } catch (err) {
-        res.status(500).send(`<h1>❌ Error creando tabla:</h1><pre>${err.message}</pre>`);
+        res.status(500).send(`
+            <h1>❌ Error creando tabla:</h1>
+            <p><strong>Mensaje:</strong> ${err.message}</p>
+            <pre>${JSON.stringify(err, null, 2)}</pre>
+        `);
     }
 });
 
