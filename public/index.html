@@ -28,7 +28,10 @@
             <div class="wallet-controls">
                 <button id="btnConnect" class="btn-glass">🦊 Conectar Wallet</button>
                 <div id="walletInfo" class="wallet-info hidden">
-                    <span id="walletAddress" class="badge-address">0x...</span>
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <span id="walletAddress" class="badge-address">0x...</span>
+                        <button id="btnDisconnect" class="btn-icon" title="Cambiar Cuenta">🔄</button>
+                    </div>
                     <div class="balances">
                         <span class="balance-item">🟣 <span id="balanceMatic">0.00</span> POL</span>
                         <span class="balance-item">💵 <span id="balanceUsdc">0.00</span> USDC</span>
