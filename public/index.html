@@ -39,6 +39,26 @@
     </header>
 
     <main class="glass-panel">
+        <!-- SECCIÓN TRANSFERENCIA -->
+        <div class="transfer-board mb-3">
+            <h3>💸 Transferir Polygon (MATIC)</h3>
+            <div class="transfer-controls">
+                <div class="form-group" style="flex: 2;">
+                    <label>Wallet Destino</label>
+                    <input type="text" id="txTo" placeholder="0x..." class="input-glass">
+                </div>
+                <div class="form-group" style="flex: 1;">
+                    <label>Monto</label>
+                    <input type="number" id="txAmount" placeholder="0.00" step="0.001" class="input-glass">
+                </div>
+                <button id="btnSend" class="btn btn-primary" style="align-self: flex-end; margin-bottom: 1rem;">Enviar
+                    🚀</button>
+            </div>
+            <p id="txStatus" class="status-text"></p>
+        </div>
+
+        <hr style="margin: 2rem 0; border: 0; border-top: 1px solid rgba(255,255,255,0.1);">
+
         <div class="top-bar">
             <h2>Lista de Usuarios</h2>
             <button class="btn btn-primary" onclick="openModal()">+ Nuevo Usuario</button>

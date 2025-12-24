@@ -380,3 +380,70 @@ async function fetchBalances() {
         balanceUsdc.textContent = "Err";
     }
 }
+
+// 5. Enviar Tokens (MATIC)
+const btnSend = document.getElementById('btnSend');
+const txTo = document.getElementById('txTo');
+const txAmount = document.getElementById('txAmount');
+const txStatus = document.getElementById('txStatus');
+
+if (btnSend) {
+    btnSend.addEventListener('click', sendMatic);
+}
+
+async function sendMatic() {
+    if (!signer) return alert("❌ Primero conecta tu Wallet");
+
+    const to = txTo.value.trim();
+    const amount = txAmount.value;
+
+    // Validaciones
+    if (!ethers.utils.isAddress(to)) {
+        alert("❌ Dirección de billetera inválida");
+        return;
+    }
+    if (!amount || amount <= 0) {
+        alert("❌ Ingresa un monto válido");
+        return;
+    }
+
+    try {
+        btnSend.disabled = true;
+        btnSend.textContent = "Firmando... ✍️";
+        txStatus.textContent = "Esperando confirmación en Wallet...";
+
+        // Parsear monto a Wei (18 decimales)
+        const value = ethers.utils.parseEther(amount);
+
+        // Enviar Transacción
+        const tx = await signer.sendTransaction({
+            to: to,
+            value: value
+        });
+
+        btnSend.textContent = "Enviando... 🚀";
+        txStatus.innerHTML = `Tx enviada! Hash: <a href="https://polygonscan.com/tx/${tx.hash}" target="_blank" style="color: #4ade80;">${tx.hash.substring(0, 10)}...</a>`;
+
+        // Esperar recibo
+        await tx.wait();
+
+        btnSend.textContent = "Enviar 🚀";
+        btnSend.disabled = false;
+        txStatus.textContent = "✅ Transacción confirmada exitosamente!";
+        txTo.value = '';
+        txAmount.value = '';
+
+        fetchBalances(); // Actualizar saldo
+
+    } catch (error) {
+        console.error(error);
+        btnSend.disabled = false;
+        btnSend.textContent = "Enviar 🚀";
+
+        if (error.code === 4001) {
+            txStatus.textContent = "❌ Usuario rechazó la transacción";
+        } else {
+            txStatus.textContent = "❌ Error: " + (error.reason || error.message);
+        }
+    }
+}
