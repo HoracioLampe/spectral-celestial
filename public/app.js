@@ -447,19 +447,26 @@ function updateDetailView(batch, txs) {
             merkleContainer.classList.remove('hidden');
             merkleStatus.textContent = '';
 
+            // Populate Total in Merkle Section
+            let totalVal = (batch.total_usdc !== null && batch.total_usdc !== undefined) ? parseFloat(batch.total_usdc) : 0;
+            const totalDisplay = `$${(totalVal / 1000000).toFixed(6)}`;
+            if (merkleTotalAmount) merkleTotalAmount.textContent = totalDisplay;
+            if (merkleResultTotal) merkleResultTotal.textContent = totalDisplay;
+
             if (batch.merkle_root) {
                 // Already generated
                 merkleInputZone.classList.add('hidden');
                 merkleResultZone.classList.remove('hidden');
                 displayMerkleRoot.textContent = batch.merkle_root;
                 if (batch.funder_address) {
-                    merkleStatus.textContent = `Funder: ${batch.funder_address}`;
+                    if (merkleResultFunder) merkleResultFunder.textContent = batch.funder_address;
                 }
             } else {
                 // Not generated yet
                 merkleInputZone.classList.remove('hidden');
                 merkleResultZone.classList.add('hidden');
                 batchFunderAddress.value = ''; // Reset or keep empty
+                if (merkleFounderBalance) merkleFounderBalance.textContent = '---';
             }
         }
     }
@@ -663,7 +670,7 @@ async function checkFounderBalance() {
         const usdcFormatted = ethers.utils.formatUnits(usdcBal, 6); // USDC is 6 decimals
 
         if (merkleFounderBalance) {
-            merkleFounderBalance.textContent = `$${parseFloat(usdcFormatted).toFixed(2)} USDC`;
+            merkleFounderBalance.textContent = `$${parseFloat(usdcFormatted).toFixed(6)} USDC`;
         }
 
     } catch (error) {
