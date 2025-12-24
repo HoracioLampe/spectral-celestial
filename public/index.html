@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Panel de Usuarios | Spectral Celestial</title>
+    <title>Wallet Manager | Spectral Celestial</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;500;700&display=swap" rel="stylesheet">
@@ -22,8 +22,8 @@
     <header>
         <div class="header-content">
             <div>
-                <h1>Gestión de Usuarios</h1>
-                <p class="subtitle">Mockup conectado con PostgreSQL en Railway</p>
+                <h1>Gestión de Wallet</h1>
+                <p class="subtitle">Polygon Transactions Manager</p>
             </div>
             <div class="wallet-controls">
                 <button id="btnConnect" class="btn-glass">🦊 Conectar Wallet</button>
@@ -59,148 +59,31 @@
 
         <hr style="margin: 2rem 0; border: 0; border-top: 1px solid rgba(255,255,255,0.1);">
 
+        <!-- SECCIÓN HISTORIAL -->
         <div class="top-bar">
-            <h2>Lista de Usuarios</h2>
-            <button class="btn btn-primary" onclick="openModal()">+ Nuevo Usuario</button>
+            <h2>📜 Historial de Transacciones</h2>
+            <button class="btn-glass" onclick="fetchTransactions()">🔄 Actualizar</button>
         </div>
 
         <div class="table-container">
-            <table id="usersTable">
+            <table id="transactionsTable">
                 <thead>
                     <tr>
-                        <th>ID</th>
-                        <th>Nombre</th>
-                        <th>Apellido</th>
-                        <th>DNI</th>
-                        <th>Edad</th>
-                        <th>Sexo</th>
-                        <th>Acciones</th>
+                        <th>Hash</th>
+                        <th>De</th>
+                        <th>Para</th>
+                        <th>Monto (MATIC)</th>
+                        <th>Fecha</th>
                     </tr>
                 </thead>
-                <tbody id="userTableBody">
-                    <!-- JS llenará esto (Nota: app.js usa querySelector('#usersTable tbody')) -->
+                <tbody id="transactionsTableBody">
                     <tr>
-                        <td colspan="7" style="text-align: center; padding: 2rem;">Cargando datos...</td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
-
-        <!-- SECCIÓN CURSOS -->
-        <hr style="margin: 3rem 0; border: 0; border-top: 1px solid rgba(255,255,255,0.1);">
-
-        <div class="top-bar">
-            <h2>📚 Cursos de Tecnología</h2>
-            <button class="btn btn-primary" onclick="openCourseModal()">+ Nuevo Curso</button>
-        </div>
-
-        <div class="table-container">
-            <table id="coursesTable">
-                <thead>
-                    <tr>
-                        <th>ID</th>
-                        <th>Nombre</th>
-                        <th>Nivel</th>
-                        <th>Fecha Inicio</th>
-                        <th>Duración</th>
-                        <th>Acciones</th>
-                    </tr>
-                </thead>
-                <tbody id="coursesTableBody">
-                    <tr>
-                        <td colspan="6" style="text-align: center;">Cargando cursos...</td>
+                        <td colspan="5" style="text-align: center; padding: 2rem;">Cargando historial...</td>
                     </tr>
                 </tbody>
             </table>
         </div>
     </main>
-
-    <!-- Modal Formulario Usuario -->
-    <div class="modal" id="userModal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2 id="modalTitle">Nuevo Usuario</h2>
-                <button class="close-modal" onclick="closeModal()">×</button>
-            </div>
-            <form id="userForm">
-                <input type="hidden" id="userId">
-                <div class="form-group">
-                    <label>Nombre</label>
-                    <input type="text" id="nombre" required>
-                </div>
-                <div class="form-group">
-                    <label>Apellido</label>
-                    <input type="text" id="apellido" required>
-                </div>
-                <div class="form-group">
-                    <label>DNI</label>
-                    <input type="text" id="dni" required>
-                </div>
-                <div class="form-group" style="display: flex; gap: 1rem;">
-                    <div style="flex: 1;">
-                        <label>Edad</label>
-                        <input type="number" id="edad" required>
-                    </div>
-                    <div style="flex: 1;">
-                        <label>Sexo</label>
-                        <select id="sexo" required>
-                            <option value="">Seleccionar</option>
-                            <option value="M">Masculino</option>
-                            <option value="F">Femenino</option>
-                            <option value="O">Otro</option>
-                        </select>
-                    </div>
-                </div>
-                <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 1rem;">Guardar</button>
-            </form>
-        </div>
-    </div>
-
-    <!-- Modal Formulario Curso -->
-    <div class="modal" id="courseModal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2 id="courseModalTitle">Nuevo Curso</h2>
-                <button class="close-modal" onclick="closeCourseModal()">×</button>
-            </div>
-            <form id="courseForm">
-                <input type="hidden" id="courseId">
-
-                <div class="form-group">
-                    <label>Nombre del Curso</label>
-                    <input type="text" id="courseNombre" required placeholder="Ej: Fullstack Python">
-                </div>
-
-                <div class="form-group">
-                    <label>Descripción</label>
-                    <textarea id="courseDescripcion" rows="3" placeholder="Breve temario..."></textarea>
-                </div>
-
-                <div class="form-group">
-                    <label>Nivel</label>
-                    <select id="courseNivel">
-                        <option value="Básico">Básico</option>
-                        <option value="Intermedio">Intermedio</option>
-                        <option value="Avanzado">Avanzado</option>
-                    </select>
-                </div>
-
-                <div class="form-group" style="display: flex; gap: 1rem;">
-                    <div style="flex: 1;">
-                        <label>Fecha Inicio</label>
-                        <input type="date" id="courseFecha">
-                    </div>
-                    <div style="flex: 1;">
-                        <label>Duración (Semanas)</label>
-                        <input type="number" id="courseDuracion" min="1" placeholder="Ej: 12">
-                    </div>
-                </div>
-
-                <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 1rem;">Guardar
-                    Curso</button>
-            </form>
-        </div>
-    </div>
 
     <script src="app.js"></script>
 </body>
