@@ -55,12 +55,16 @@ const initDB = async () => {
                     from_address VARCHAR(42) NOT NULL,
                     to_address VARCHAR(42) NOT NULL,
                     amount VARCHAR(50) NOT NULL,
+                    gas_used VARCHAR(50),
                     timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
             `);
+            // Migración segura: Agregar columna si no existe
+            await client.query(`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS gas_used VARCHAR(50)`);
+
             console.log("✅ Tabla 'courses' verificada/creada.");
             console.log("✅ Tabla 'users' verificada/creada.");
-            console.log("✅ Tabla 'transactions' verificada/creada.");
+            console.log("✅ Tabla 'transactions' verificada/creada + Columna gas_used.");
         } finally {
             client.release();
         }
@@ -99,17 +103,49 @@ app.get('/setup', async (req, res) => {
                 from_address VARCHAR(42) NOT NULL,
                 to_address VARCHAR(42) NOT NULL,
                 amount VARCHAR(50) NOT NULL,
+                gas_used VARCHAR(50),
                 timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
+            ALTER TABLE transactions ADD COLUMN IF NOT EXISTS gas_used VARCHAR(50);
         `);
         client.release();
-        res.send("<h1>✅ Tablas 'users', 'courses' y 'transactions' creadas/verificadas.</h1><p>Todo listo.</p>");
+        res.send("<h1>✅ Tablas actualizadas (incluyendo gas_used).</h1><p>Todo listo.</p>");
     } catch (err) {
         res.status(500).send(`
             <h1>❌ Error creando tablas:</h1>
             <p><strong>Mensaje:</strong> ${err.message}</p>
             <pre>${JSON.stringify(err, null, 2)}</pre>
         `);
+    }
+});
+
+// ... (API Endpoints: USUARIOS y CURSOS sin cambios) ...
+
+// --- API Endpoints: TRANSACCIONES ---
+
+// GET: Obtener historial
+app.get('/api/transactions', async (req, res) => {
+    try {
+        if (!process.env.DATABASE_URL) return res.json([]);
+        const result = await pool.query('SELECT * FROM transactions ORDER BY timestamp DESC');
+        res.json(result.rows);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST: Guardar transacción
+app.post('/api/transactions', async (req, res) => {
+    const { tx_hash, from_address, to_address, amount, gas_used } = req.body;
+    try {
+        const query = 'INSERT INTO transactions (tx_hash, from_address, to_address, amount, gas_used) VALUES ($1, $2, $3, $4, $5) RETURNING *';
+        const values = [tx_hash, from_address, to_address, amount.toString(), gas_used ? gas_used.toString() : "0"];
+        const result = await pool.query(query, values);
+        res.status(201).json(result.rows[0]);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: err.message });
     }
 });
 

@@ -40,10 +40,11 @@ async function fetchTransactions() {
     }
 }
 
+// ...
 function renderTransactions(transactions) {
     transactionsTableBody.innerHTML = '';
     if (!transactions || transactions.length === 0) {
-        transactionsTableBody.innerHTML = '<tr><td colspan="5" style="text-align:center; opacity: 0.7;">No hay transacciones registradas</td></tr>';
+        transactionsTableBody.innerHTML = '<tr><td colspan="6" style="text-align:center; opacity: 0.7;">No hay transacciones registradas</td></tr>';
         return;
     }
 
@@ -53,19 +54,21 @@ function renderTransactions(transactions) {
         const shortHash = `${tx.tx_hash.substring(0, 8)}...${tx.tx_hash.substring(60)}`;
         const shortFrom = `${tx.from_address.substring(0, 6)}...`;
         const shortTo = `${tx.to_address.substring(0, 6)}...`;
+        const gasDisplay = tx.gas_used ? `${parseFloat(tx.gas_used).toFixed(6)}` : '-';
 
         tr.innerHTML = `
             <td><a href="https://polygonscan.com/tx/${tx.tx_hash}" target="_blank" class="hash-link">🔗 ${shortHash}</a></td>
             <td>${shortFrom}</td>
             <td>${shortTo}</td>
             <td style="color: #4ade80; font-weight: bold;">${tx.amount} MATIC</td>
+            <td style="font-size: 0.9rem; color: #fbbf24;">⛽ ${gasDisplay}</td>
             <td style="font-size: 0.85rem; opacity: 0.8;">${date}</td>
         `;
         transactionsTableBody.appendChild(tr);
     });
 }
 
-async function saveTransaction(txHash, from, to, amount) {
+async function saveTransaction(txHash, from, to, amount, gasUsed) {
     try {
         await fetch(API_TRANSACTIONS, {
             method: 'POST',
@@ -74,7 +77,8 @@ async function saveTransaction(txHash, from, to, amount) {
                 tx_hash: txHash,
                 from_address: from,
                 to_address: to,
-                amount: amount
+                amount: amount,
+                gas_used: gasUsed
             })
         });
         console.log("✅ Transacción guardada en DB");
@@ -83,6 +87,23 @@ async function saveTransaction(txHash, from, to, amount) {
         console.error("❌ Error guardando en DB:", error);
     }
 }
+//...
+// (Inside sendMatic)
+const receipt = await tx.wait(); // Esperar confirmación
+
+// Calcular Gas Cost: Gas Used * Effective Gas Price
+const gasUsedBN = receipt.gasUsed;
+const gasPriceBN = receipt.effectiveGasPrice;
+const gasCostBN = gasUsedBN.mul(gasPriceBN);
+const gasCostMatic = ethers.utils.formatEther(gasCostBN);
+
+txStatus.textContent = "✅ Confirmada! Guardando...";
+
+// Guardar en nuestra DB con Gas
+await saveTransaction(tx.hash, userAddress, to, amount, gasCostMatic);
+
+btnSend.textContent = "Enviar 🚀";
+//...
 
 // ==========================================
 // --- INTEGRACIÓN WEB3 (METAMASK) ---
