@@ -42,8 +42,8 @@
                         <th>Acciones</th>
                     </tr>
                 </thead>
-                <tbody>
-                    <!-- JS llenará esto -->
+                <tbody id="userTableBody">
+                    <!-- JS llenará esto (Nota: app.js usa querySelector('#usersTable tbody')) -->
                     <tr>
                         <td colspan="7" style="text-align: center; padding: 2rem;">Cargando datos...</td>
                     </tr>
@@ -82,7 +82,43 @@
 
     <!-- Modal Formulario Usuario -->
     <div class="modal" id="userModal">
-        <!-- ... (contenido existente) ... -->
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modalTitle">Nuevo Usuario</h2>
+                <button class="close-modal" onclick="closeModal()">×</button>
+            </div>
+            <form id="userForm">
+                <input type="hidden" id="userId">
+                <div class="form-group">
+                    <label>Nombre</label>
+                    <input type="text" id="nombre" required>
+                </div>
+                <div class="form-group">
+                    <label>Apellido</label>
+                    <input type="text" id="apellido" required>
+                </div>
+                <div class="form-group">
+                    <label>DNI</label>
+                    <input type="text" id="dni" required>
+                </div>
+                <div class="form-group" style="display: flex; gap: 1rem;">
+                    <div style="flex: 1;">
+                        <label>Edad</label>
+                        <input type="number" id="edad" required>
+                    </div>
+                    <div style="flex: 1;">
+                        <label>Sexo</label>
+                        <select id="sexo" required>
+                            <option value="">Seleccionar</option>
+                            <option value="M">Masculino</option>
+                            <option value="F">Femenino</option>
+                            <option value="O">Otro</option>
+                        </select>
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 1rem;">Guardar</button>
+            </form>
+        </div>
     </div>
 
     <!-- Modal Formulario Curso -->
@@ -129,44 +165,6 @@
                     Curso</button>
             </form>
         </div>
-    </div>
-    <div class="modal-content">
-        <div class="modal-header">
-            <h2 id="modalTitle">Nuevo Usuario</h2>
-            <button class="close-modal" onclick="closeModal()">×</button>
-        </div>
-        <form id="userForm">
-            <input type="hidden" id="userId">
-            <div class="form-group">
-                <label>Nombre</label>
-                <input type="text" id="nombre" required>
-            </div>
-            <div class="form-group">
-                <label>Apellido</label>
-                <input type="text" id="apellido" required>
-            </div>
-            <div class="form-group">
-                <label>DNI</label>
-                <input type="text" id="dni" required>
-            </div>
-            <div class="form-group" style="display: flex; gap: 1rem;">
-                <div style="flex: 1;">
-                    <label>Edad</label>
-                    <input type="number" id="edad" required>
-                </div>
-                <div style="flex: 1;">
-                    <label>Sexo</label>
-                    <select id="sexo" required>
-                        <option value="">Seleccionar</option>
-                        <option value="M">Masculino</option>
-                        <option value="F">Femenino</option>
-                        <option value="O">Otro</option>
-                    </select>
-                </div>
-            </div>
-            <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 1rem;">Guardar</button>
-        </form>
-    </div>
     </div>
 
     <script src="app.js"></script>
