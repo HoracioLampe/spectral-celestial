@@ -7,8 +7,8 @@ const PORT = process.env.PORT || 3000;
 // Configuración de PostgreSQL
 // Railway provee automáticamente la variable DATABASE_URL
 const pool = new Pool({
-    connectionString: process.env.DATABASE_URL || 'postgresql://postgres:mYWKriiIoggzUBmIzVywdMXRYKNKzOYa@postgres.railway.internal:5432/railway',
-    ssl: false
+    connectionString: process.env.DATABASE_URL,
+    ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false
 });
 
 // Middleware para parsear JSON
@@ -50,10 +50,6 @@ initDB();
 // Endpoint de Ayuda: Forzar creación de tabla manualmente
 app.get('/setup', async (req, res) => {
     try {
-        if (!process.env.DATABASE_URL) {
-            throw new Error("⚠️ La variable de entorno DATABASE_URL no está definida. \n\nSolución: Ve a Railway -> Variables y asegúrate de que esté ahí, luego Reinicia el servicio.");
-        }
-
         const client = await pool.connect();
         await client.query(`
             CREATE TABLE IF NOT EXISTS users (
