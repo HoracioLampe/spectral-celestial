@@ -265,12 +265,25 @@ const uploadStatus = document.getElementById('uploadStatus');
 const batchStatsContainer = document.getElementById('batchStatsContainer');
 const detailTotalAmount = document.getElementById('detailTotalAmount');
 const detailTotalTx = document.getElementById('detailTotalTx');
+
+// Merkle Elements
+const merkleContainer = document.getElementById('merkleContainer');
+const merkleInputZone = document.getElementById('merkleInputZone');
+const merkleResultZone = document.getElementById('merkleResultZone');
+const batchFunderAddress = document.getElementById('batchFunderAddress');
+const btnGenerateMerkle = document.getElementById('btnGenerateMerkle');
+const displayMerkleRoot = document.getElementById('displayMerkleRoot');
+const merkleStatus = document.getElementById('merkleStatus');
+
 const batchTableBody = document.getElementById('batchTableBody');
 
 // Event Listeners
 if (btnOpenBatchModal) btnOpenBatchModal.onclick = () => batchModal.classList.add('active');
 if (btnSaveBatch) btnSaveBatch.onclick = createBatch;
+if (btnOpenBatchModal) btnOpenBatchModal.onclick = () => batchModal.classList.add('active');
+if (btnSaveBatch) btnSaveBatch.onclick = createBatch;
 if (btnUploadBatch) btnUploadBatch.onclick = uploadBatchFile;
+if (btnGenerateMerkle) btnGenerateMerkle.onclick = generateMerkleTree;
 
 // Global functions for HTML access
 window.closeBatchModal = () => batchModal.classList.remove('active');
@@ -422,8 +435,30 @@ function updateDetailView(batch, txs) {
         uploadStatus.textContent = '';
         btnUploadBatch.disabled = false;
         btnUploadBatch.textContent = "Subir y Calcular 📤";
+        if (merkleContainer) merkleContainer.classList.add('hidden');
     } else {
         detailUploadContainer.classList.add('hidden');
+
+        // Merkle Logic (For Ready/Sent batches)
+        if (merkleContainer) {
+            merkleContainer.classList.remove('hidden');
+            merkleStatus.textContent = '';
+
+            if (batch.merkle_root) {
+                // Already generated
+                merkleInputZone.classList.add('hidden');
+                merkleResultZone.classList.remove('hidden');
+                displayMerkleRoot.textContent = batch.merkle_root;
+                if (batch.funder_address) {
+                    merkleStatus.textContent = `Funder: ${batch.funder_address}`;
+                }
+            } else {
+                // Not generated yet
+                merkleInputZone.classList.remove('hidden');
+                merkleResultZone.classList.add('hidden');
+                batchFunderAddress.value = ''; // Reset or keep empty
+            }
+        }
     }
 
     // Init Pagination
@@ -554,5 +589,45 @@ async function uploadBatchFile() {
     } finally {
         btnUploadBatch.textContent = "Subir y Calcular 📤";
         btnUploadBatch.disabled = false;
+    }
+}
+
+async function generateMerkleTree() {
+    if (!currentBatchId) return;
+    const funder = batchFunderAddress.value.trim();
+
+    if (!funder || !ethers.utils.isAddress(funder)) {
+        return alert("Ingresa una dirección de Funder válida");
+    }
+
+    try {
+        btnGenerateMerkle.disabled = true;
+        btnGenerateMerkle.textContent = "Generando...";
+        merkleStatus.textContent = "Calculando árbol criptográfico...";
+
+        const res = await fetch(`/api/batches/${currentBatchId}/merkle`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ funder_address: funder })
+        });
+        const data = await res.json();
+
+        if (data.root) {
+            // Update UI directly to avoid full reload flicker, or just reload logic
+            merkleInputZone.classList.add('hidden');
+            merkleResultZone.classList.remove('hidden');
+            displayMerkleRoot.textContent = data.root;
+            merkleStatus.textContent = "✅ Árbol Generado y Guardado.";
+        } else {
+            throw new Error(data.error || "Error desconocido");
+        }
+
+    } catch (error) {
+        console.error(error);
+        alert("Error: " + error.message);
+        merkleStatus.textContent = "❌ Falló la generación.";
+    } finally {
+        btnGenerateMerkle.disabled = false;
+        btnGenerateMerkle.textContent = "Generar Merkle Tree ⚙️";
     }
 }

@@ -164,6 +164,30 @@
                     <p id="uploadStatus" class="status-text"></p>
                 </div>
 
+                <!-- Merkle Tree Section (Ready/Sent) -->
+                <div id="merkleContainer" class="transfer-board mb-3 hidden"
+                    style="border-color: rgba(139, 92, 246, 0.3);">
+                    <h3>🌳 Merkle Tree Verification</h3>
+
+                    <div id="merkleInputZone">
+                        <label>Funder Wallet (Quien enviará el lote)</label>
+                        <div style="display: flex; gap: 1rem; margin-top: 0.5rem;">
+                            <input type="text" id="batchFunderAddress" class="input-glass" placeholder="0x...">
+                            <button id="btnGenerateMerkle" class="btn btn-primary" style="white-space: nowrap;">Generar
+                                Merkle Tree ⚙️</button>
+                        </div>
+                    </div>
+
+                    <div id="merkleResultZone" class="hidden" style="margin-top: 1rem;">
+                        <label>Merkle Root:</label>
+                        <div
+                            style="background: rgba(0,0,0,0.3); padding: 0.8rem; border-radius: 8px; font-family: monospace; word-break: break-all; color: #a78bfa; border: 1px dashed #8b5cf6;">
+                            <span id="displayMerkleRoot">Not Generated</span>
+                        </div>
+                    </div>
+                    <p id="merkleStatus" class="status-text"></p>
+                </div>
+
                 <!-- Grilla Detalle -->
                 <div class="top-bar">
                     <h3>📋 Detalle de Transacciones</h3>

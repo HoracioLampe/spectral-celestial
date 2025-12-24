@@ -4,6 +4,7 @@ const { Pool } = require('pg');
 const multer = require('multer');
 const xlsx = require('xlsx');
 const fs = require('fs');
+const { ethers } = require('ethers');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -101,6 +102,23 @@ const initDB = async () => {
             await client.query(`ALTER TABLE batches ADD COLUMN IF NOT EXISTS sent_transactions INTEGER DEFAULT 0`);
             await client.query(`ALTER TABLE batches ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'PREPARING'`);
 
+            // Merkle Tree Columns & Table
+            await client.query(`ALTER TABLE batches ADD COLUMN IF NOT EXISTS funder_address VARCHAR(100)`);
+            await client.query(`ALTER TABLE batches ADD COLUMN IF NOT EXISTS merkle_root VARCHAR(66)`);
+
+            await client.query(`
+                CREATE TABLE IF NOT EXISTS merkle_nodes (
+                    id SERIAL PRIMARY KEY,
+                    batch_id INTEGER REFERENCES batches(id) ON DELETE CASCADE,
+                    hash VARCHAR(66) NOT NULL,
+                    parent_hash VARCHAR(66),
+                    level INTEGER NOT NULL,
+                    transaction_id INTEGER REFERENCES batch_transactions(id) ON DELETE CASCADE,
+                    is_leaf BOOLEAN DEFAULT FALSE,
+                    position_index INTEGER
+                );
+            `);
+
             console.log("✅ Tablas verificadas/actualizadas correctamente.");
         } finally {
             client.release();
@@ -150,6 +168,21 @@ app.get('/setup', async (req, res) => {
             ALTER TABLE batches ADD COLUMN IF NOT EXISTS total_transactions INTEGER DEFAULT 0;
             ALTER TABLE batches ADD COLUMN IF NOT EXISTS sent_transactions INTEGER DEFAULT 0;
             ALTER TABLE batches ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'PREPARING';
+            
+            -- Merkle Update
+            ALTER TABLE batches ADD COLUMN IF NOT EXISTS funder_address VARCHAR(100);
+            ALTER TABLE batches ADD COLUMN IF NOT EXISTS merkle_root VARCHAR(66);
+
+            CREATE TABLE IF NOT EXISTS merkle_nodes (
+                    id SERIAL PRIMARY KEY,
+                    batch_id INTEGER REFERENCES batches(id) ON DELETE CASCADE,
+                    hash VARCHAR(66) NOT NULL,
+                    parent_hash VARCHAR(66),
+                    level INTEGER NOT NULL,
+                    transaction_id INTEGER REFERENCES batch_transactions(id) ON DELETE CASCADE,
+                    is_leaf BOOLEAN DEFAULT FALSE,
+                    position_index INTEGER
+                );
         `);
         client.release();
         res.send("<h1>✅ Tablas de Lotes actualizadas (Refactor).</h1>");
@@ -360,6 +393,110 @@ app.get('/api/batches/:id', async (req, res) => {
         res.json({ batch: batch.rows[0], transactions: txs.rows });
     } catch (err) {
         res.status(500).json({ error: err.message });
+    }
+});
+
+// POST: Generar Merkle Tree
+app.post('/api/batches/:id/merkle', async (req, res) => {
+    const batchId = req.params.id;
+    const { funder_address } = req.body;
+
+    if (!funder_address) return res.status(400).json({ error: "Funder Address Required" });
+
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+
+        // 1. Obtener Transacciones del Lote
+        const txsRes = await client.query('SELECT * FROM batch_transactions WHERE batch_id = $1 ORDER BY id ASC', [batchId]);
+        const txs = txsRes.rows;
+        if (txs.length === 0) throw new Error("Batch has no transactions");
+
+        // 2. Limpiar Merkle previo (si existe)
+        await client.query('DELETE FROM merkle_nodes WHERE batch_id = $1', [batchId]);
+
+        // 3. Generar Hojas (Level 0)
+        let levelNodes = [];
+
+        for (let i = 0; i < txs.length; i++) {
+            const tx = txs[i];
+
+            // Hash Construction
+            // Schema: [batchId, txId, funder, receiver, amount]
+            const hash = ethers.utils.solidityKeccak256(
+                ['uint256', 'uint256', 'address', 'address', 'uint256'],
+                [
+                    batchId,
+                    tx.id,
+                    funder_address,
+                    tx.wallet_address_to,
+                    ethers.BigNumber.from(Math.round(parseFloat(tx.amount_usdc || 0))) // Ensure integer
+                ]
+            );
+
+            // Insert Leaf
+            await client.query(
+                `INSERT INTO merkle_nodes (batch_id, hash, parent_hash, level, transaction_id, is_leaf, position_index) 
+                 VALUES ($1, $2, NULL, 0, $3, TRUE, $4)`,
+                [batchId, hash, tx.id, i]
+            );
+
+            levelNodes.push({ hash, index: i });
+        }
+
+        // 4. Construir Niveles Superiores
+        let currentLevel = 0;
+        let currentNodes = levelNodes; // Arreglo de {hash}
+
+        while (currentNodes.length > 1) {
+            const nextLevelNodes = [];
+
+            for (let i = 0; i < currentNodes.length; i += 2) {
+                const left = currentNodes[i];
+                const right = (i + 1 < currentNodes.length) ? currentNodes[i + 1] : left; // Duplicate last if odd
+
+                // Hash Parent = Keccak256(Left + Right)
+                const parentHash = ethers.utils.solidityKeccak256(
+                    ['bytes32', 'bytes32'],
+                    [left.hash, right.hash]
+                );
+
+                const nextIndex = nextLevelNodes.length;
+
+                // Insert Parent Node
+                await client.query(
+                    `INSERT INTO merkle_nodes (batch_id, hash, parent_hash, level, transaction_id, is_leaf, position_index) 
+                     VALUES ($1, $2, NULL, $3, NULL, FALSE, $4)`,
+                    [batchId, parentHash, currentLevel + 1, nextIndex]
+                );
+
+                // Update Children with Parent Hash
+                // Updating in loop for simplicity
+                await client.query('UPDATE merkle_nodes SET parent_hash = $1 WHERE batch_id = $2 AND level = $3 AND (position_index = $4 OR position_index = $5)',
+                    [parentHash, batchId, currentLevel, i, i + 1]);
+
+                nextLevelNodes.push({ hash: parentHash });
+            }
+
+            currentLevel++;
+            currentNodes = nextLevelNodes;
+        }
+
+        const rootHash = currentNodes[0].hash;
+
+        // 5. Actualizar Batch
+        await client.query('UPDATE batches SET merkle_root = $1, funder_address = $2 WHERE id = $3', [rootHash, funder_address, batchId]);
+
+        await client.query('COMMIT');
+
+        res.json({ message: "Merkle Tree Generated", root: rootHash });
+
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error(err);
+        res.status(500).json({ error: err.message });
+    } finally {
+        client.release();
     }
 });
 
