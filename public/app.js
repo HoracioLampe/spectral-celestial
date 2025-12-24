@@ -1,81 +1,48 @@
-const API_URL = '/api/users';
-let isEditing = false;
+const API_USERS = '/api/users';
+const API_COURSES = '/api/courses';
+let isEditingUser = false;
+let isEditingCourse = false;
 
-// Elementos del DOM
-const tableBody = document.querySelector('#usersTable tbody');
-const modal = document.getElementById('userModal');
-const form = document.getElementById('userForm');
-const modalTitle = document.getElementById('modalTitle');
+// --- Elementos DOM (Usuarios) ---
+const userTableBody = document.getElementById('userTableBody');
+const userModal = document.getElementById('userModal');
+const userForm = document.getElementById('userForm');
+const userModalTitle = document.getElementById('modalTitle');
 
-// Cargar usuarios al inicio
-document.addEventListener('DOMContentLoaded', fetchUsers);
+// --- Elementos DOM (Cursos) ---
+const courseTableBody = document.getElementById('coursesTableBody');
+const courseModal = document.getElementById('courseModal');
+const courseForm = document.getElementById('courseForm');
+const courseModalTitle = document.getElementById('courseModalTitle');
 
-// --- Funciones CRUD ---
+document.addEventListener('DOMContentLoaded', () => {
+    console.log("🚀 Aplicación iniciada. Cargando datos...");
+    fetchUsers();
+    fetchCourses();
+});
+
+// ==========================================
+// --- GESTIÓN DE USUARIOS ---
+// ==========================================
 
 async function fetchUsers() {
+    if (!userTableBody) return console.error("❌ Error: No se encontró userTableBody");
+
     try {
-        const res = await fetch(API_URL);
+        const res = await fetch(API_USERS);
+        if (!res.ok) throw new Error('Error en respuesta API');
         const users = await res.json();
-        renderTable(users);
+        renderUsers(users);
     } catch (error) {
-        console.error('Error cargando usuarios:', error);
-        tableBody.innerHTML = '<tr><td colspan="7">Error cargando datos</td></tr>';
+        console.error('❌ Error cargando usuarios:', error);
+        userTableBody.innerHTML = '<tr><td colspan="7" style="color: #ff6b6b; text-align: center;">Error cargando datos. Ver consola.</td></tr>';
     }
 }
 
-async function saveUser(e) {
-    e.preventDefault();
-
-    const userData = {
-        nombre: document.getElementById('nombre').value,
-        apellido: document.getElementById('apellido').value,
-        dni: document.getElementById('dni').value,
-        edad: document.getElementById('edad').value,
-        sexo: document.getElementById('sexo').value
-    };
-
-    const id = document.getElementById('userId').value;
-    const method = isEditing ? 'PUT' : 'POST';
-    const url = isEditing ? `${API_URL}/${id}` : API_URL;
-
-    try {
-        const res = await fetch(url, {
-            method: method,
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(userData)
-        });
-
-        const data = await res.json();
-
-        if (res.ok) {
-            closeModal();
-            fetchUsers();
-        } else {
-            alert('Error: ' + (data.error || 'Error guardando usuario'));
-        }
-    } catch (error) {
-        console.error('Error:', error);
-    }
-}
-
-async function deleteUser(id) {
-    if (!confirm('¿Estás seguro de eliminar este usuario?')) return;
-
-    try {
-        await fetch(`${API_URL}/${id}`, { method: 'DELETE' });
-        fetchUsers();
-    } catch (error) {
-        console.error('Error eliminando:', error);
-    }
-}
-
-// --- Renderizado ---
-
-function renderTable(users) {
-    tableBody.innerHTML = '';
-
-    if (users.length === 0) {
-        tableBody.innerHTML = '<tr><td colspan="7" style="text-align:center">No hay usuarios registrados</td></tr>';
+function renderUsers(users) {
+    userTableBody.innerHTML = '';
+    if (!Array.isArray(users) || users.length === 0) {
+        userTableBody.innerHTML = '<tr><td colspan="7" style="text-align:center; opacity: 0.7;">No hay usuarios registrados</td></tr>';
         return;
     }
 
@@ -83,89 +50,131 @@ function renderTable(users) {
         const tr = document.createElement('tr');
         tr.innerHTML = `
             <td>#${user.id}</td>
-            <td>${user.nombre}</td>
+            <td><strong>${user.nombre}</strong></td>
             <td>${user.apellido}</td>
             <td>${user.dni}</td>
             <td>${user.edad}</td>
             <td>${user.sexo}</td>
             <td>
-                <button class="btn btn-sm btn-edit" onclick="editUser(${JSON.stringify(user).replace(/"/g, '&quot;')})">Editar</button>
-                <button class="btn btn-sm btn-delete" onclick="deleteUser(${user.id})">Borrar</button>
+                <button class="btn btn-sm btn-edit" onclick='openUserModal(${JSON.stringify(user).replace(/"/g, "&quot;")})'>✏️</button>
+                <button class="btn btn-sm btn-delete" onclick="deleteUser(${user.id})">🗑️</button>
             </td>
         `;
-        tableBody.appendChild(tr);
+        userTableBody.appendChild(tr);
     });
 }
 
-// --- Manejo del Modal ---
+// Guardar Usuario
+if (userForm) {
+    userForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
 
-function openModal() {
-    isEditing = false;
-    modalTitle.textContent = 'Nuevo Usuario';
-    form.reset();
-    document.getElementById('userId').value = '';
-    modal.classList.add('active');
+        const data = {
+            nombre: document.getElementById('nombre').value,
+            apellido: document.getElementById('apellido').value,
+            dni: document.getElementById('dni').value,
+            edad: document.getElementById('edad').value,
+            sexo: document.getElementById('sexo').value
+        };
+
+        const id = document.getElementById('userId').value;
+        const method = isEditingUser ? 'PUT' : 'POST';
+        const url = isEditingUser ? `${API_USERS}/${id}` : API_USERS;
+
+        try {
+            const res = await fetch(url, {
+                method: method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+
+            if (res.ok) {
+                closeUserModal();
+                fetchUsers();
+            } else {
+                const err = await res.json();
+                alert('Error: ' + (err.error || 'Desconocido'));
+            }
+        } catch (error) {
+            console.error(error);
+            alert('Error de red al guardar usuario');
+        }
+    });
 }
 
-window.editUser = function (user) { // Hacer global para onclick
-    isEditing = true;
-    modalTitle.textContent = 'Editar Usuario';
+// Borrar Usuario
+window.deleteUser = async function (id) {
+    if (!confirm('¿Eliminar usuario?')) return;
+    try {
+        await fetch(`${API_USERS}/${id}`, { method: 'DELETE' });
+        fetchUsers();
+    } catch (error) {
+        console.error("Error borrando:", error);
+    }
+};
 
-    document.getElementById('userId').value = user.id;
-    document.getElementById('nombre').value = user.nombre;
-    document.getElementById('apellido').value = user.apellido;
-    document.getElementById('dni').value = user.dni;
-    document.getElementById('edad').value = user.edad;
-    document.getElementById('sexo').value = user.sexo;
+// Modal Usuario
+window.openModal = function () { // Llamado desde HTML (+ Nuevo Usuario)
+    openUserModal();
+};
 
-    modal.classList.add('active');
+window.openUserModal = function (user = null) {
+    userModal.classList.add('active');
+    if (user) {
+        isEditingUser = true;
+        userModalTitle.textContent = "Editar Usuario";
+        document.getElementById('userId').value = user.id;
+        document.getElementById('nombre').value = user.nombre;
+        document.getElementById('apellido').value = user.apellido;
+        document.getElementById('dni').value = user.dni;
+        document.getElementById('edad').value = user.edad;
+        document.getElementById('sexo').value = user.sexo;
+    } else {
+        isEditingUser = false;
+        userModalTitle.textContent = "Nuevo Usuario";
+        userForm.reset();
+        document.getElementById('userId').value = '';
+    }
+};
+
+window.closeModal = function () {
+    closeUserModal();
+};
+
+function closeUserModal() {
+    userModal.classList.remove('active');
 }
 
-function closeModal() {
-    modal.classList.remove('active');
+// Click fuera para cerrar (Usuario)
+if (userModal) {
+    userModal.addEventListener('click', (e) => {
+        if (e.target === userModal) closeUserModal();
+    });
 }
 
-// Event Listeners
-form.addEventListener('submit', saveUser);
-
-// Cerrar al hacer click fuera
-modal.addEventListener('click', (e) => {
-    if (e.target === modal) closeModal();
-});
 
 // ==========================================
-// --- LÓGICA DE CURSOS ---
+// --- GESTIÓN DE CURSOS ---
 // ==========================================
 
-const API_COURSES = '/api/courses';
-let isEditingCourse = false;
-
-// Variables Cursos
-const coursesTableBody = document.getElementById('coursesTableBody');
-const courseModal = document.getElementById('courseModal');
-const courseForm = document.getElementById('courseForm');
-const courseModalTitle = document.getElementById('courseModalTitle');
-
-// Cargar cursos al inicio
-document.addEventListener('DOMContentLoaded', fetchCourses);
-
-// 1. Fetch Cursos
 async function fetchCourses() {
+    if (!courseTableBody) return console.error("❌ Error: No se encontró courseTableBody");
+
     try {
         const res = await fetch(API_COURSES);
+        if (!res.ok) throw new Error('Error en respuesta API Cursos');
         const courses = await res.json();
         renderCourses(courses);
     } catch (error) {
-        console.error('Error fetching courses:', error);
-        coursesTableBody.innerHTML = '<tr><td colspan="6" style="color: #ff6b6b; text-align:center;">Error cargando cursos</td></tr>';
+        console.error('❌ Error cargando cursos:', error);
+        courseTableBody.innerHTML = '<tr><td colspan="6" style="color: #ff6b6b; text-align: center;">Error cargando cursos.</td></tr>';
     }
 }
 
-// 2. Render Cursos
 function renderCourses(courses) {
-    coursesTableBody.innerHTML = '';
-    if (!courses || courses.length === 0) {
-        coursesTableBody.innerHTML = '<tr><td colspan="6" style="text-align:center; opacity: 0.7;">No hay cursos registrados</td></tr>';
+    courseTableBody.innerHTML = '';
+    if (!Array.isArray(courses) || courses.length === 0) {
+        courseTableBody.innerHTML = '<tr><td colspan="6" style="text-align:center; opacity: 0.7;">No hay cursos registrados</td></tr>';
         return;
     }
 
@@ -180,91 +189,90 @@ function renderCourses(courses) {
             <td>${fecha}</td>
             <td>${c.duracion_semanas} sem</td>
             <td>
-                <button class="btn btn-sm btn-edit" onclick='editCourse(${JSON.stringify(c).replace(/"/g, "&quot;")})'>Editar</button>
-                <button class="btn btn-sm btn-delete" onclick="deleteCourse(${c.id})">Borrar</button>
+                <button class="btn btn-sm btn-edit" onclick='openCourseModal(${JSON.stringify(c).replace(/"/g, "&quot;")})'>✏️</button>
+                <button class="btn btn-sm btn-delete" onclick="deleteCourse(${c.id})">🗑️</button>
             </td>
         `;
-        coursesTableBody.appendChild(row);
+        courseTableBody.appendChild(row);
     });
 }
 
-// 3. Guardar Curso
-courseForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
+// Guardar Curso
+if (courseForm) {
+    courseForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
 
-    const data = {
-        nombre: document.getElementById('courseNombre').value,
-        descripcion: document.getElementById('courseDescripcion').value,
-        nivel: document.getElementById('courseNivel').value,
-        fecha_inicio: document.getElementById('courseFecha').value,
-        duracion_semanas: document.getElementById('courseDuracion').value
-    };
+        const data = {
+            nombre: document.getElementById('courseNombre').value,
+            descripcion: document.getElementById('courseDescripcion').value,
+            nivel: document.getElementById('courseNivel').value,
+            fecha_inicio: document.getElementById('courseFecha').value,
+            duracion_semanas: document.getElementById('courseDuracion').value
+        };
 
-    const id = document.getElementById('courseId').value;
-    const method = isEditingCourse ? 'PUT' : 'POST';
-    const url = isEditingCourse ? `${API_COURSES}/${id}` : API_COURSES;
+        const id = document.getElementById('courseId').value;
+        const method = isEditingCourse ? 'PUT' : 'POST';
+        const url = isEditingCourse ? `${API_COURSES}/${id}` : API_COURSES;
 
-    try {
-        const res = await fetch(url, {
-            method: method,
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(data)
-        });
+        try {
+            const res = await fetch(url, {
+                method: method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
 
-        if (res.ok) {
-            closeCourseModal();
-            fetchCourses();
-        } else {
-            const err = await res.json();
-            alert('Error: ' + (err.error || 'Desconocido'));
+            if (res.ok) {
+                closeCourseModal();
+                fetchCourses();
+            } else {
+                const err = await res.json();
+                alert('Error: ' + (err.error || 'Desconocido'));
+            }
+        } catch (error) {
+            console.error(error);
+            alert('Error de red al guardar curso');
         }
-    } catch (error) {
-        console.error(error);
-        alert('Error de red');
-    }
-});
+    });
+}
 
-// 4. Borrar Curso
+// Borrar Curso
 window.deleteCourse = async function (id) {
-    if (!confirm('¿Seguro que quieres eliminar este curso?')) return;
+    if (!confirm('¿Eliminar curso?')) return;
     try {
         await fetch(`${API_COURSES}/${id}`, { method: 'DELETE' });
         fetchCourses();
     } catch (error) {
-        console.error(error);
+        console.error("Error borrando curso:", error);
     }
 };
 
-// 5. Modales Curso
-window.openCourseModal = function () {
-    isEditingCourse = false;
-    courseModalTitle.textContent = "Nuevo Curso";
-    courseForm.reset();
-    document.getElementById('courseId').value = '';
+// Modal Curso
+window.openCourseModal = function (course = null) {
     courseModal.classList.add('active');
+    if (course && course.id) { // Fix: check if it's a course object or event (if called w/o args)
+        isEditingCourse = true;
+        courseModalTitle.textContent = "Editar Curso";
+        document.getElementById('courseId').value = course.id;
+        document.getElementById('courseNombre').value = course.nombre;
+        document.getElementById('courseDescripcion').value = course.descripcion || '';
+        document.getElementById('courseNivel').value = course.nivel;
+        if (course.fecha_inicio) document.getElementById('courseFecha').value = course.fecha_inicio.split('T')[0];
+        document.getElementById('courseDuracion').value = course.duracion_semanas;
+    } else {
+        isEditingCourse = false;
+        courseModalTitle.textContent = "Nuevo Curso";
+        courseForm.reset();
+        document.getElementById('courseId').value = '';
+    }
 };
 
 window.closeCourseModal = function () {
     courseModal.classList.remove('active');
 };
 
-window.editCourse = function (c) {
-    isEditingCourse = true;
-    courseModalTitle.textContent = "Editar Curso";
-
-    document.getElementById('courseId').value = c.id;
-    document.getElementById('courseNombre').value = c.nombre;
-    document.getElementById('courseDescripcion').value = c.descripcion || '';
-    document.getElementById('courseNivel').value = c.nivel;
-    if (c.fecha_inicio) document.getElementById('courseFecha').value = c.fecha_inicio.split('T')[0];
-    document.getElementById('courseDuracion').value = c.duracion_semanas;
-
-    courseModal.classList.add('active');
-};
-
-// Cerrar modal curso al click afuera
-courseModal.addEventListener('click', (e) => {
-    if (e.target === courseModal) closeCourseModal();
-});
-
-
+// Click fuera para cerrar (Curso)
+if (courseModal) {
+    courseModal.addEventListener('click', (e) => {
+        if (e.target === courseModal) closeCourseModal();
+    });
+}
