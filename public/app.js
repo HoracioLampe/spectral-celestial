@@ -358,13 +358,14 @@ async function uploadBatchFile() {
 function renderBatchTransactions(txs) {
     batchTableBody.innerHTML = '';
     if (txs.length === 0) {
-        batchTableBody.innerHTML = '<tr><td colspan="4" style="text-align:center;">No hay registros</td></tr>';
+        batchTableBody.innerHTML = '<tr><td colspan="5" style="text-align:center;">No hay registros</td></tr>';
         return;
     }
 
     txs.forEach(tx => {
         const tr = document.createElement('tr');
         tr.innerHTML = `
+            <td style="opacity: 0.7;">${tx.transaction_reference || '-'}</td>
             <td style="font-family: monospace;">${tx.wallet_address}</td>
             <td style="color: #4ade80;">$${tx.amount_usdc}</td>
             <td style="font-size: 0.85rem; opacity: 0.7;">${tx.tx_hash || '-'}</td>
