@@ -7,19 +7,35 @@ const { ethers } = require('ethers');
 const fs = require('fs');
 const path = require('path');
 
-// Load or generate faucet wallet
-function getFaucetWallet(provider) {
-    let privateKey = process.env.FAUCET_PRIVATE_KEY;
-    if (!privateKey) {
-        // Generate a new random wallet and persist the key for later download
-        const wallet = ethers.Wallet.createRandom();
-        privateKey = wallet.privateKey;
-        // Save to a file in the project root (you can expose it via an endpoint)
-        const keyPath = path.resolve(__dirname, '..', 'faucet_key.txt');
-        fs.writeFileSync(keyPath, privateKey, { encoding: 'utf8' });
-        console.log('🪙 Faucet wallet generated. Private key saved to', keyPath);
+// Load or generate faucet wallet from DB
+async function getFaucetWallet(pool, provider) {
+    const client = await pool.connect();
+    try {
+        const result = await client.query('SELECT private_key FROM faucets ORDER BY id DESC LIMIT 1');
+        let privateKey;
+
+        if (result.rows.length > 0) {
+            privateKey = result.rows[0].private_key;
+        } else {
+            // Check ENV fallback for migration/first time
+            privateKey = process.env.FAUCET_PRIVATE_KEY;
+
+            if (!privateKey) {
+                const wallet = ethers.Wallet.createRandom();
+                privateKey = wallet.privateKey;
+                await client.query('INSERT INTO faucets (address, private_key) VALUES ($1, $2)', [wallet.address, privateKey]);
+                console.log('🪙 New Faucet wallet generated and saved to DB:', wallet.address);
+            } else {
+                // If it was in ENV but not DB, save it to DB
+                const wallet = new ethers.Wallet(privateKey);
+                await client.query('INSERT INTO faucets (address, private_key) VALUES ($1, $2)', [wallet.address, privateKey]);
+                console.log('🪙 Faucet from ENV saved to DB:', wallet.address);
+            }
+        }
+        return new ethers.Wallet(privateKey, provider);
+    } finally {
+        client.release();
     }
-    return new ethers.Wallet(privateKey, provider);
 }
 
 /**

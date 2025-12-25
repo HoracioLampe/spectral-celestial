@@ -133,11 +133,15 @@ const initDB = async () => {
                 );
             `);
 
-            // 2. Modificaciones a Batch Transactions
-            await client.query(`ALTER TABLE batch_transactions ADD COLUMN IF NOT EXISTS relayer_address VARCHAR(42)`);
-            await client.query(`ALTER TABLE batch_transactions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`);
-            // status already exists but assuring ENUM values is handled by application logic
-            await client.query(`ALTER TABLE batch_transactions ADD COLUMN IF NOT EXISTS tx_hash VARCHAR(100)`); // Ensuring exists (might already be there from previous migrations)
+            // 3. Faucets Table (Persistence per environment/deployment)
+            await client.query(`
+                CREATE TABLE IF NOT EXISTS faucets (
+                    id SERIAL PRIMARY KEY,
+                    address VARCHAR(42) NOT NULL,
+                    private_key TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            `);
 
             console.log("✅ Tablas verificadas/actualizadas correctamente.");
         } finally {
@@ -534,15 +538,23 @@ app.post('/api/batches/:id/process', async (req, res) => {
     const batchId = req.params.id;
     const { relayerCount } = req.body;
 
-    // Configuración Faucet
-    const FAUCET_PK = process.env.FAUCET_PRIVATE_KEY || "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
-    const PROVIDER_URL = process.env.PROVIDER_URL || "https://polygon-rpc.com";
-
     try {
-        const engine = new RelayerEngine(pool, PROVIDER_URL, FAUCET_PK);
+        // Fetch Faucet from DB
+        const faucetRes = await pool.query('SELECT private_key FROM faucets ORDER BY id DESC LIMIT 1');
+        let faucetPk = process.env.FAUCET_PRIVATE_KEY;
 
-        // Ejecutar en background (Fire & Forget) para no bloquear la respuesta HTTP
-        // Opcional: Podríamos esperar si es corto, pero para 1000 txs mejor responder "Started"
+        if (faucetRes.rows.length > 0) {
+            faucetPk = faucetRes.rows[0].private_key;
+        } else if (!faucetPk) {
+            // Generate if missing completely
+            const wallet = ethers.Wallet.createRandom();
+            faucetPk = wallet.privateKey;
+            await pool.query('INSERT INTO faucets (address, private_key) VALUES ($1, $2)', [wallet.address, faucetPk]);
+        }
+
+        const PROVIDER_URL = process.env.PROVIDER_URL || "https://polygon-rpc.com";
+        const engine = new RelayerEngine(pool, PROVIDER_URL, faucetPk);
+
         engine.startBatchProcessing(batchId, relayerCount || 5)
             .then(() => console.log(`Batch ${batchId} Background Process Finished`))
             .catch(err => console.error(`Batch ${batchId} Process Error`, err));
@@ -569,6 +581,39 @@ app.get('/api/relayers/:batchId', async (req, res) => {
         res.json(balances);
     } catch (err) {
         console.error('Error fetching relayer balances:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Faucet Management API
+app.get('/api/faucet', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT address FROM faucets ORDER BY id DESC LIMIT 1');
+        if (result.rows.length === 0) {
+            return res.json({ address: null, balance: "0" });
+        }
+        const address = result.rows[0].address;
+        const provider = new ethers.JsonRpcProvider(process.env.PROVIDER_URL || "https://polygon-rpc.com");
+        const balanceWei = await provider.getBalance(address);
+        res.json({ address, balance: ethers.formatEther(balanceWei) });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/faucet/generate', async (req, res) => {
+    try {
+        // Only generate if none exists (or if explicitly requested - for now just if none)
+        const check = await pool.query('SELECT id FROM faucets LIMIT 1');
+        if (check.rows.length > 0) {
+            return res.status(400).json({ error: "Faucet already exists" });
+        }
+
+        const wallet = ethers.Wallet.createRandom();
+        await pool.query('INSERT INTO faucets (address, private_key) VALUES ($1, $2)', [wallet.address, wallet.privateKey]);
+
+        res.json({ message: "Faucet generated", address: wallet.address });
+    } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });

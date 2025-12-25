@@ -1,5 +1,55 @@
 const API_TRANSACTIONS = '/api/transactions';
 
+// --- Faucet Monitoring ---
+async function checkFaucetStatus() {
+    const btnProcess = document.getElementById('btnProcessBatch');
+    const faucetStatus = document.getElementById('faucetStatus');
+    const faucetAddressSpan = document.getElementById('faucetAddress');
+    const faucetBalanceSpan = document.getElementById('faucetBalance');
+
+    try {
+        const response = await fetch('/api/faucet');
+        const data = await response.json();
+
+        if (data.address) {
+            if (faucetAddressSpan) faucetAddressSpan.textContent = `${data.address.substring(0, 6)}...${data.address.substring(38)}`;
+            if (faucetBalanceSpan) faucetBalanceSpan.textContent = `${parseFloat(data.balance).toFixed(4)} MATIC`;
+
+            const balance = parseFloat(data.balance);
+            if (balance <= 0) {
+                if (btnProcess) {
+                    btnProcess.disabled = true;
+                    btnProcess.title = "El Faucet no tiene MATIC";
+                    btnProcess.style.opacity = "0.5";
+                }
+                if (faucetStatus) {
+                    faucetStatus.textContent = "⚠️ Faucet vacío. Recargue MATIC para continuar.";
+                    faucetStatus.style.color = "#ef4444";
+                }
+            } else {
+                if (btnProcess && !window.processingBatch) {
+                    btnProcess.disabled = false;
+                    btnProcess.title = "";
+                    btnProcess.style.opacity = "1";
+                }
+                if (faucetStatus) {
+                    faucetStatus.textContent = "✅ Faucet listo";
+                    faucetStatus.style.color = "#4ade80";
+                }
+            }
+        } else {
+            if (btnProcess) btnProcess.disabled = true;
+            if (faucetStatus) faucetStatus.textContent = "❌ No hay Faucet configurado";
+        }
+    } catch (err) {
+        console.error('Error checking faucet:', err);
+    }
+}
+
+// Global initialization or interval
+setInterval(checkFaucetStatus, 15000);
+document.addEventListener('DOMContentLoaded', checkFaucetStatus);
+
 // --- Elementos DOM ---
 const transactionsTableBody = document.getElementById('transactionsTableBody');
 const btnConnect = document.getElementById('btnConnect');
