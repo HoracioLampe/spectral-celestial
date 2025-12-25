@@ -7,6 +7,7 @@ const fs = require('fs');
 const { ethers } = require('ethers');
 
 const app = express();
+// Build Trigger: 2025-12-25 16:04 (Force Sync)
 const PORT = process.env.PORT || 3000;
 
 // Configuración de Multer para subida de archivos
