@@ -129,6 +129,12 @@ class RelayerEngine {
                 `UPDATE batch_transactions SET status = 'SENT', tx_hash = $1, updated_at = NOW() WHERE id = $2`,
                 [txResponse.hash, txDB.id]
             );
+
+            // Update Relayer Last Activity
+            await this.pool.query(
+                `UPDATE relayers SET last_activity = NOW() WHERE address = $1`,
+                [wallet.address]
+            );
         } catch (e) {
             if (e.message && e.message.includes("Tx already executed")) {
                 console.log(`⚠️ Tx ${txDB.id} already on-chain. Recovered.`);
@@ -197,6 +203,12 @@ class RelayerEngine {
             txs.push(tx);
         }
         await Promise.all(txs.map(p => p.then(r => r.wait())));
+
+        // Update Relayers Last Activity
+        for (const r of relayers) {
+            await this.pool.query(`UPDATE relayers SET last_activity = NOW() WHERE address = $1`, [r.address]);
+        }
+
         console.log('✅ Funding complete');
     }
 

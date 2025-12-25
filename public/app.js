@@ -3,19 +3,27 @@ const API_TRANSACTIONS = '/api/transactions';
 // --- Faucet Monitoring ---
 async function checkFaucetStatus() {
     const btnProcess = document.getElementById('btnProcessBatch');
-    const faucetStatus = document.getElementById('faucetStatus');
+    const faucetStatus = document.getElementById('modalFaucetStatus'); // Updated ID
     const faucetAddressSpan = document.getElementById('faucetAddress');
     const faucetBalanceSpan = document.getElementById('faucetBalance');
     const faucetKeySpan = document.getElementById('faucetKey');
+
+    // Main Page elements
+    const mainAddress = document.getElementById('mainFaucetAddress');
+    const mainBalance = document.getElementById('mainFaucetBalance');
 
     try {
         const response = await fetch('/api/faucet');
         const data = await response.json();
 
         if (data.address) {
+            const shortAddr = `${data.address.substring(0, 6)}...${data.address.substring(38)}`;
             if (faucetAddressSpan) faucetAddressSpan.textContent = data.address;
             if (faucetBalanceSpan) faucetBalanceSpan.textContent = `${parseFloat(data.balance).toFixed(4)} MATIC`;
             if (faucetKeySpan) faucetKeySpan.textContent = data.privateKey || "---";
+
+            if (mainAddress) mainAddress.textContent = shortAddr;
+            if (mainBalance) mainBalance.textContent = `${parseFloat(data.balance).toFixed(4)} MATIC`;
 
             const balance = parseFloat(data.balance);
             if (balance <= 0) {
@@ -45,6 +53,7 @@ async function checkFaucetStatus() {
                 faucetStatus.textContent = "❌ No hay Faucet. Haz clic en 'Generar Faucet'.";
                 faucetStatus.style.color = "#ef4444";
             }
+            if (mainAddress) mainAddress.textContent = "No configurado";
         }
     } catch (err) {
         console.error('Error checking faucet:', err);
@@ -476,6 +485,8 @@ window.openBatchDetail = async function (id) {
 
         if (data.batch) {
             updateDetailView(data.batch, data.transactions);
+            // Refresh relayer balances for this batch
+            refreshRelayerBalances();
         }
     } catch (error) {
         console.error(error);
@@ -833,7 +844,7 @@ function renderRelayerBalances(data) {
     if (!tbody) return;
 
     if (!data || data.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="2" style="text-align:center; padding:1rem;">No hay relayers activos para este lote</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="3" style="text-align:center; padding:1rem;">No hay relayers activos para este lote</td></tr>';
         return;
     }
 
@@ -846,6 +857,9 @@ function renderRelayerBalances(data) {
             </td>
             <td style="padding:0.75rem; color:#4ade80; font-weight:bold;">
                 ${parseFloat(r.balance).toFixed(4)} MATIC
+            </td>
+            <td style="padding:0.75rem; color:#94a3b8; font-size:0.8rem;">
+                ${r.lastActivity ? new Date(r.lastActivity).toLocaleTimeString() : 'Sin actividad'}
             </td>
         </tr>
     `).join('');
@@ -888,7 +902,7 @@ window.refreshRelayerBalances = () => {
         fetchRelayerBalances(currentBatchId);
     } else {
         const tbody = document.getElementById('relayerBalancesTableBody');
-        if (tbody) tbody.innerHTML = '<tr><td colspan="2" style="text-align:center; padding:1rem;">Seleccione un lote para ver relayers</td></tr>';
+        if (tbody) tbody.innerHTML = '<tr><td colspan="3" style="text-align:center; padding:1rem;">Seleccione un lote para ver relayers</td></tr>';
     }
 };
 

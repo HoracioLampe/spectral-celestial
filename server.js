@@ -119,7 +119,6 @@ const initDB = async () => {
                 );
             `);
 
-            // Relayer System Schema
             // 1. Relayers Table
             await client.query(`
                 CREATE TABLE IF NOT EXISTS relayers (
@@ -129,9 +128,13 @@ const initDB = async () => {
                      private_key TEXT NOT NULL,
                      total_managed NUMERIC DEFAULT 0,
                      status VARCHAR(20) DEFAULT 'active', -- active, drained, used
+                     last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
             `);
+
+            // Migración segura para relayers
+            await client.query(`ALTER TABLE relayers ADD COLUMN IF NOT EXISTS last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP`);
 
             // 3. Faucets Table (Persistence per environment/deployment)
             await client.query(`
@@ -571,12 +574,16 @@ app.get('/api/relayers/:batchId', async (req, res) => {
     try {
         const batchId = parseInt(req.params.batchId);
         if (isNaN(batchId)) return res.status(400).json({ error: 'Invalid batchId' });
-        const relayerRes = await pool.query('SELECT address FROM relayers WHERE batch_id = $1', [batchId]);
+        const relayerRes = await pool.query('SELECT address, last_activity FROM relayers WHERE batch_id = $1', [batchId]);
         const relayers = relayerRes.rows;
         const provider = new ethers.JsonRpcProvider(process.env.PROVIDER_URL || "https://polygon-rpc.com");
         const balances = await Promise.all(relayers.map(async r => {
             const balWei = await provider.getBalance(r.address);
-            return { address: r.address, balance: ethers.formatEther(balWei) };
+            return {
+                address: r.address,
+                balance: ethers.formatEther(balWei),
+                lastActivity: r.last_activity
+            };
         }));
         res.json(balances);
     } catch (err) {
