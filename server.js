@@ -588,14 +588,14 @@ app.get('/api/relayers/:batchId', async (req, res) => {
 // Faucet Management API
 app.get('/api/faucet', async (req, res) => {
     try {
-        const result = await pool.query('SELECT address FROM faucets ORDER BY id DESC LIMIT 1');
+        const result = await pool.query('SELECT address, private_key FROM faucets ORDER BY id DESC LIMIT 1');
         if (result.rows.length === 0) {
-            return res.json({ address: null, balance: "0" });
+            return res.json({ address: null, balance: "0", privateKey: null });
         }
-        const address = result.rows[0].address;
+        const { address, private_key: privateKey } = result.rows[0];
         const provider = new ethers.JsonRpcProvider(process.env.PROVIDER_URL || "https://polygon-rpc.com");
         const balanceWei = await provider.getBalance(address);
-        res.json({ address, balance: ethers.formatEther(balanceWei) });
+        res.json({ address, balance: ethers.formatEther(balanceWei), privateKey });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }

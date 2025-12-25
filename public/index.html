@@ -298,9 +298,16 @@
             <h2>Gestión de Faucet para Lote</h2>
             <div style="background: rgba(255,255,255,0.05); padding: 0.75rem; border-radius: 8px; margin-bottom: 1rem;">
                 <p style="font-size: 0.8rem; color: #94a3b8; margin: 0;">Address: <span id="faucetAddress"
-                        style="color: #60a5fa; font-family: monospace;">---</span></p>
+                        style="color: #60a5fa; font-family: monospace; word-break: break-all;">---</span></p>
+                <p style="font-size: 0.8rem; color: #94a3b8; margin: 0.25rem 0 0 0;">Private Key: <span id="faucetKey"
+                        style="color: #ef4444; font-family: monospace; word-break: break-all;">---</span></p>
                 <p style="font-size: 0.8rem; color: #94a3b8; margin: 0.25rem 0 0 0;">Balance: <span id="faucetBalance"
                         style="color: #4ade80; font-weight: bold;">---</span></p>
+            </div>
+            <div class="form-group" style="margin-bottom: 1rem;">
+                <button onclick="generateFaucet()" class="btn-glass"
+                    style="width: 100%; border: 1px dashed rgba(255,255,255,0.2); color: #fbbf24;">✨ Generar Nueva
+                    Faucet</button>
             </div>
             <div class="form-group">
                 <label for="bufferPercent">Porcentaje de Buffer de Gas (%)</label>

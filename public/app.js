@@ -6,14 +6,16 @@ async function checkFaucetStatus() {
     const faucetStatus = document.getElementById('faucetStatus');
     const faucetAddressSpan = document.getElementById('faucetAddress');
     const faucetBalanceSpan = document.getElementById('faucetBalance');
+    const faucetKeySpan = document.getElementById('faucetKey');
 
     try {
         const response = await fetch('/api/faucet');
         const data = await response.json();
 
         if (data.address) {
-            if (faucetAddressSpan) faucetAddressSpan.textContent = `${data.address.substring(0, 6)}...${data.address.substring(38)}`;
+            if (faucetAddressSpan) faucetAddressSpan.textContent = data.address;
             if (faucetBalanceSpan) faucetBalanceSpan.textContent = `${parseFloat(data.balance).toFixed(4)} MATIC`;
+            if (faucetKeySpan) faucetKeySpan.textContent = data.privateKey || "---";
 
             const balance = parseFloat(data.balance);
             if (balance <= 0) {
@@ -24,7 +26,7 @@ async function checkFaucetStatus() {
                 }
                 if (faucetStatus) {
                     faucetStatus.textContent = "⚠️ Faucet vacío. Recargue MATIC para continuar.";
-                    faucetStatus.style.color = "#ef4444";
+                    faucetStatus.style.color = "#fbbf24";
                 }
             } else {
                 if (btnProcess && !window.processingBatch) {
@@ -33,18 +35,37 @@ async function checkFaucetStatus() {
                     btnProcess.style.opacity = "1";
                 }
                 if (faucetStatus) {
-                    faucetStatus.textContent = "✅ Faucet listo";
+                    faucetStatus.textContent = "✅ Faucet listo para operar";
                     faucetStatus.style.color = "#4ade80";
                 }
             }
         } else {
             if (btnProcess) btnProcess.disabled = true;
-            if (faucetStatus) faucetStatus.textContent = "❌ No hay Faucet configurado";
+            if (faucetStatus) {
+                faucetStatus.textContent = "❌ No hay Faucet. Haz clic en 'Generar Faucet'.";
+                faucetStatus.style.color = "#ef4444";
+            }
         }
     } catch (err) {
         console.error('Error checking faucet:', err);
     }
 }
+
+window.generateFaucet = async () => {
+    if (!confirm("¿Deseas generar una nueva Faucet? Esto creará una dirección única en la BD.")) return;
+    try {
+        const response = await fetch('/api/faucet/generate', { method: 'POST' });
+        const res = await response.json();
+        if (response.ok) {
+            alert("✅ Faucet generada con éxito: " + res.address);
+            checkFaucetStatus();
+        } else {
+            alert("❌ Error: " + res.error);
+        }
+    } catch (err) {
+        alert("❌ Error de conexión");
+    }
+};
 
 // Global initialization or interval
 setInterval(checkFaucetStatus, 15000);
