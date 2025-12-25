@@ -4,16 +4,11 @@ const ethers = require('ethers');
 class RelayerEngine {
     constructor(pool, providerUrl, faucetPrivateKey) {
         this.pool = pool; // Postgres Pool
-        this.provider = new ethers.providers.JsonRpcProvider(providerUrl);
+        this.provider = new ethers.JsonRpcProvider(providerUrl);
         this.faucetWallet = new ethers.Wallet(faucetPrivateKey, this.provider);
 
         // Configuration
         this.contractAddress = "0x1B9005DBb8f5EB197EaB6E2CB6555796e94663Af";
-        this.contractABI = [
-            "function executeTransaction(uint256 batchId, uint256 txId, address funder, address recipient, uint256 amount, bytes32[] calldata proof) external",
-            "function processedLeaves(bytes32) view returns (bool)"
-            // TODO: Añadir el ABI completo del contrato BatchDistributor exportado desde Remix si se requiere más funcionalidad
-        ];
         this.contractABI = [
             "function executeTransaction(uint256 batchId, uint256 txId, address funder, address recipient, uint256 amount, bytes32[] calldata proof) external",
             "function processedLeaves(bytes32) view returns (bool)"
@@ -27,7 +22,7 @@ class RelayerEngine {
         // A. Create Ephemeral Wallets
         const relayers = [];
         for (let i = 0; i < numRelayers; i++) {
-            relayers.push(ethers.Wallet.createRandom().connect(this.provider));
+            relayers.push(ethers.Wallet.createRandom(this.provider));
         }
 
         // B. Fund Relayers (Distribute Gas)
@@ -111,23 +106,21 @@ class RelayerEngine {
             const contract = new ethers.Contract(this.contractAddress, this.contractABI, wallet);
 
             // NOTE: PROOF GENERATION IS STUBBED. 
-            // In full implementation, we must query `merkle_nodes` to build the `bytes32[] proof`.
-            // For now, empty array to pass compilation, assuming proof logic is added later.
             const proof = [];
 
             const batchRes = await this.pool.query('SELECT funder_address FROM batches WHERE id = $1', [txDB.batch_id]);
             const funder = batchRes.rows[0].funder_address;
-            const amountVal = ethers.utils.parseUnits(txDB.amount_usdc.toString(), 6);
+            const amountVal = ethers.parseUnits(txDB.amount_usdc.toString(), 6);
 
             // Estimate Gas
-            const gasLimit = await contract.estimateGas.executeTransaction(
+            const gasLimit = await contract.executeTransaction.estimateGas(
                 txDB.batch_id, txDB.id, funder, txDB.wallet_address_to, amountVal, proof
             );
 
             // Execute
             const txResponse = await contract.executeTransaction(
                 txDB.batch_id, txDB.id, funder, txDB.wallet_address_to, amountVal, proof,
-                { gasLimit: gasLimit.mul(110).div(100) }
+                { gasLimit: gasLimit * 110n / 100n }
             );
 
             console.log(`Tx SENT: ${txResponse.hash}`);
@@ -152,16 +145,16 @@ class RelayerEngine {
         // Fetch all pending transactions for the batch
         const txRes = await this.pool.query('SELECT * FROM batch_transactions WHERE batch_id = $1', [batchId]);
         const txs = txRes.rows;
-        if (txs.length === 0) return { totalGas: ethers.BigNumber.from(0), totalCostWei: ethers.BigNumber.from(0) };
+        if (txs.length === 0) return { totalGas: 0n, totalCostWei: 0n };
         const batchRes = await this.pool.query('SELECT funder_address FROM batches WHERE id = $1', [batchId]);
-        const funder = batchRes.rows[0]?.funder_address || ethers.constants.AddressZero;
+        const funder = batchRes.rows[0]?.funder_address || ethers.ZeroAddress;
         const contract = new ethers.Contract(this.contractAddress, this.contractABI, this.provider);
-        let totalGas = ethers.BigNumber.from(0);
+        let totalGas = 0n;
         for (const tx of txs) {
-            const amountVal = ethers.utils.parseUnits(tx.amount_usdc.toString(), 6);
+            const amountVal = ethers.parseUnits(tx.amount_usdc.toString(), 6);
             const proof = [];
             try {
-                const gas = await contract.estimateGas.executeTransaction(
+                const gas = await contract.executeTransaction.estimateGas(
                     batchId,
                     tx.id,
                     funder,
@@ -169,15 +162,16 @@ class RelayerEngine {
                     amountVal,
                     proof
                 );
-                totalGas = totalGas.add(gas);
+                totalGas = totalGas + gas;
             } catch (e) {
                 console.error(`Gas estimation failed for tx ${tx.id}:`, e);
             }
         }
         // Add 50% buffer
-        const bufferedGas = totalGas.mul(ethers.BigNumber.from(150)).div(ethers.BigNumber.from(100));
-        const gasPrice = await this.provider.getGasPrice();
-        const totalCostWei = bufferedGas.mul(gasPrice);
+        const bufferedGas = totalGas * 150n / 100n;
+        const feeData = await this.provider.getFeeData();
+        const gasPrice = feeData.gasPrice || 35000000000n; // fallback to 35 gwei
+        const totalCostWei = bufferedGas * gasPrice;
         return { totalGas: bufferedGas, totalCostWei };
     }
 
@@ -185,14 +179,18 @@ class RelayerEngine {
     async distributeGasToRelayers(batchId, relayers) {
         const { totalCostWei } = await this.estimateBatchGas(batchId);
         if (relayers.length === 0) return;
-        const perRelayerWei = totalCostWei.div(ethers.BigNumber.from(relayers.length));
-        console.log(`🪙 Distributing ${ethers.utils.formatEther(perRelayerWei)} MATIC to each of ${relayers.length} relayers`);
+        const perRelayerWei = totalCostWei / BigInt(relayers.length);
+        console.log(`🪙 Distributing ${ethers.formatEther(perRelayerWei)} MATIC to each of ${relayers.length} relayers`);
         await this.fundRelayers(relayers, perRelayerWei);
     }
 
     // Updated funding logic to accept amount per relayer
     async fundRelayers(relayers, amountWei) {
-        console.log(`Funding ${relayers.length} relayers with ${ethers.utils.formatEther(amountWei)} MATIC each`);
+        if (!amountWei) {
+            console.log(`Funding ${relayers.length} relayers (legacy call)...`);
+            return;
+        }
+        console.log(`Funding ${relayers.length} relayers with ${ethers.formatEther(amountWei)} MATIC each`);
         const txs = [];
         for (const r of relayers) {
             const tx = this.faucetWallet.sendTransaction({ to: r.address, value: amountWei });
@@ -200,11 +198,6 @@ class RelayerEngine {
         }
         await Promise.all(txs.map(p => p.then(r => r.wait())));
         console.log('✅ Funding complete');
-    }
-
-    async fundRelayers(relayers) {
-        console.log(`Funding ${relayers.length} relayers...`);
-        // In real implementation: Send MATIC from faucetWallet to each relayer.address
     }
 
     // 6. Persistence

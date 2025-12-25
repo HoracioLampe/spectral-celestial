@@ -6,13 +6,13 @@ const contractABI = [
 ];
 
 // Using Polygon public RPC (Mainnet). Adjust if you deployed on a testnet.
-const provider = new ethers.providers.JsonRpcProvider("https://polygon-rpc.com");
+const provider = new ethers.JsonRpcProvider("https://polygon-rpc.com");
 
 (async () => {
     try {
         const contract = new ethers.Contract(contractAddress, contractABI, provider);
         // Use a zero hash as a dummy value; the function just returns a bool.
-        const dummyHash = ethers.constants.HashZero;
+        const dummyHash = ethers.ZeroHash;
         const result = await contract.processedLeaves(dummyHash);
         console.log("✅ Conexión exitosa. processedLeaves(0x0) =>", result);
     } catch (error) {

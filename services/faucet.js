@@ -31,9 +31,9 @@ function getFaucetWallet(provider) {
  */
 function calculatePerRelayerAmount(totalGas, gasPrice, relayerCount) {
     // Add 50% buffer
-    const bufferedGas = totalGas.mul(ethers.BigNumber.from(150)).div(ethers.BigNumber.from(100));
-    const totalWei = bufferedGas.mul(gasPrice);
-    return totalWei.div(ethers.BigNumber.from(relayerCount));
+    const bufferedGas = totalGas * 150n / 100n;
+    const totalWei = bufferedGas * gasPrice;
+    return totalWei / BigInt(relayerCount);
 }
 
 /**
@@ -48,7 +48,7 @@ async function distributeGas(faucetWallet, relayerAddrs, amountWei) {
         txs.push(tx);
     }
     await Promise.all(txs.map(p => p.then(r => r.wait())));
-    console.log(`🪙 Distributed ${ethers.utils.formatEther(amountWei)} MATIC to each of ${relayerAddrs.length} relayers`);
+    console.log(`🪙 Distributed ${ethers.formatEther(amountWei)} MATIC to each of ${relayerAddrs.length} relayers`);
 }
 
 /**
@@ -59,10 +59,14 @@ async function distributeGas(faucetWallet, relayerAddrs, amountWei) {
 async function collectFundsBack(relayers, faucetWallet) {
     const txs = [];
     for (const wallet of relayers) {
-        const balance = await wallet.getBalance();
-        if (balance.gt(ethers.constants.Zero)) {
-            const tx = wallet.sendTransaction({ to: faucetWallet.address, value: balance.sub(ethers.utils.parseUnits('0.001', 'ether')) }); // keep a tiny dust
-            txs.push(tx);
+        const balance = await wallet.provider.getBalance(wallet.address);
+        if (balance > 0n) {
+            // Keep a tiny dust for gas if needed (though we're sweeping)
+            const sweepAmount = balance - ethers.parseEther('0.001');
+            if (sweepAmount > 0n) {
+                const tx = wallet.sendTransaction({ to: faucetWallet.address, value: sweepAmount });
+                txs.push(tx);
+            }
         }
     }
     await Promise.all(txs.map(p => p.then(r => r.wait())));

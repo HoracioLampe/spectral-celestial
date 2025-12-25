@@ -451,14 +451,14 @@ app.post('/api/batches/:id/merkle', async (req, res) => {
 
             // Hash Construction
             // Schema: [batchId, txId, funder, receiver, amount]
-            const hash = ethers.utils.solidityKeccak256(
+            const hash = ethers.solidityPackedKeccak256(
                 ['uint256', 'uint256', 'address', 'address', 'uint256'],
                 [
                     batchId,
                     tx.id,
                     funder_address,
                     tx.wallet_address_to,
-                    ethers.BigNumber.from(Math.round(parseFloat(tx.amount_usdc || 0))) // Ensure integer
+                    BigInt(Math.round(parseFloat(tx.amount_usdc || 0))) // Ensure integer
                 ]
             );
 
@@ -484,7 +484,7 @@ app.post('/api/batches/:id/merkle', async (req, res) => {
                 const right = (i + 1 < currentNodes.length) ? currentNodes[i + 1] : left; // Duplicate last if odd
 
                 // Hash Parent = Keccak256(Left + Right)
-                const parentHash = ethers.utils.solidityKeccak256(
+                const parentHash = ethers.solidityPackedKeccak256(
                     ['bytes32', 'bytes32'],
                     [left.hash, right.hash]
                 );
@@ -534,10 +534,9 @@ app.post('/api/batches/:id/process', async (req, res) => {
     const batchId = req.params.id;
     const { relayerCount } = req.body;
 
-    // Configuración Faucet (Del .env o hardcoded para mockup)
-    // WARN: En producción usar process.env.FAUCET_PRIVATE_KEY
-    const FAUCET_PK = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"; // Mock PK (Hardhat Default) or Test
-    const PROVIDER_URL = "https://polygon-rpc.com"; // Polygon Mainnet RPC
+    // Configuración Faucet
+    const FAUCET_PK = process.env.FAUCET_PRIVATE_KEY || "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
+    const PROVIDER_URL = process.env.PROVIDER_URL || "https://polygon-rpc.com";
 
     try {
         const engine = new RelayerEngine(pool, PROVIDER_URL, FAUCET_PK);
@@ -562,10 +561,10 @@ app.get('/api/relayers/:batchId', async (req, res) => {
         if (isNaN(batchId)) return res.status(400).json({ error: 'Invalid batchId' });
         const relayerRes = await pool.query('SELECT address FROM relayers WHERE batch_id = $1', [batchId]);
         const relayers = relayerRes.rows;
-        const provider = new ethers.providers.JsonRpcProvider(PROVIDER_URL);
+        const provider = new ethers.JsonRpcProvider(process.env.PROVIDER_URL || "https://polygon-rpc.com");
         const balances = await Promise.all(relayers.map(async r => {
             const balWei = await provider.getBalance(r.address);
-            return { address: r.address, balance: ethers.utils.formatEther(balWei) };
+            return { address: r.address, balance: ethers.formatEther(balWei) };
         }));
         res.json(balances);
     } catch (err) {

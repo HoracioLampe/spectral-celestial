@@ -8,7 +8,7 @@ const contractABI = [
 ];
 
 // Public Polygon Mainnet RPC (no private key needed for callStatic)
-const provider = new ethers.providers.JsonRpcProvider("https://polygon-rpc.com");
+const provider = new ethers.JsonRpcProvider("https://polygon-rpc.com");
 
 (async () => {
     try {
@@ -18,15 +18,15 @@ const provider = new ethers.providers.JsonRpcProvider("https://polygon-rpc.com")
         const txId = 1;
         const funder = "0x0000000000000000000000000000000000000000"; // zero address (invalid, just for simulation)
         const recipient = "0x0000000000000000000000000000000000000000";
-        const amount = ethers.utils.parseUnits("0", 6); // 0 USDC
+        const amount = ethers.parseUnits("0", 6); // 0 USDC
         const proof = [];
 
-        // Use callStatic to simulate the transaction without sending it.
-        const result = await contract.callStatic.executeTransaction(batchId, txId, funder, recipient, amount, proof);
-        console.log("✅ callStatic succeeded, result:", result);
+        // Use staticCall to simulate the transaction without sending it.
+        const result = await contract.executeTransaction.staticCall(batchId, txId, funder, recipient, amount, proof);
+        console.log("✅ staticCall succeeded, result:", result);
     } catch (error) {
-        // callStatic throws on revert – we capture the revert reason if available.
-        console.error("❌ callStatic reverted or failed:", error);
+        // staticCall throws on revert – we capture the revert reason if available.
+        console.error("❌ staticCall reverted or failed:", error);
         if (error.error && error.error.message) {
             console.error("Revert reason:", error.error.message);
         }
