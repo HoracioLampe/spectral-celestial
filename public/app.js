@@ -733,3 +733,100 @@ if (btnProcessBatch) {
     });
 }
 
+// --- Faucet & Relayer Management Logic ---
+
+window.openFaucetModal = () => {
+    const modal = document.getElementById('faucetModal');
+    if (modal) modal.classList.remove('hidden');
+    refreshRelayerBalances();
+};
+
+window.closeFaucetModal = () => {
+    const modal = document.getElementById('faucetModal');
+    if (modal) modal.classList.add('hidden');
+};
+
+async function fetchRelayerBalances(batchId) {
+    try {
+        const response = await fetch(`/api/relayers/${batchId}`);
+        if (!response.ok) throw new Error('Error al obtener balances');
+        const data = await response.json();
+        renderRelayerBalances(data);
+    } catch (err) {
+        console.error('Error fetching relayer balances:', err);
+    }
+}
+
+function renderRelayerBalances(data) {
+    const tbody = document.getElementById('relayerBalancesTableBody');
+    if (!tbody) return;
+
+    if (!data || data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="2" style="text-align:center; padding:1rem;">No hay relayers activos para este lote</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = data.map(r => `
+        <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+            <td style="padding:0.75rem; font-family:monospace; font-size:0.85rem;">
+                <a href="https://polygonscan.com/address/${r.address}" target="_blank" style="color:#60a5fa; text-decoration:none;">
+                    ${r.address.substring(0, 6)}...${r.address.substring(38)}
+                </a>
+            </td>
+            <td style="padding:0.75rem; color:#4ade80; font-weight:bold;">
+                ${parseFloat(r.balance).toFixed(4)} MATIC
+            </td>
+        </tr>
+    `).join('');
+}
+
+window.triggerGasDistribution = async () => {
+    if (!currentBatchId) return alert("Seleccione un lote primero");
+    const count = parseInt(document.getElementById('relayerCountInput').value) || 5;
+    const buffer = parseInt(document.getElementById('bufferPercent').value) || 50;
+
+    const status = document.getElementById('faucetStatus');
+    status.textContent = "⌛ Distribuyendo MATIC desde el Faucet...";
+    status.style.color = "#fbbf24";
+
+    try {
+        const response = await fetch(`/api/batches/${currentBatchId}/process`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ relayerCount: count, gasBuffer: buffer })
+        });
+        const res = await response.json();
+        if (response.ok) {
+            status.textContent = "✅ Distribución iniciada con éxito.";
+            status.style.color = "#4ade80";
+            // Start polling if not already
+            if (window.balanceInterval) clearInterval(window.balanceInterval);
+            window.balanceInterval = setInterval(() => fetchRelayerBalances(currentBatchId), 15000);
+        } else {
+            status.textContent = "❌ Error: " + res.error;
+            status.style.color = "#ef4444";
+        }
+    } catch (err) {
+        status.textContent = "❌ Error de conexión";
+        status.style.color = "#ef4444";
+    }
+};
+
+window.refreshRelayerBalances = () => {
+    if (currentBatchId) {
+        fetchRelayerBalances(currentBatchId);
+    } else {
+        const tbody = document.getElementById('relayerBalancesTableBody');
+        if (tbody) tbody.innerHTML = '<tr><td colspan="2" style="text-align:center; padding:1rem;">Seleccione un lote para ver relayers</td></tr>';
+    }
+};
+
+// Auto-refresh if currentBatchId changes (handled via existing logic or detail view open)
+// We add a hook to the detail view opening logic if possible, or just interval
+setInterval(() => {
+    if (currentBatchId && document.getElementById('relayerBalancesTable')) {
+        fetchRelayerBalances(currentBatchId);
+    }
+}, 15000);
+
+
