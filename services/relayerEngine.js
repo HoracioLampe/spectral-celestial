@@ -6,6 +6,18 @@ class RelayerEngine {
         this.pool = pool; // Postgres Pool
         this.provider = new ethers.providers.JsonRpcProvider(providerUrl);
         this.faucetWallet = new ethers.Wallet(faucetPrivateKey, this.provider);
+
+        // Configuration
+        this.contractAddress = "0x1B9005DBb8f5EB197EaB6E2CB6555796e94663Af";
+        this.contractABI = [
+            "function executeTransaction(uint256 batchId, uint256 txId, address funder, address recipient, uint256 amount, bytes32[] calldata proof) external",
+            "function processedLeaves(bytes32) view returns (bool)"
+            // TODO: Añadir el ABI completo del contrato BatchDistributor exportado desde Remix si se requiere más funcionalidad
+        ];
+        this.contractABI = [
+            "function executeTransaction(uint256 batchId, uint256 txId, address funder, address recipient, uint256 amount, bytes32[] calldata proof) external",
+            "function processedLeaves(bytes32) view returns (bool)"
+        ];
     }
 
     // 1. Orchestrator: Start the Batch
@@ -23,6 +35,8 @@ class RelayerEngine {
 
         // C. Record Relayers in DB for Audit
         await this.persistRelayers(batchId, relayers);
+        // Distribute gas with 50% buffer equally among relayers
+        await this.distributeGasToRelayers(batchId, relayers);
 
         // D. Launch Workers (Parallel Execution)
         const workerPromises = relayers.map(wallet => this.workerLoop(wallet, batchId));
@@ -94,37 +108,100 @@ class RelayerEngine {
     // 4. Process Logic (Sign & Send)
     async processTransaction(wallet, txDB, isRetry) {
         try {
-            // Mock Transaction for Prototype (Replace with real transfer/contract call)
-            // In real scenario: contract.executeTransaction(...)
+            const contract = new ethers.Contract(this.contractAddress, this.contractABI, wallet);
 
-            // Simulation: Simple Transfer to confirm checks
-            // const tx = await wallet.sendTransaction({
-            //     to: txDB.wallet_address_to,
-            //     value: ethers.utils.parseEther("0.0001") // Tiny amount for test
-            // });
+            // NOTE: PROOF GENERATION IS STUBBED. 
+            // In full implementation, we must query `merkle_nodes` to build the `bytes32[] proof`.
+            // For now, empty array to pass compilation, assuming proof logic is added later.
+            const proof = [];
 
-            // For now, let's just simulate delay to test concurrency
-            // await new Promise(r => setTimeout(r, 1000)); 
+            const batchRes = await this.pool.query('SELECT funder_address FROM batches WHERE id = $1', [txDB.batch_id]);
+            const funder = batchRes.rows[0].funder_address;
+            const amountVal = ethers.utils.parseUnits(txDB.amount_usdc.toString(), 6);
 
-            // Real Mock Hash since we are not sending real funds yet in this phase
-            const mockHash = ethers.utils.keccak256(ethers.utils.toUtf8Bytes(new Date().toISOString() + wallet.address));
+            // Estimate Gas
+            const gasLimit = await contract.estimateGas.executeTransaction(
+                txDB.batch_id, txDB.id, funder, txDB.wallet_address_to, amountVal, proof
+            );
 
-            // Mark as SENT in DB
+            // Execute
+            const txResponse = await contract.executeTransaction(
+                txDB.batch_id, txDB.id, funder, txDB.wallet_address_to, amountVal, proof,
+                { gasLimit: gasLimit.mul(110).div(100) }
+            );
+
+            console.log(`Tx SENT: ${txResponse.hash}`);
+
             await this.pool.query(
                 `UPDATE batch_transactions SET status = 'SENT', tx_hash = $1, updated_at = NOW() WHERE id = $2`,
-                [mockHash, txDB.id]
+                [txResponse.hash, txDB.id]
             );
-
         } catch (e) {
+            if (e.message && e.message.includes("Tx already executed")) {
+                console.log(`⚠️ Tx ${txDB.id} already on-chain. Recovered.`);
+                await this.pool.query(`UPDATE batch_transactions SET status = 'COMPLETED', tx_hash = 'RECOVERED', updated_at = NOW() WHERE id = $1`, [txDB.id]);
+                return;
+            }
             console.error(`Tx Failed: ${txDB.id}`, e);
-            await this.pool.query(
-                `UPDATE batch_transactions SET status = 'FAILED', updated_at = NOW() WHERE id = $1`,
-                [txDB.id]
-            );
+            await this.pool.query(`UPDATE batch_transactions SET status = 'FAILED', updated_at = NOW() WHERE id = $1`, [txDB.id]);
         }
     }
 
-    // 5. Funding Logic
+    // 8. Estimate total gas for a batch (including 50% buffer) and return total cost in wei
+    async estimateBatchGas(batchId) {
+        // Fetch all pending transactions for the batch
+        const txRes = await this.pool.query('SELECT * FROM batch_transactions WHERE batch_id = $1', [batchId]);
+        const txs = txRes.rows;
+        if (txs.length === 0) return { totalGas: ethers.BigNumber.from(0), totalCostWei: ethers.BigNumber.from(0) };
+        const batchRes = await this.pool.query('SELECT funder_address FROM batches WHERE id = $1', [batchId]);
+        const funder = batchRes.rows[0]?.funder_address || ethers.constants.AddressZero;
+        const contract = new ethers.Contract(this.contractAddress, this.contractABI, this.provider);
+        let totalGas = ethers.BigNumber.from(0);
+        for (const tx of txs) {
+            const amountVal = ethers.utils.parseUnits(tx.amount_usdc.toString(), 6);
+            const proof = [];
+            try {
+                const gas = await contract.estimateGas.executeTransaction(
+                    batchId,
+                    tx.id,
+                    funder,
+                    tx.wallet_address_to,
+                    amountVal,
+                    proof
+                );
+                totalGas = totalGas.add(gas);
+            } catch (e) {
+                console.error(`Gas estimation failed for tx ${tx.id}:`, e);
+            }
+        }
+        // Add 50% buffer
+        const bufferedGas = totalGas.mul(ethers.BigNumber.from(150)).div(ethers.BigNumber.from(100));
+        const gasPrice = await this.provider.getGasPrice();
+        const totalCostWei = bufferedGas.mul(gasPrice);
+        return { totalGas: bufferedGas, totalCostWei };
+    }
+
+    // 9. Distribute buffered gas cost equally among relayers
+    async distributeGasToRelayers(batchId, relayers) {
+        const { totalCostWei } = await this.estimateBatchGas(batchId);
+        if (relayers.length === 0) return;
+        const perRelayerWei = totalCostWei.div(ethers.BigNumber.from(relayers.length));
+        console.log(`🪙 Distributing ${ethers.utils.formatEther(perRelayerWei)} MATIC to each of ${relayers.length} relayers`);
+        await this.fundRelayers(relayers, perRelayerWei);
+    }
+
+    // Updated funding logic to accept amount per relayer
+    async fundRelayers(relayers, amountWei) {
+        console.log(`Funding ${relayers.length} relayers with ${ethers.utils.formatEther(amountWei)} MATIC each`);
+        const txs = [];
+        for (const r of relayers) {
+            const tx = this.faucetWallet.sendTransaction({ to: r.address, value: amountWei });
+            txs.push(tx);
+        }
+        await Promise.all(txs.map(p => p.then(r => r.wait())));
+        console.log('✅ Funding complete');
+    }
+
     async fundRelayers(relayers) {
         console.log(`Funding ${relayers.length} relayers...`);
         // In real implementation: Send MATIC from faucetWallet to each relayer.address

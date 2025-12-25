@@ -2,7 +2,7 @@ const express = require('express');
 const path = require('path');
 const { Pool } = require('pg');
 const multer = require('multer');
-const xlsx = require('xlsx');
+const ExcelJS = require('exceljs');
 const fs = require('fs');
 const { ethers } = require('ethers');
 
@@ -331,11 +331,19 @@ app.post('/api/batches/:id/upload', upload.single('file'), async (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
     try {
-        // Leer archivo Excel
-        const workbook = xlsx.readFile(req.file.path);
-        const sheetName = workbook.SheetNames[0];
-        const sheet = workbook.Sheets[sheetName];
-        const data = xlsx.utils.sheet_to_json(sheet);
+        // Leer archivo Excel usando ExcelJS
+        const workbook = new ExcelJS.Workbook();
+        await workbook.xlsx.readFile(req.file.path);
+        const worksheet = workbook.worksheets[0];
+        const rows = worksheet.getSheetValues(); // rows[0] is undefined
+        const headers = rows[1];
+        const data = rows.slice(2).map(r => {
+            const obj = {};
+            headers.forEach((h, i) => {
+                if (h) obj[h] = r[i];
+            });
+            return obj;
+        });
 
         const client = await pool.connect();
         try {
@@ -529,7 +537,7 @@ app.post('/api/batches/:id/process', async (req, res) => {
     // Configuración Faucet (Del .env o hardcoded para mockup)
     // WARN: En producción usar process.env.FAUCET_PRIVATE_KEY
     const FAUCET_PK = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"; // Mock PK (Hardhat Default) or Test
-    const PROVIDER_URL = "https://polygon-rpc.com";
+    const PROVIDER_URL = "https://polygon-rpc.com"; // Polygon Mainnet RPC
 
     try {
         const engine = new RelayerEngine(pool, PROVIDER_URL, FAUCET_PK);
@@ -543,6 +551,25 @@ app.post('/api/batches/:id/process', async (req, res) => {
         res.json({ message: "Processing Started", batchId, relayers: relayerCount });
     } catch (err) {
         console.error(err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Endpoint: Get relayer balances for a batch
+app.get('/api/relayers/:batchId', async (req, res) => {
+    try {
+        const batchId = parseInt(req.params.batchId);
+        if (isNaN(batchId)) return res.status(400).json({ error: 'Invalid batchId' });
+        const relayerRes = await pool.query('SELECT address FROM relayers WHERE batch_id = $1', [batchId]);
+        const relayers = relayerRes.rows;
+        const provider = new ethers.providers.JsonRpcProvider(PROVIDER_URL);
+        const balances = await Promise.all(relayers.map(async r => {
+            const balWei = await provider.getBalance(r.address);
+            return { address: r.address, balance: ethers.utils.formatEther(balWei) };
+        }));
+        res.json(balances);
+    } catch (err) {
+        console.error('Error fetching relayer balances:', err);
         res.status(500).json({ error: err.message });
     }
 });
