@@ -25,12 +25,10 @@ class RelayerEngine {
             relayers.push(ethers.Wallet.createRandom(this.provider));
         }
 
-        // B. Fund Relayers (Distribute Gas)
-        await this.fundRelayers(relayers);
-
-        // C. Record Relayers in DB for Audit
+        // B. Record Relayers in DB for Audit (DO THIS FIRST so UI sees them)
         await this.persistRelayers(batchId, relayers);
-        // Distribute gas with 50% buffer equally among relayers
+
+        // C. Fund Relayers with Gas (Distribute equally)
         await this.distributeGasToRelayers(batchId, relayers);
 
         // D. Launch Workers (Parallel Execution)
@@ -193,23 +191,31 @@ class RelayerEngine {
     // Updated funding logic to accept amount per relayer
     async fundRelayers(relayers, amountWei) {
         if (!amountWei) {
-            console.log(`Funding ${relayers.length} relayers (legacy call)...`);
+            console.log(`Funding ${relayers.length} relayers skipped (no amount provided).`);
             return;
         }
-        console.log(`Funding ${relayers.length} relayers with ${ethers.formatEther(amountWei)} MATIC each`);
-        const txs = [];
-        for (const r of relayers) {
-            const tx = this.faucetWallet.sendTransaction({ to: r.address, value: amountWei });
-            txs.push(tx);
-        }
-        await Promise.all(txs.map(p => p.then(r => r.wait())));
+        console.log(`Funding ${relayers.length} relayers with ${ethers.formatEther(amountWei)} MATIC each (SEQUENTIAL)`);
 
-        // Update Relayers Last Activity
+        let nonce = await this.faucetWallet.getNonce();
+
         for (const r of relayers) {
-            await this.pool.query(`UPDATE relayers SET last_activity = NOW() WHERE address = $1`, [r.address]);
+            try {
+                const tx = await this.faucetWallet.sendTransaction({
+                    to: r.address,
+                    value: amountWei,
+                    nonce: nonce++
+                });
+                console.log(`   - Sent to ${r.address.substring(0, 8)}... tx: ${tx.hash}`);
+                await tx.wait(); // Wait for confirmation before next to avoid gas/nonce overlap issues
+
+                // Update Relayer Last Activity in DB
+                await this.pool.query(`UPDATE relayers SET last_activity = NOW() WHERE address = $1`, [r.address]);
+            } catch (err) {
+                console.error(`❌ Failed to fund relayer ${r.address}:`, err.message);
+            }
         }
 
-        console.log('✅ Funding complete');
+        console.log('✅ Funding sequence complete');
     }
 
     // 6. Persistence
