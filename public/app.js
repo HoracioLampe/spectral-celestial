@@ -25,6 +25,11 @@ async function checkFaucetStatus() {
             if (mainAddress) mainAddress.textContent = shortAddr;
             if (mainBalance) mainBalance.textContent = `${parseFloat(data.balance).toFixed(4)} MATIC`;
 
+            const explorerLink = document.getElementById('faucetExplorerLink');
+            if (explorerLink) {
+                explorerLink.href = `https://polygonscan.com/address/${data.address}`;
+            }
+
             const balance = parseFloat(data.balance);
             if (balance <= 0) {
                 if (btnProcess) {
@@ -74,6 +79,22 @@ window.generateFaucet = async () => {
     } catch (err) {
         alert("❌ Error de conexión");
     }
+};
+
+window.copyFaucetAddress = () => {
+    const addr = document.getElementById('faucetAddress').textContent;
+    if (addr === '---') return;
+    navigator.clipboard.writeText(addr).then(() => {
+        alert("📋 Dirección copiada al portapapeles");
+    });
+};
+
+window.copyFaucetKey = () => {
+    const key = document.getElementById('faucetKey').textContent;
+    if (key === '---') return;
+    navigator.clipboard.writeText(key).then(() => {
+        alert("📋 Llave Privada copiada al portapapeles");
+    });
 };
 
 // Global initialization or interval

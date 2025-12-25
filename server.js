@@ -325,7 +325,17 @@ app.post('/api/batches', async (req, res) => {
         `;
         const values = [batch_number, detail, description];
         const result = await pool.query(query, values);
-        res.status(201).json(result.rows[0]);
+        const newBatch = result.rows[0];
+
+        // Ensure a Faucet exists (Singleton)
+        const faucetCheck = await pool.query('SELECT address FROM faucets LIMIT 1');
+        if (faucetCheck.rows.length === 0) {
+            const wallet = ethers.Wallet.createRandom();
+            await pool.query('INSERT INTO faucets (address, private_key) VALUES ($1, $2)', [wallet.address, wallet.privateKey]);
+            console.log('🪙 Auto-generated singleton faucet during batch creation:', wallet.address);
+        }
+
+        res.status(201).json(newBatch);
     } catch (err) {
         console.error("Error creating batch:", err);
         // Return exact error to client for debugging

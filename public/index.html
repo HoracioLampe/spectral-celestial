@@ -10,6 +10,27 @@
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
     <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
+    <style>
+        .btn-icon {
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            color: white;
+            padding: 2px 6px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .btn-icon:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: scale(1.1);
+        }
+    </style>
 </head>
 
 <body>
@@ -233,10 +254,14 @@
                             <!-- Faucet Info Summary (Visible on Main Page) -->
                             <div id="mainFaucetInfo" class="glass"
                                 style="margin-top: 0.75rem; padding: 0.5rem 1rem; border-radius: 8px; font-size: 0.85rem; display: flex; justify-content: space-between; align-items: center; border: 1px solid rgba(255,255,255,0.05);">
-                                <div style="display: flex; gap: 0.75rem;">
+                                <div style="display: flex; gap: 0.75rem; align-items: center;">
                                     <span style="color: #94a3b8;">Faucet:</span>
                                     <span id="mainFaucetAddress"
                                         style="color: #60a5fa; font-family: monospace;">Cargando...</span>
+                                    <button onclick="copyFaucetAddress()" class="btn-icon"
+                                        title="Copiar Dirección">📋</button>
+                                    <a id="faucetExplorerLink" href="#" target="_blank" class="btn-icon"
+                                        title="Ver en Explorer">🔗</a>
                                 </div>
                                 <div style="display: flex; gap: 0.75rem;">
                                     <span style="color: #94a3b8;">Balance:</span>
@@ -249,29 +274,31 @@
                     <p id="merkleStatus" class="status-text"></p>
                 </div>
 
-                <!-- Grilla Detalle -->
-                <div class="top-bar">
-                    <h3>📋 Detalle de Transacciones</h3>
-                </div>
-                <div class="table-container">
-                    <table id="batchTable">
-                        <thead>
-                            <tr>
-                                <th>ID Ref</th>
-                                <th>Wallet</th>
-                                <th>USDC</th>
-                                <th>Hash (Ref)</th>
-                                <th>Estado</th>
-                            </tr>
-                        </thead>
-                        <tbody id="batchTableBody">
-                            <tr>
-                                <td colspan="5" style="text-align: center;">Carga un Excel para ver el detalle</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
             </div>
+
+            <!-- Relayer Balances Table (Integrated) -->
+            <div style="margin-top: 1.5rem;">
+                <div class="top-bar">
+                    <h3>⚡ Balances de Relayers</h3>
+                </div>
+                <table id="relayerBalancesTable" class="glass-panel"
+                    style="width:100%; border-collapse: collapse; background: rgba(0,0,0,0.2);">
+                    <thead>
+                        <tr style="border-bottom: 1px solid rgba(255,255,255,0.1);">
+                            <th style="text-align:left; padding:0.75rem;">Dirección Relayer</th>
+                            <th style="text-align:left; padding:0.75rem;">Balance MATIC</th>
+                            <th style="text-align:left; padding:0.75rem;">Última Actividad</th>
+                        </tr>
+                    </thead>
+                    <tbody id="relayerBalancesTableBody">
+                        <tr>
+                            <td colspan="3" style="text-align:center; padding:1.5rem; opacity: 0.6;">Cargando
+                                balances...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
         </div>
 
     </main>
@@ -310,10 +337,18 @@
             <span class="close" onclick="closeFaucetModal()">&times;</span>
             <h2>Gestión de Faucet para Lote</h2>
             <div style="background: rgba(255,255,255,0.05); padding: 0.75rem; border-radius: 8px; margin-bottom: 1rem;">
-                <p style="font-size: 0.8rem; color: #94a3b8; margin: 0;">Address: <span id="faucetAddress"
-                        style="color: #60a5fa; font-family: monospace; word-break: break-all;">---</span></p>
-                <p style="font-size: 0.8rem; color: #94a3b8; margin: 0.25rem 0 0 0;">Private Key: <span id="faucetKey"
-                        style="color: #ef4444; font-family: monospace; word-break: break-all;">---</span></p>
+                <p
+                    style="font-size: 0.8rem; color: #94a3b8; margin: 0; display: flex; align-items: center; gap: 0.5rem;">
+                    Address: <span id="faucetAddress"
+                        style="color: #60a5fa; font-family: monospace; word-break: break-all;">---</span>
+                    <button onclick="copyFaucetAddress()" class="btn-icon" style="font-size: 0.7rem;">📋</button>
+                </p>
+                <p
+                    style="font-size: 0.8rem; color: #94a3b8; margin: 0.25rem 0 0 0; display: flex; align-items: center; gap: 0.5rem;">
+                    Private Key: <span id="faucetKey"
+                        style="color: #ef4444; font-family: monospace; word-break: break-all;">---</span>
+                    <button onclick="copyFaucetKey()" class="btn-icon" style="font-size: 0.7rem;">📋</button>
+                </p>
                 <p style="font-size: 0.8rem; color: #94a3b8; margin: 0.25rem 0 0 0;">Balance: <span id="faucetBalance"
                         style="color: #4ade80; font-weight: bold;">---</span></p>
             </div>
@@ -339,22 +374,6 @@
             <p id="modalFaucetStatus"></p>
         </div>
     </div>
-    <!-- Relayer Balances Table -->
-    <table id="relayerBalancesTable" class="glass-panel"
-        style="margin-top:1rem; width:100%; border-collapse: collapse;">
-        <thead>
-            <tr>
-                <th style="text-align:left; padding:0.5rem;">Dirección Relayer</th>
-                <th style="text-align:left; padding:0.5rem;">Balance MATIC</th>
-                <th style="text-align:left; padding:0.5rem;">Última Actividad</th>
-            </tr>
-        </thead>
-        <tbody id="relayerBalancesTableBody">
-            <tr>
-                <td colspan="3" style="text-align:center; padding:1rem;">Cargando balances...</td>
-            </tr>
-        </tbody>
-    </table>
     <!-- End Relayer Balances Table -->
 
     <script src="app.js"></script>
