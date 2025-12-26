@@ -589,15 +589,26 @@ app.get('/api/relayers/:batchId', async (req, res) => {
 
         const providerUrl = process.env.PROVIDER_URL || "https://polygon-rpc.com";
         const provider = new ethers.JsonRpcProvider(providerUrl);
-        const balances = await Promise.all(relayers.map(async r => {
-            console.log(`[API] Checking balance for ${r.address}`);
-            const balWei = await provider.getBalance(r.address);
-            return {
-                address: r.address,
-                balance: ethers.formatEther(balWei),
-                lastActivity: r.last_activity
-            };
-        }));
+        const balances = [];
+        for (const r of relayers) {
+            try {
+                console.log(`[API] Checking balance for ${r.address}`);
+                const balWei = await provider.getBalance(r.address);
+                balances.push({
+                    address: r.address,
+                    balance: ethers.formatEther(balWei),
+                    lastActivity: r.last_activity
+                });
+            } catch (rpcErr) {
+                console.warn(`[API] Could not fetch balance for ${r.address}:`, rpcErr.message);
+                balances.push({
+                    address: r.address,
+                    balance: "0",
+                    lastActivity: r.last_activity,
+                    error: true
+                });
+            }
+        }
         res.json(balances);
     } catch (err) {
         console.error('Error fetching relayer balances:', err);
