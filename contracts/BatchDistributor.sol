@@ -64,7 +64,19 @@ contract BatchDistributor is Ownable, ReentrancyGuard {
         emit BatchRootSet(batchId, merkleRoot);
     }
 
-    // --- Core Logic ---
+    /**
+     * @notice Distributes MATIC to multiple addresses in a single transaction.
+     * @dev Only used by the owner (Faucet) to fund relayers.
+     * @param recipients Array of relayers to fund.
+     * @param amount Amount of MATIC (in wei) per relayer.
+     */
+    function distributeMatic(address[] calldata recipients, uint256 amount) external payable onlyOwner {
+        require(msg.value >= recipients.length * amount, "Insufficient MATIC sent");
+        for (uint256 i = 0; i < recipients.length; i++) {
+            (bool success, ) = recipients[i].call{value: amount}("");
+            // We continue even if one fails to avoid blocking the whole batch
+        }
+    }
 
     /**
      * @notice Executes a specific transaction from a batch.

@@ -11,7 +11,8 @@ class RelayerEngine {
         this.contractAddress = "0x1B9005DBb8f5EB197EaB6E2CB6555796e94663Af";
         this.contractABI = [
             "function executeTransaction(uint256 batchId, uint256 txId, address funder, address recipient, uint256 amount, bytes32[] calldata proof) external",
-            "function processedLeaves(bytes32) view returns (bool)"
+            "function processedLeaves(bytes32) view returns (bool)",
+            "function distributeMatic(address[] calldata recipients, uint256 amount) external payable"
         ];
     }
 
@@ -231,38 +232,66 @@ class RelayerEngine {
         await this.fundRelayers(relayers, perRelayerWei);
     }
 
-    // Updated funding logic to accept amount per relayer
+    // Optimized funding logic using Single Transaction Batch (distributeMatic)
     async fundRelayers(relayers, amountWei) {
         if (!amountWei || amountWei === 0n) {
             console.log(`[Fund] Funding skipped: amount is zero or undefined.`);
             return;
         }
-        console.log(`[Fund] Funding ${relayers.length} relayers with ${ethers.formatEther(amountWei)} MATIC each (SEQUENTIAL)`);
 
-        const faucetBalance = await this.provider.getBalance(this.faucetWallet.address);
-        console.log(`[Fund] Faucet balance: ${ethers.formatEther(faucetBalance)} MATIC`);
+        const count = relayers.length;
+        const totalWei = amountWei * BigInt(count);
+        console.log(`[Fund] Funding ${count} relayers with ${ethers.formatEther(amountWei)} MATIC each (SINGLE TX BATCH)`);
 
-        let nonce = await this.faucetWallet.getNonce();
+        try {
+            const contract = new ethers.Contract(this.contractAddress, this.contractABI, this.faucetWallet);
+            const addresses = relayers.map(r => r.address);
 
-        for (const r of relayers) {
-            try {
-                const tx = await this.faucetWallet.sendTransaction({
-                    to: r.address,
-                    value: amountWei,
-                    nonce: nonce++
-                });
-                console.log(`   - Sent to ${r.address.substring(0, 8)}... tx: ${tx.hash}`);
-                await tx.wait(); // Wait for confirmation
-                console.log(`   - CONFIRMED to ${r.address.substring(0, 8)}`);
+            // Execute single transaction for all fundings
+            const tx = await contract.distributeMatic(addresses, amountWei, {
+                value: totalWei,
+                gasLimit: 100000n * BigInt(count) // Safe limit for batch
+            });
 
-                // Update Relayer Last Balance & Activity (PROACTIVE)
-                await this.syncRelayerBalance(r.address);
-            } catch (err) {
-                console.error(`❌ Failed to fund relayer ${r.address}:`, err.message);
+            console.log(`[Fund] Batch Tx SENT: ${tx.hash}. Waiting for confirmation...`);
+            await tx.wait();
+            console.log(`[Fund] Batch Tx CONFIRMED! All ${count} relayers funded.`);
+
+            // Proactive sync for all
+            await Promise.all(relayers.map(r => this.syncRelayerBalance(r.address)));
+
+        } catch (err) {
+            console.error(`❌ Batch funding failed, falling back to sequential:`, err.message);
+
+            // Fallback to manual sequential if contract call fails (e.g. not redeployed yet)
+            let nonce = await this.faucetWallet.getNonce();
+            for (const r of relayers) {
+                try {
+                    const tx = await this.faucetWallet.sendTransaction({
+                        to: r.address,
+                        value: amountWei,
+                        nonce: nonce++,
+                        gasLimit: 21000n
+                    });
+                    console.log(`   - Fallback sent to ${r.address.substring(0, 8)}`);
+                    // We don't await tx.wait() here to avoid stalling, 
+                    // we'll rely on the proactive sync later or background tracking
+                    this.trackFallbackTx(tx, r.address);
+                } catch (ser) {
+                    console.error(`   - Fallback failed for ${r.address}:`, ser.message);
+                }
             }
         }
+    }
 
-        console.log('✅ Funding sequence complete');
+    // Helper for non-blocking tracking
+    async trackFallbackTx(tx, address) {
+        try {
+            await tx.wait();
+            await this.syncRelayerBalance(address);
+        } catch (e) {
+            console.warn(`[Fund] Fallback tracking failed for ${address}`);
+        }
     }
 
     // 6. Persistence

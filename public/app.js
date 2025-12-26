@@ -1013,13 +1013,13 @@ window.refreshRelayerBalances = () => {
     }
 };
 
-// Auto-refresh every 15s normally
+// Auto-refresh every 60s (1 minute) normally
 setInterval(() => {
     if (currentBatchId && !window.processingBatch) {
         refreshRelayerBalances();
     }
     checkFaucetStatus();
-}, 15000);
+}, 60000);
 
 // Initial calls
 checkFaucetStatus();
