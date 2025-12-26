@@ -12,7 +12,7 @@ async function rescueFunds() {
     });
 
     const providerUrl = process.env.PROVIDER_URL || "https://dawn-palpable-telescope.matic.quiknode.pro/e7d140234fbac5b00d93bfedf2e1c555fa2fdb65/";
-    const provider = new ethers.JsonRpcProvider(providerUrl);
+    const provider = new ethers.JsonRpcProvider(providerUrl, undefined, { staticNetwork: true });
 
     try {
         let faucetWallet;
@@ -35,10 +35,20 @@ async function rescueFunds() {
         const faucetAddress = faucetWallet.address;
         console.log(`🏦 Target Faucet Address: ${faucetAddress}`);
 
-        // 3. Fetch all relayers from DB
-        const res = await pool.query('SELECT address, private_key FROM relayers');
-        const relayers = res.rows;
-        console.log(`🔍 Found ${relayers.length} relayers in database.`);
+        const targetAddress = process.argv[2]; // Optional: specific address to rescue
+        let relayers = [];
+
+        if (targetAddress) {
+            console.log(`🎯 Targeting specific relayer: ${targetAddress}`);
+            const res = await pool.query("SELECT address, private_key FROM relayers WHERE address = $1", [targetAddress]);
+            relayers = res.rows;
+        } else {
+            // 3. Fetch relayers with funds from DB (Avoid scanning all)
+            const res = await pool.query("SELECT address, private_key, last_balance FROM relayers WHERE CAST(last_balance AS NUMERIC) > 0.01");
+            relayers = res.rows;
+        }
+
+        console.log(`🔍 Found ${relayers.length} relayers to process.`);
 
         // 4. Setup Gas Constants
         const feeData = await provider.getFeeData();
