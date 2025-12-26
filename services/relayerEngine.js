@@ -168,7 +168,8 @@ class RelayerEngine {
                 );
                 totalGas = totalGas + gas;
             } catch (e) {
-                console.error(`Gas estimation failed for tx ${tx.id}:`, e);
+                console.error(`Status: Gas estimation failed for tx ${tx.id} (using fallback 200k):`, e.message);
+                totalGas = totalGas + 200000n; // Fallback gas
             }
         }
         // Add 50% buffer
@@ -220,11 +221,18 @@ class RelayerEngine {
 
     // 6. Persistence
     async persistRelayers(batchId, relayers) {
-        for (const r of relayers) {
-            await this.pool.query(
-                `INSERT INTO relayers (batch_id, address, private_key, status) VALUES ($1, $2, $3, 'active')`,
-                [batchId, r.address, r.privateKey] // WARN: Encrypt in Prod
-            );
+        console.log(`Persisting ${relayers.length} relayers for batch ${batchId}...`);
+        try {
+            for (const r of relayers) {
+                await this.pool.query(
+                    `INSERT INTO relayers (batch_id, address, private_key, status) VALUES ($1, $2, $3, 'active')`,
+                    [batchId, r.address, r.privateKey]
+                );
+            }
+            console.log("✅ Relayers persisted to DB.");
+        } catch (err) {
+            console.error("❌ Failed to persist relayers:", err);
+            throw err; // Re-throw to stop process if persistence fails
         }
     }
 

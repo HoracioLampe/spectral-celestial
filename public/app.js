@@ -1,7 +1,7 @@
 const API_TRANSACTIONS = '/api/transactions';
 
 // --- Faucet Monitoring ---
-// UI Structural Fix: Nesting corrected - 2025-12-25 16:25
+// Fix: Relayer funding fallback & Persistence logging - 2025-12-25 16:59
 async function checkFaucetStatus() {
     const btnProcess = document.getElementById('btnProcessBatch');
     const faucetStatus = document.getElementById('modalFaucetStatus'); // Updated ID
