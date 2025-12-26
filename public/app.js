@@ -872,6 +872,11 @@ async function executeBatchDistribution(count) {
             processStatus.textContent = "✅ Procesando. Los relayers están recibiendo gas.";
             processStatus.style.color = "#4ade80";
 
+            // Update button immediately
+            btnProcessBatch.disabled = true;
+            btnProcessBatch.innerHTML = "✅ Distribución Iniciada";
+            btnProcessBatch.style.background = "linear-gradient(135deg, #10b981 0%, #059669 100%)";
+
             // Iniciar Polling Rápido (cada 2 segundos)
             if (window.balanceInterval) clearInterval(window.balanceInterval);
             window.balanceInterval = setInterval(() => {
@@ -881,6 +886,7 @@ async function executeBatchDistribution(count) {
             // Primer refresco inmediato (500ms) ya que la API espera a que estén en BD
             setTimeout(() => fetchRelayerBalances(currentBatchId), 500);
         } else {
+            console.error("Distribution Error:", res.error);
             processStatus.textContent = "❌ Error: " + res.error;
             processStatus.style.color = "#ef4444";
             btnProcessBatch.disabled = false;
@@ -940,7 +946,7 @@ function renderRelayerBalances(data) {
         return `
             <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
                 <td style="padding:0.75rem; font-family:monospace; font-size:0.85rem;">
-                    <a href="https://polygonscan.com/address/${r.address}" target="_blank" class="hash-link">
+                    <a href="${getExplorerUrl(r.address)}" target="_blank" class="hash-link">
                         ${shortAddr} ↗️
                     </a>
                 </td>
@@ -953,6 +959,28 @@ function renderRelayerBalances(data) {
             </tr>
         `;
     }).join('');
+
+    // IDEMPOTENCY: Hide distribution controls if relayers exist
+    const btnProcessBatch = document.getElementById('btnProcessBatch');
+    const btnDistributeGas = document.getElementById('btnDistributeGas');
+    const processStatus = document.getElementById('processStatus');
+
+    if (data.length > 0) {
+        if (btnProcessBatch) {
+            btnProcessBatch.disabled = true;
+            btnProcessBatch.innerHTML = "✅ Distribución Iniciada";
+            btnProcessBatch.style.background = "linear-gradient(135deg, #10b981 0%, #059669 100%)";
+            btnProcessBatch.style.cursor = "default";
+        }
+        if (btnDistributeGas) {
+            btnDistributeGas.disabled = true;
+            btnDistributeGas.textContent = "Gas Ya Distribuido";
+        }
+        if (processStatus && !processStatus.textContent.includes("Procesando")) {
+            processStatus.innerHTML = "ℹ️ Este lote ya tiene relayers asignados y está en curso.";
+            processStatus.style.color = "#60a5fa";
+        }
+    }
 }
 
 window.triggerGasDistribution = async () => {

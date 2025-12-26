@@ -561,6 +561,12 @@ app.post('/api/batches/:id/process', async (req, res) => {
         const batchId = parseInt(req.params.id);
         if (isNaN(batchId)) return res.status(400).json({ error: 'Invalid batchId' });
         const { relayerCount } = req.body;
+
+        // IDEMPOTENCY CHECK: Do not allow re-processing if relayers already exist
+        const existingRelayers = await pool.query('SELECT address FROM relayers WHERE batch_id = $1 LIMIT 1', [batchId]);
+        if (existingRelayers.rows.length > 0) {
+            return res.status(400).json({ error: "Este lote ya ha sido procesado y tiene relayers asignados." });
+        }
         // Fetch Faucet from DB
         const faucetRes = await pool.query('SELECT private_key FROM faucets ORDER BY id DESC LIMIT 1');
         let faucetPk = process.env.FAUCET_PRIVATE_KEY;
