@@ -292,32 +292,41 @@ class RelayerEngine {
             const leaf = ethers.keccak256(encodedData);
             console.log(`[Engine] Processing Leaf: ${leaf}`);
 
-            const batchRes = await this.pool.query('SELECT funder_address FROM batches WHERE id = $1', [txDB.batch_id]);
-            const funder = batchRes.rows[0].funder_address;
-            const amountVal = ethers.parseUnits(txDB.amount_usdc.toString(), 6);
+            const txRes = await this.pool.query('SELECT amount_usdc, wallet_address_to, batch_id FROM batch_transactions WHERE id = $1', [txDB.id]);
+            const batchTx = txRes.rows[0];
+            const amountVal = ethers.parseUnits(batchTx.amount_usdc.toString(), 6);
 
             // PER-BATCH PERMIT: Get shared signature for this batch
             const permit = this.activePermits[txDB.batch_id];
+
             let txResponse;
+            const batchFunderRes = await this.pool.query('SELECT funder_address FROM batches WHERE id = $1', [txDB.batch_id]);
+            const funder = batchFunderRes.rows[0].funder_address;
 
             if (permit) {
-                // Execute WITH Permit (Optimized for gas saving inside contract)
-                console.log(`[Engine] Using Cumulative Permit for Tx ${txDB.id}...`);
-
+                console.log(`[Engine] Executing with Permit for Batch ${txDB.batch_id} (TX #${txDB.id})`);
                 // Estimate Gas for executeWithPermit
                 const gasLimit = await contract.executeWithPermit.estimateGas(
-                    txDB.batch_id, txDB.id, funder, txDB.wallet_address_to, amountVal, proof,
+                    txDB.batch_id, txDB.id, funder, batchTx.wallet_address_to, amountVal, proof,
                     permit.deadline, permit.v, permit.r, permit.s
                 );
 
                 txResponse = await contract.executeWithPermit(
-                    txDB.batch_id, txDB.id, funder, txDB.wallet_address_to, amountVal, proof,
-                    permit.deadline, permit.v, permit.r, permit.s,
+                    txDB.batch_id,
+                    txDB.id,
+                    funder,
+                    batchTx.wallet_address_to,
+                    amountVal,
+                    proof,
+                    permit.deadline,
+                    permit.v,
+                    permit.r,
+                    permit.s,
                     { gasLimit: gasLimit * 110n / 100n }
                 );
             } else {
+                console.log(`[Engine] Executing Standard for Batch ${txDB.batch_id} (TX #${txDB.id})`);
                 // Fallback to standard execution (requires manual allowance)
-                console.log(`[Engine] No active permit found for ${funder}. Using standard executeTransaction...`);
                 const gasLimit = await contract.executeTransaction.estimateGas(
                     txDB.batch_id, txDB.id, funder, txDB.wallet_address_to, amountVal, proof
                 );
