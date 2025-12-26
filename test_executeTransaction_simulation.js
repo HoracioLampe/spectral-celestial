@@ -1,14 +1,14 @@
 const { ethers } = require('ethers');
 
 // Contract details (already deployed on Polygon Mainnet)
-const contractAddress = "0x1B9005DBb8f5EB197EaB6E2CB6555796e94663Af";
+const contractAddress = process.env.CONTRACT_ADDRESS || "0x78318c7A0d4E7e403A5008F9DA066A489B65cBad";
 const contractABI = [
     "function executeTransaction(uint256 batchId, uint256 txId, address funder, address recipient, uint256 amount, bytes32[] calldata proof) external",
     "function processedLeaves(bytes32) view returns (bool)"
 ];
 
 // Public Polygon Mainnet RPC (no private key needed for callStatic)
-const provider = new ethers.JsonRpcProvider("https://polygon-rpc.com");
+const provider = new ethers.JsonRpcProvider("https://dawn-palpable-telescope.matic.quiknode.pro/e7d140234fbac5b00d93bfedf2e1c555fa2fdb65/");
 
 (async () => {
     try {

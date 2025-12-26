@@ -8,7 +8,7 @@ class RelayerEngine {
         this.faucetWallet = new ethers.Wallet(faucetPrivateKey, this.provider);
 
         // Configuration
-        this.contractAddress = "0x1B9005DBb8f5EB197EaB6E2CB6555796e94663Af";
+        this.contractAddress = process.env.CONTRACT_ADDRESS || "0x78318c7A0d4E7e403A5008F9DA066A489B65cBad";
         this.usdcAddress = "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359";
 
         // Cache for shared Permit signatures (Per Batch logic)
@@ -270,38 +270,85 @@ class RelayerEngine {
         }
     }
 
+    /**
+     * Fetches Merkle proof for a specific transaction in a batch.
+     */
+    async getMerkleProof(batchId, transactionId) {
+        const proofRes = await this.pool.query(
+            `SELECT hash, position_index, level FROM merkle_nodes WHERE batch_id = $1 AND level = 0 AND transaction_id = $2`,
+            [batchId, transactionId]
+        );
+        if (proofRes.rows.length === 0) return [];
+
+        let currentHash = proofRes.rows[0].hash;
+        const proof = [];
+
+        // Fetch sibling hashes level by level
+        let level = 0;
+        while (true) {
+            const nodeRes = await this.pool.query(
+                `SELECT hash, parent_hash, position_index FROM merkle_nodes WHERE batch_id = $1 AND level = $2 AND hash = $3`,
+                [batchId, level, currentHash]
+            );
+            if (nodeRes.rows.length === 0) break;
+
+            const node = nodeRes.rows[0];
+            const parentHash = node.parent_hash;
+            if (!parentHash) break; // Reached Root
+
+            // Sibling is the other child of the same parent
+            const siblingRes = await this.pool.query(
+                `SELECT hash FROM merkle_nodes WHERE batch_id = $1 AND level = $2 AND parent_hash = $3 AND hash != $4`,
+                [batchId, level, parentHash, currentHash]
+            );
+
+            if (siblingRes.rows.length > 0) {
+                proof.push(siblingRes.rows[0].hash);
+            } else {
+                // Odd node at this level, sibling is itself (duplication logic)
+                proof.push(currentHash);
+            }
+
+            currentHash = parentHash;
+            level++;
+        }
+        return proof;
+    }
+
     // 4. Process Logic (Sign & Send)
     async processTransaction(wallet, txDB, isRetry) {
         try {
             const contract = new ethers.Contract(this.contractAddress, this.contractABI, wallet);
 
-            // NEW: Hardened Leaf Generation (must match Solidity)
             const network = await this.provider.getNetwork();
             const chainId = network.chainId;
 
-            // NOTE: PROOF GENERATION will be implemented in the next phase
-            const proof = [];
-
-            // Helpful for debugging:
-            // NEW: Hardened Leaf Generation (Safe Hashing - matches Solidity's abi.encode)
-            const abiCoder = ethers.AbiCoder.defaultAbiCoder();
-            const encodedData = abiCoder.encode(
-                ["uint256", "address", "uint256", "uint256", "address", "address", "uint256"],
-                [chainId, this.contractAddress, txDB.batch_id, txDB.id, txDB.funder_address, txDB.wallet_address_to, ethers.parseUnits(txDB.amount_usdc.toString(), 6)]
-            );
-            const leaf = ethers.keccak256(encodedData);
-            console.log(`[Engine] Processing Leaf: ${leaf}`);
+            // FETCH REAL PROOF from DB
+            const proof = await this.getMerkleProof(txDB.batch_id, txDB.id);
+            if (proof.length === 0) {
+                console.warn(`[Engine] No proof found for tx ${txDB.id} in batch ${txDB.batch_id}. This will likely revert.`);
+            }
 
             const txRes = await this.pool.query('SELECT amount_usdc, wallet_address_to, batch_id FROM batch_transactions WHERE id = $1', [txDB.id]);
             const batchTx = txRes.rows[0];
             const amountVal = ethers.parseUnits(batchTx.amount_usdc.toString(), 6);
 
+            // Double check leaf local generation for audit
+            const abiCoder = ethers.AbiCoder.defaultAbiCoder();
+            const funderRes = await this.pool.query('SELECT funder_address FROM batches WHERE id = $1', [txDB.batch_id]);
+            const funder = funderRes.rows[0].funder_address;
+
+            const encodedData = abiCoder.encode(
+                ["uint256", "address", "uint256", "uint256", "address", "address", "uint256"],
+                [chainId, this.contractAddress, BigInt(txDB.batch_id), BigInt(txDB.id), funder, txDB.wallet_address_to, amountVal]
+            );
+            const leaf = ethers.keccak256(encodedData);
+            console.log(`[Engine] Worker ${wallet.address.substring(0, 6)} | Processing Leaf: ${leaf} | Proof Len: ${proof.length}`);
+
             // PER-BATCH PERMIT: Get shared signature for this batch
             const permit = this.activePermits[txDB.batch_id];
 
             let txResponse;
-            const batchFunderRes = await this.pool.query('SELECT funder_address FROM batches WHERE id = $1', [txDB.batch_id]);
-            const funder = batchFunderRes.rows[0].funder_address;
 
             if (permit) {
                 console.log(`[Engine] Executing with Permit for Batch ${txDB.batch_id} (TX #${txDB.id})`);
@@ -322,7 +369,7 @@ class RelayerEngine {
                     permit.v,
                     permit.r,
                     permit.s,
-                    { gasLimit: gasLimit * 110n / 100n }
+                    { gasLimit: gasLimit * 120n / 100n } // 20% buffer
                 );
             } else {
                 console.log(`[Engine] Executing Standard for Batch ${txDB.batch_id} (TX #${txDB.id})`);
@@ -333,7 +380,7 @@ class RelayerEngine {
 
                 txResponse = await contract.executeTransaction(
                     txDB.batch_id, txDB.id, funder, txDB.wallet_address_to, amountVal, proof,
-                    { gasLimit: gasLimit * 110n / 100n }
+                    { gasLimit: gasLimit * 120n / 100n }
                 );
             }
 
@@ -430,27 +477,34 @@ class RelayerEngine {
 
         const count = relayers.length;
         const totalWei = amountWei * BigInt(count);
-        console.log(`[Fund] Funding ${count} relayers with ${ethers.formatEther(amountWei)} MATIC each (SINGLE TX BATCH)`);
+        console.log(`[Fund] Funding ${count} relayers with ${ethers.formatEther(amountWei)} MATIC each (SINGLE TX BATCH) via Smart Contract`);
 
         try {
             const contract = new ethers.Contract(this.contractAddress, this.contractABI, this.faucetWallet);
             const addresses = relayers.map(r => r.address);
 
+            // Fetch current fee data for reliable transaction
+            const feeData = await this.provider.getFeeData();
+            const maxFeePerGas = feeData.maxFeePerGas || undefined;
+            const maxPriorityFeePerGas = feeData.maxPriorityFeePerGas || undefined;
+
             // Execute single transaction for all fundings
             const tx = await contract.distributeMatic(addresses, amountWei, {
                 value: totalWei,
-                gasLimit: 100000n * BigInt(count) // Safe limit for batch
+                maxFeePerGas,
+                maxPriorityFeePerGas,
+                gasLimit: 150000n * BigInt(count) // Increased safe limit for batch logic
             });
 
-            console.log(`[Fund] Batch Tx SENT: ${tx.hash}. Waiting for confirmation...`);
+            console.log(`[Fund] Atomic Batch Tx SENT: ${tx.hash}. Waiting for confirmation...`);
             await tx.wait();
-            console.log(`[Fund] Batch Tx CONFIRMED! All ${count} relayers funded.`);
+            console.log(`[Fund] Atomic Batch Tx CONFIRMED! All ${count} relayers funded in one transaction.`);
 
             // Proactive sync for all
             await Promise.all(relayers.map(r => this.syncRelayerBalance(r.address)));
 
         } catch (err) {
-            console.error(`❌ Batch funding failed, falling back to sequential:`, err.message);
+            console.error(`❌ Atomic batch funding failed, falling back to sequential:`, err.message);
 
             // Fallback to manual sequential if contract call fails (e.g. not redeployed yet)
             let nonce = await this.faucetWallet.getNonce();
@@ -463,8 +517,6 @@ class RelayerEngine {
                         gasLimit: 21000n
                     });
                     console.log(`   - Fallback sent to ${r.address.substring(0, 8)}`);
-                    // We don't await tx.wait() here to avoid stalling, 
-                    // we'll rely on the proactive sync later or background tracking
                     this.trackFallbackTx(tx, r.address);
                 } catch (ser) {
                     console.error(`   - Fallback failed for ${r.address}:`, ser.message);

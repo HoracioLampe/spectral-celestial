@@ -29,7 +29,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 // Configuración Pública para el Frontend
 app.get('/api/config', (req, res) => {
     res.json({
-        RPC_URL: process.env.PROVIDER_URL || "https://polygon-rpc.com",
+        RPC_URL: process.env.PROVIDER_URL || "https://dawn-palpable-telescope.matic.quiknode.pro/e7d140234fbac5b00d93bfedf2e1c555fa2fdb65/",
         WS_RPC_URL: process.env.WS_PROVIDER_URL || "wss://polygon-rpc.com"
     });
 });
@@ -470,24 +470,36 @@ app.post('/api/batches/:id/merkle', async (req, res) => {
         // 2. Limpiar Merkle previo (si existe)
         await client.query('DELETE FROM merkle_nodes WHERE batch_id = $1', [batchId]);
 
+        // 2. Fetch Network Info for Hashing
+        const providerUrl = process.env.PROVIDER_URL || "https://dawn-palpable-telescope.matic.quiknode.pro/e7d140234fbac5b00d93bfedf2e1c555fa2fdb65/";
+        const provider = new ethers.JsonRpcProvider(providerUrl);
+        const network = await provider.getNetwork();
+        const chainId = network.chainId;
+        const contractAddress = process.env.CONTRACT_ADDRESS || "0x78318c7A0d4E7e403A5008F9DA066A489B65cBad";
+
         // 3. Generar Hojas (Level 0)
         let levelNodes = [];
+        const abiCoder = ethers.AbiCoder.defaultAbiCoder();
 
         for (let i = 0; i < txs.length; i++) {
             const tx = txs[i];
 
-            // Hash Construction
-            // Schema: [batchId, txId, funder, receiver, amount]
-            const hash = ethers.solidityPackedKeccak256(
-                ['uint256', 'uint256', 'address', 'address', 'uint256'],
+            // Hash Construction: abi.encode(block.chainid, address(this), batchId, txId, funder, recipient, amount)
+            const amountVal = BigInt(Math.round(parseFloat(tx.amount_usdc || 0) * 1000000)); // Ensure USDC units (shifted 6 decimals)
+
+            const encodedData = abiCoder.encode(
+                ["uint256", "address", "uint256", "uint256", "address", "address", "uint256"],
                 [
-                    batchId,
-                    tx.id,
+                    chainId,
+                    contractAddress,
+                    BigInt(batchId),
+                    BigInt(tx.id),
                     funder_address,
                     tx.wallet_address_to,
-                    BigInt(Math.round(parseFloat(tx.amount_usdc || 0))) // Ensure integer
+                    amountVal
                 ]
             );
+            const hash = ethers.keccak256(encodedData);
 
             // Insert Leaf
             await client.query(
@@ -583,7 +595,7 @@ app.post('/api/batches/:id/process', async (req, res) => {
             await pool.query('INSERT INTO faucets (address, private_key) VALUES ($1, $2)', [wallet.address, faucetPk]);
         }
 
-        const PROVIDER_URL = process.env.PROVIDER_URL || "https://polygon-rpc.com";
+        const PROVIDER_URL = process.env.PROVIDER_URL || "https://dawn-palpable-telescope.matic.quiknode.pro/e7d140234fbac5b00d93bfedf2e1c555fa2fdb65/";
         const engine = new RelayerEngine(pool, PROVIDER_URL, faucetPk);
 
         const setup = await engine.startBatchProcessing(batchId, relayerCount || 5);
@@ -604,7 +616,7 @@ app.get('/api/relayers/:batchId', async (req, res) => {
         const relayers = relayerRes.rows;
         console.log(`[API] Found ${relayers.length} relayers in DB`);
 
-        const PROVIDER_URL = process.env.PROVIDER_URL || "https://polygon-rpc.com";
+        const PROVIDER_URL = process.env.PROVIDER_URL || "https://dawn-palpable-telescope.matic.quiknode.pro/e7d140234fbac5b00d93bfedf2e1c555fa2fdb65/";
         const provider = new ethers.JsonRpcProvider(PROVIDER_URL);
         const balances = [];
 
@@ -651,7 +663,7 @@ app.get('/api/faucet', async (req, res) => {
             return res.json({ address: null, balance: "0", privateKey: null });
         }
         const { address, private_key: privateKey } = result.rows[0];
-        const providerUrl = process.env.PROVIDER_URL || "https://polygon-rpc.com";
+        const providerUrl = process.env.PROVIDER_URL || "https://dawn-palpable-telescope.matic.quiknode.pro/e7d140234fbac5b00d93bfedf2e1c555fa2fdb65/";
         const provider = new ethers.JsonRpcProvider(providerUrl);
         const balanceWei = await provider.getBalance(address);
         res.json({ address, balance: ethers.formatEther(balanceWei), privateKey });

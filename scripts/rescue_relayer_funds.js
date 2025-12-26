@@ -11,7 +11,7 @@ async function rescueFunds() {
         ssl: { rejectUnauthorized: false }
     });
 
-    const providerUrl = process.env.PROVIDER_URL || "https://polygon-rpc.com";
+    const providerUrl = process.env.PROVIDER_URL || "https://dawn-palpable-telescope.matic.quiknode.pro/e7d140234fbac5b00d93bfedf2e1c555fa2fdb65/";
     const provider = new ethers.JsonRpcProvider(providerUrl);
 
     try {
