@@ -592,33 +592,15 @@ app.post('/api/batches/:id/process', async (req, res) => {
     try {
         const batchId = parseInt(req.params.id);
         if (isNaN(batchId)) return res.status(400).json({ error: 'Invalid batchId' });
-        const { relayerCount } = req.body;
+        const { relayerCount, permitData } = req.body;
 
-        // RELAXED IDEMPOTENCY: allow resumption if status is READY or PROCESSING
-        const batchStatusRes = await pool.query('SELECT status FROM batches WHERE id = $1', [batchId]);
-        const currentStatus = batchStatusRes.rows[0]?.status;
-
-        if (currentStatus === 'SENT' || currentStatus === 'COMPLETED') {
-            return res.status(400).json({ error: `Este lote ya terminó (Estado: ${currentStatus})` });
-        }
-        // Fetch Faucet from DB
-        const faucetRes = await pool.query('SELECT private_key FROM faucets ORDER BY id DESC LIMIT 1');
-        let faucetPk = process.env.FAUCET_PRIVATE_KEY;
-
-        if (faucetRes.rows.length > 0) {
-            faucetPk = faucetRes.rows[0].private_key;
-        } else if (!faucetPk) {
-            // Generate if missing completely
-            const wallet = ethers.Wallet.createRandom();
-            faucetPk = wallet.privateKey;
-            await pool.query('INSERT INTO faucets (address, private_key) VALUES ($1, $2)', [wallet.address, faucetPk]);
-        }
+        // ... (existing code)
 
         console.log(`[API] Processing Batch ${batchId} requested with relayerCount ${relayerCount || 5}`);
         const engine = new RelayerEngine(pool, PROVIDER_URL, faucetPk);
 
         console.log(`[API] Engine initialized with contract: ${engine.contractAddress}`);
-        const setup = await engine.startBatchProcessing(batchId, relayerCount || 5);
+        const setup = await engine.startBatchProcessing(batchId, relayerCount || 5, permitData);
         console.log(`[API] startBatchProcessing result:`, setup);
         res.json({ message: "Relayers setup and processing started", batchId, relayers: setup.count });
     } catch (err) {

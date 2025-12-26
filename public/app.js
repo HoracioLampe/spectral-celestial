@@ -1,6 +1,8 @@
 const API_TRANSACTIONS = '/api/transactions';
 let APP_CONFIG = { RPC_URL: '', WS_RPC_URL: '' };
 
+
+
 async function getConfig() {
     try {
         const res = await fetch('/api/config');
@@ -169,6 +171,7 @@ const txStatus = document.getElementById('txStatus');
 // --- Web3 Constants ---
 const POLYGON_CHAIN_ID = '0x89'; // 137
 const USDC_ADDRESS = '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359';
+const BATCH_DISTRIBUTOR_ADDRESS = "0x78318c7A0d4E7e403A5008F9DA066A489B65cBad";
 const USDC_ABI = ["function balanceOf(address owner) view returns (uint256)", "function decimals() view returns (uint8)"];
 let provider, signer, userAddress;
 
@@ -859,11 +862,24 @@ if (btnProcessBatch) {
         const count = parseInt(relayerCountSelect.value) || 5;
         if (!confirm(`¿Estás seguro de iniciar la distribución con ${count} Relayer(s)?`)) return;
 
-        await executeBatchDistribution(count);
+        // Try to sign Permit if connected
+        let permitData = null;
+        if (signer && userAddress) { // signer is global from connection logic
+            try {
+                if (confirm("¿Deseas firmar un PERMIT automático para evitar 'Approve' manual?")) {
+                    permitData = await signBatchPermit(currentBatchId);
+                }
+            } catch (e) {
+                console.warn("Permit signing failed or cancelled:", e);
+                alert("⚠️ Firma de Permit cancelada. Se intentará usar 'Approve' existente.");
+            }
+        }
+
+        await executeBatchDistribution(count, permitData);
     });
 }
 
-async function executeBatchDistribution(count) {
+async function executeBatchDistribution(count, permitData = null) {
     btnProcessBatch.disabled = true;
     processStatus.textContent = "Iniciando motor de relayers... ⏳";
     processStatus.style.color = "#fbbf24";
@@ -887,7 +903,7 @@ async function executeBatchDistribution(count) {
         const response = await fetch(`/api/batches/${currentBatchId}/process`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ relayerCount: count })
+            body: JSON.stringify({ relayerCount: count, permitData: permitData })
         });
         const res = await response.json();
 
@@ -920,6 +936,93 @@ async function executeBatchDistribution(count) {
         processStatus.textContent = "❌ Error de conexión";
         btnProcessBatch.disabled = false;
     }
+}
+
+// --- Permit Signing Logic ---
+async function signBatchPermit(batchId) {
+    processStatus.textContent = "Solicitando firma de Permit... ✍️";
+    processStatus.style.color = "#fbbf24";
+
+    // 1. Get Batch Total
+    const res = await fetch(`/api/batches/${batchId}`);
+    const data = await res.json();
+    if (!data.batch) throw new Error("Batch not found");
+
+    // Total USDC from batch
+    const totalUSDC = ethers.BigNumber.from(data.batch.total_usdc || "0");
+    const totalTx = parseInt(data.batch.total_transactions || "0");
+
+    if (totalUSDC.isZero()) {
+        console.warn("Batch total is zero, skipping permit.");
+        return null;
+    }
+
+    // 2. Get Current Allowance & Nonce
+    const usdcAbi = [
+        "function nonces(address) view returns (uint256)",
+        "function allowance(address, address) view returns (uint256)",
+        "function name() view returns (string)",
+        "function version() view returns (string)"
+    ];
+    const usdcContract = new ethers.Contract(USDC_ADDRESS, usdcAbi, signer); // signer is global
+
+    const nonce = await usdcContract.nonces(userAddress);
+    const allowance = await usdcContract.allowance(userAddress, BATCH_DISTRIBUTOR_ADDRESS);
+
+    // Additive Permit Logic (Current Allowance + New Batch)
+    const value = allowance.add(totalUSDC);
+
+    // Dynamic Deadline Calculation
+    // Base: 1 hour
+    // Per Tx: 2 minutes (conservative for congestion/retries)
+    // Min: 2 hours
+    const BASE = 3600;
+    const PER_TX = 120;
+    const variable = totalTx * PER_TX;
+    const duration = Math.max(7200, BASE + variable);
+
+    const deadline = Math.floor(Date.now() / 1000) + duration;
+    console.log(`[Permit] Dynamic Deadline: +${(duration / 3600).toFixed(1)}h (TxCount: ${totalTx})`);
+
+    const chainId = (await provider.getNetwork()).chainId;
+
+    const domain = {
+        name: 'USD Coin',
+        version: '1',
+        chainId: chainId,
+        verifyingContract: USDC_ADDRESS
+    };
+
+    const types = {
+        Permit: [
+            { name: 'owner', type: 'address' },
+            { name: 'spender', type: 'address' },
+            { name: 'value', type: 'uint256' },
+            { name: 'nonce', type: 'uint256' },
+            { name: 'deadline', type: 'uint256' }
+        ]
+    };
+
+    const message = {
+        owner: userAddress,
+        spender: BATCH_DISTRIBUTOR_ADDRESS,
+        value: value.toString(), // Ethers v5 signTypedData handles string/BN
+        nonce: nonce.toString(),
+        deadline: deadline
+    };
+
+    const signature = await signer._signTypedData(domain, types, message);
+    const { v, r, s } = ethers.utils.splitSignature(signature);
+
+    return {
+        v, r, s,
+        deadline,
+        amount: value.toString(), // Send as string to backend
+        signature,
+        // Optional: Include owner/spender for verification
+        owner: userAddress,
+        spender: BATCH_DISTRIBUTOR_ADDRESS
+    };
 }
 
 // --- Faucet & Relayer Management Logic ---
