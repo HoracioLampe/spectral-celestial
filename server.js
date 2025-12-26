@@ -582,10 +582,15 @@ app.get('/api/relayers/:batchId', async (req, res) => {
     try {
         const batchId = parseInt(req.params.batchId);
         if (isNaN(batchId)) return res.status(400).json({ error: 'Invalid batchId' });
+        console.log(`[API] Fetching relayers for batch ${batchId}...`);
         const relayerRes = await pool.query('SELECT address, last_activity FROM relayers WHERE batch_id = $1', [batchId]);
         const relayers = relayerRes.rows;
-        const provider = new ethers.JsonRpcProvider(process.env.PROVIDER_URL || "https://polygon-rpc.com");
+        console.log(`[API] Found ${relayers.length} relayers in DB`);
+
+        const providerUrl = process.env.PROVIDER_URL || "https://polygon-rpc.com";
+        const provider = new ethers.JsonRpcProvider(providerUrl);
         const balances = await Promise.all(relayers.map(async r => {
+            console.log(`[API] Checking balance for ${r.address}`);
             const balWei = await provider.getBalance(r.address);
             return {
                 address: r.address,

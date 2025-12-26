@@ -886,13 +886,22 @@ window.closeFaucetModal = () => {
 };
 
 async function fetchRelayerBalances(batchId) {
+    const tbody = document.getElementById('relayerBalancesTableBody');
+    console.log(`[RelayerDebug] Fetching balances for batch: ${batchId}`);
     try {
         const response = await fetch(`/api/relayers/${batchId}`);
-        if (!response.ok) throw new Error('Error al obtener balances');
+        if (!response.ok) {
+            const errData = await response.json().catch(() => ({}));
+            throw new Error(errData.error || 'Fallo en servidor');
+        }
         const data = await response.json();
+        console.log(`[RelayerDebug] Received ${data.length} relayers`);
         renderRelayerBalances(data);
     } catch (err) {
         console.error('Error fetching relayer balances:', err);
+        if (tbody) {
+            tbody.innerHTML = `<tr><td colspan="3" style="text-align:center; padding:1rem; color:#ef4444;">⚠️ Error: ${err.message}</td></tr>`;
+        }
     }
 }
 
