@@ -983,6 +983,8 @@ async function signBatchPermit(batchId) {
 
     const deadline = Math.floor(Date.now() / 1000) + duration;
     console.log(`[Permit] Dynamic Deadline: +${(duration / 3600).toFixed(1)}h (TxCount: ${totalTx})`);
+    console.log(`[Permit] Expiry Time: ${new Date(deadline * 1000).toLocaleString()}`);
+    console.log(`[Permit] Total Approved Value: ${ethers.utils.formatUnits(value, 6)} USDC`);
 
     const chainId = (await provider.getNetwork()).chainId;
 
