@@ -137,7 +137,7 @@ class RelayerEngine {
     // 1. Orchestrator: Start the Batch
     // 1. Orchestrator: Setup relayers and background the processing
     async startBatchProcessing(batchId, numRelayers) {
-        console.log(`🚀 Checking for existing relayers for Batch ${batchId}...`);
+        console.log(`[Engine] 🚀 startBatchProcessing(id=${batchId}, count=${numRelayers})`);
 
         // A. Check for existing relayers in DB
         const existingRelayersRes = await this.pool.query(
@@ -172,7 +172,7 @@ class RelayerEngine {
     }
 
     async backgroundProcess(batchId, relayers, isResumption = false) {
-        console.log(`[Background] Starting process for batch ${batchId} (Resumption: ${isResumption})`);
+        console.log(`[Background] 🎬 START | Batch: ${batchId} | Relayers: ${relayers.length} | Resumption: ${isResumption}`);
 
         // 1. Fetch Funder Address for this batch
         const batchRes = await this.pool.query('SELECT funder_address FROM batches WHERE id = $1', [batchId]);
@@ -461,10 +461,14 @@ class RelayerEngine {
 
     // 9. Distribute buffered gas cost equally among relayers
     async distributeGasToRelayers(batchId, relayers) {
+        console.log(`[Background] distributeGasToRelayers | Batch:${batchId} | Relayers:${relayers.length}`);
         const { totalCostWei } = await this.estimateBatchGas(batchId);
-        if (relayers.length === 0) return;
+        if (relayers.length === 0) {
+            console.warn(`[Background] ⚠️ distributeGasToRelayers: No relayers provided!`);
+            return;
+        }
         const perRelayerWei = totalCostWei / BigInt(relayers.length);
-        console.log(`🪙 Distributing ${ethers.formatEther(perRelayerWei)} MATIC to each of ${relayers.length} relayers`);
+        console.log(`🪙 [Background] Total Estimated: ${ethers.formatEther(totalCostWei)} MATIC -> ${ethers.formatEther(perRelayerWei)} per relayer`);
         await this.fundRelayers(relayers, perRelayerWei);
     }
 
