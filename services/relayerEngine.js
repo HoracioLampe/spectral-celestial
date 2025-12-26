@@ -4,8 +4,11 @@ const ethers = require('ethers');
 class RelayerEngine {
     constructor(pool, providerUrl, faucetPrivateKey) {
         this.pool = pool; // Postgres Pool
-        this.provider = new ethers.JsonRpcProvider(providerUrl);
+        this.provider = new ethers.JsonRpcProvider(providerUrl, undefined, {
+            staticNetwork: true
+        });
         this.faucetWallet = new ethers.Wallet(faucetPrivateKey, this.provider);
+        this.cachedChainId = null;
 
         // Configuration
         this.contractAddress = process.env.CONTRACT_ADDRESS || "0x78318c7A0d4E7e403A5008F9DA066A489B65cBad";
@@ -33,7 +36,7 @@ class RelayerEngine {
             FROM batch_transactions
             WHERE batch_id = $1 
             AND status = 'PENDING'
-        `;
+    `;
         const res = await this.pool.query(query, [batchId]);
         const total = res.rows[0].total || 0;
         return ethers.parseUnits(total.toString(), 6);
@@ -65,7 +68,7 @@ class RelayerEngine {
         );
 
         const currentAllowance = await usdcContract.allowance(funderAddress, this.contractAddress);
-        console.log(`[Permit] Current on-chain allowance: ${ethers.formatUnits(currentAllowance, 6)} USDC`);
+        console.log(`[Permit] Current on - chain allowance: ${ethers.formatUnits(currentAllowance, 6)} USDC`);
 
         // 2. Cumulative Amount = Current + New Batch
         const totalAmountToPermit = currentAllowance + batchTotal;
@@ -114,7 +117,7 @@ class RelayerEngine {
         };
 
         this.activePermits[batchId] = permitData;
-        console.log(`[Permit] Batch ${batchId} additive permit active. Signed Total: ${ethers.formatUnits(totalAmountToPermit, 6)} USDC`);
+        console.log(`[Permit] Batch ${batchId} additive permit active.Signed Total: ${ethers.formatUnits(totalAmountToPermit, 6)} USDC`);
 
         return permitData;
     }
@@ -129,7 +132,7 @@ class RelayerEngine {
             );
             return balanceStr;
         } catch (e) {
-            console.warn(`[Engine] Could not proactive-sync balance for ${address}:`, e.message);
+            console.warn(`[Engine] Could not proactive - sync balance for ${address}: `, e.message);
             return null;
         }
     }
@@ -137,7 +140,7 @@ class RelayerEngine {
     // 1. Orchestrator: Start the Batch
     // 1. Orchestrator: Setup relayers and background the processing
     async startBatchProcessing(batchId, numRelayers) {
-        console.log(`[Engine] 🚀 startBatchProcessing(id=${batchId}, count=${numRelayers})`);
+        console.log(`[Engine] 🚀 startBatchProcessing(id = ${batchId}, count = ${numRelayers})`);
 
         // A. Check for existing relayers in DB
         const existingRelayersRes = await this.pool.query(
@@ -149,11 +152,11 @@ class RelayerEngine {
         let isResumption = false;
 
         if (existingRelayersRes.rows.length > 0) {
-            console.log(`🔄 Found ${existingRelayersRes.rows.length} existing relayers. Resuming processing...`);
+            console.log(`🔄 Found ${existingRelayersRes.rows.length} existing relayers.Resuming processing...`);
             finalRelayers = existingRelayersRes.rows.map(r => new ethers.Wallet(r.private_key, this.provider));
             isResumption = true;
         } else {
-            console.log(`🆕 No active relayers found. Creating ${numRelayers} new ones...`);
+            console.log(`🆕 No active relayers found.Creating ${numRelayers} new ones...`);
             for (let i = 0; i < numRelayers; i++) {
                 finalRelayers.push(ethers.Wallet.createRandom(this.provider));
             }
@@ -164,7 +167,7 @@ class RelayerEngine {
         // Background the rest (Funding + Workers)
         // Pass isResumption flag to skip redundant funding if already done
         this.backgroundProcess(batchId, finalRelayers, isResumption).catch(err => {
-            console.error(`❌ Critical error in background execution for Batch ${batchId}:`, err);
+            console.error(`❌ Critical error in background execution for Batch ${batchId}: `, err);
         });
 
         const msg = isResumption ? "Processing resumed" : "Relayers setup and processing started";
@@ -172,7 +175,7 @@ class RelayerEngine {
     }
 
     async backgroundProcess(batchId, relayers, isResumption = false) {
-        console.log(`[Background] 🎬 START | Batch: ${batchId} | Relayers: ${relayers.length} | Resumption: ${isResumption}`);
+        console.log(`[Background] 🎬 START | Batch: ${batchId} | Relayers: ${relayers.length} | Resumption: ${isResumption} `);
 
         // 1. Fetch Funder Address for this batch
         const batchRes = await this.pool.query('SELECT funder_address FROM batches WHERE id = $1', [batchId]);
@@ -185,18 +188,18 @@ class RelayerEngine {
             const funderWallet = new ethers.Wallet(funderPk, this.provider);
 
             if (funderWallet.address.toLowerCase() !== funderAddress.toLowerCase()) {
-                console.warn(`[Permit] Warning: Funder Address in DB (${funderAddress}) does not match Funder Key in ENV (${funderWallet.address}). Permit automation might fail if they are different.`);
+                console.warn(`[Permit] Warning: Funder Address in DB(${funderAddress}) does not match Funder Key in ENV(${funderWallet.address}).Permit automation might fail if they are different.`);
             }
 
             try {
                 await this.ensureBatchPermit(batchId, funderAddress, funderWallet);
             } catch (permitErr) {
-                console.error(`[Permit] Failed to prepare permit for Batch ${batchId}:`, permitErr.message);
+                console.error(`[Permit] Failed to prepare permit for Batch ${batchId}: `, permitErr.message);
             }
         }
 
         // C. Fund Relayers with Gas
-        console.log(`[Background] Funding Decision | isResumption:${isResumption}`);
+        console.log(`[Background] Funding Decision | isResumption:${isResumption} `);
 
         // Even if resumption, let's verify if they actually NEED funds
         let needsFunding = !isResumption;
@@ -204,7 +207,7 @@ class RelayerEngine {
             const firstRelBal = await this.provider.getBalance(relayers[0].address);
             console.log(`[Background] Verifying Relayer 0 Balance: ${ethers.formatEther(firstRelBal)} MATIC`);
             if (firstRelBal < ethers.parseEther("0.01")) {
-                console.log(`[Background] Relayers appear underfunded despite resumption. Re-triggering distribution.`);
+                console.log(`[Background] Relayers appear underfunded despite resumption.Re - triggering distribution.`);
                 needsFunding = true;
             }
         }
@@ -213,7 +216,7 @@ class RelayerEngine {
             console.log(`[Background] Triggering distributeGasToRelayers...`);
             await this.distributeGasToRelayers(batchId, relayers);
         } else {
-            console.log(`[Background] Skipping gas distribution (Balances look okay or already done).`);
+            console.log(`[Background] Skipping gas distribution(Balances look okay or already done).`);
         }
 
         // D. Launch Workers (Parallel Execution)
@@ -251,7 +254,7 @@ class RelayerEngine {
             await this.processTransaction(wallet, txReq, false);
             processedCount++;
         }
-        console.log(`Unknown Worker ${wallet.address.substring(0, 6)} finished. Processed: ${processedCount}`);
+        console.log(`Unknown Worker ${wallet.address.substring(0, 6)} finished.Processed: ${processedCount} `);
     }
 
     // 3. Queue Logic (SKIP LOCKED)
@@ -263,14 +266,14 @@ class RelayerEngine {
                 UPDATE batch_transactions
                 SET status = 'SENDING_RPC', relayer_address = $1, updated_at = NOW()
                 WHERE id = (
-                    SELECT id FROM batch_transactions
+    SELECT id FROM batch_transactions
                     WHERE batch_id = $2 AND status = 'PENDING'
                     ORDER BY id ASC
                     FOR UPDATE SKIP LOCKED
                     LIMIT 1
                 )
-                RETURNING *
-            `, [relayerAddr, batchId]);
+RETURNING *
+    `, [relayerAddr, batchId]);
             await client.query('COMMIT');
             return res.rows[0];
         } catch (e) {
@@ -332,8 +335,11 @@ class RelayerEngine {
         try {
             const contract = new ethers.Contract(this.contractAddress, this.contractABI, wallet);
 
-            const network = await this.provider.getNetwork();
-            const chainId = network.chainId;
+            if (!this.cachedChainId) {
+                const network = await this.provider.getNetwork();
+                this.cachedChainId = network.chainId;
+            }
+            const chainId = this.cachedChainId;
 
             // FETCH REAL PROOF from DB
             const proof = await this.getMerkleProof(txDB.batch_id, txDB.id);
@@ -355,7 +361,7 @@ class RelayerEngine {
                 [chainId, this.contractAddress, BigInt(txDB.batch_id), BigInt(txDB.id), funder, txDB.wallet_address_to, amountVal]
             );
             const leaf = ethers.keccak256(encodedData);
-            console.log(`[Engine] Worker ${wallet.address.substring(0, 6)} | Processing Leaf: ${leaf} | Proof Len: ${proof.length}`);
+            console.log(`[Engine] Worker ${wallet.address.substring(0, 6)} | Processing Leaf: ${leaf} | Proof Len: ${proof.length} `);
 
             // PER-BATCH PERMIT: Get shared signature for this batch
             const permit = this.activePermits[txDB.batch_id];
@@ -363,7 +369,7 @@ class RelayerEngine {
             let txResponse;
 
             if (permit) {
-                console.log(`[Engine] Executing with Permit for Batch ${txDB.batch_id} (TX #${txDB.id})`);
+                console.log(`[Engine] Executing with Permit for Batch ${txDB.batch_id}(TX #${txDB.id})`);
                 // Estimate Gas for executeWithPermit
                 const gasLimit = await contract.executeWithPermit.estimateGas(
                     txDB.batch_id, txDB.id, funder, batchTx.wallet_address_to, amountVal, proof,
@@ -384,7 +390,7 @@ class RelayerEngine {
                     { gasLimit: gasLimit * 120n / 100n } // 20% buffer
                 );
             } else {
-                console.log(`[Engine] Executing Standard for Batch ${txDB.batch_id} (TX #${txDB.id})`);
+                console.log(`[Engine] Executing Standard for Batch ${txDB.batch_id}(TX #${txDB.id})`);
                 // Fallback to standard execution (requires manual allowance)
                 const gasLimit = await contract.executeTransaction.estimateGas(
                     txDB.batch_id, txDB.id, funder, txDB.wallet_address_to, amountVal, proof
@@ -398,7 +404,7 @@ class RelayerEngine {
 
             console.log(`Tx SENT: ${txResponse.hash}. Waiting for confirmation...`);
             await txResponse.wait();
-            console.log(`Tx CONFIRMED: ${txResponse.hash}`);
+            console.log(`Tx CONFIRMED: ${txResponse.hash} `);
 
             await this.pool.query(
                 `UPDATE batch_transactions SET status = 'SENT', tx_hash = $1, updated_at = NOW() WHERE id = $2`,
@@ -409,11 +415,11 @@ class RelayerEngine {
             await this.syncRelayerBalance(wallet.address);
         } catch (e) {
             if (e.message && e.message.includes("Tx already executed")) {
-                console.log(`⚠️ Tx ${txDB.id} already on-chain. Recovered.`);
+                console.log(`⚠️ Tx ${txDB.id} already on - chain.Recovered.`);
                 await this.pool.query(`UPDATE batch_transactions SET status = 'COMPLETED', tx_hash = 'RECOVERED', updated_at = NOW() WHERE id = $1`, [txDB.id]);
                 return;
             }
-            console.error(`Tx Failed: ${txDB.id}`, e);
+            console.error(`Tx Failed: ${txDB.id} `, e);
             await this.pool.query(`UPDATE batch_transactions SET status = 'FAILED', updated_at = NOW() WHERE id = $1`, [txDB.id]);
         }
     }
@@ -428,7 +434,7 @@ class RelayerEngine {
         const txs = txRes.rows;
         const totalCount = txs.length;
 
-        console.log(`[Estimate] Found ${totalCount} transactions in batch ${batchId}`);
+        console.log(`[Estimate] Found ${totalCount} transactions in batch ${batchId} `);
         if (totalCount === 0) return { totalGas: 0n, totalCostWei: 0n };
 
         const batchRes = await this.pool.query('SELECT funder_address FROM batches WHERE id = $1', [batchId]);
@@ -439,20 +445,24 @@ class RelayerEngine {
         const sampleSize = Math.min(5, totalCount);
         const sampleTxs = txs.slice(0, sampleSize);
 
-        console.log(`[Estimate] Estimating sample of ${sampleSize} transactions...`);
+        console.log(`[Estimate] Estimating sample of ${sampleSize} transactions SEQUENTIALLY...`);
 
-        const sampleEstimates = await Promise.all(sampleTxs.map(async (tx) => {
+        const sampleEstimates = [];
+        for (const tx of sampleTxs) {
             const amountVal = ethers.parseUnits(tx.amount_usdc.toString(), 6);
             const proof = [ethers.ZeroHash]; // Placeholder proof for estimation
             try {
-                return await contract.executeTransaction.estimateGas(
+                const gas = await contract.executeTransaction.estimateGas(
                     batchId, tx.id, funder, tx.wallet_address_to, amountVal, proof
                 );
+                sampleEstimates.push(gas);
+                // Tiny delay to breathe between calls if rate limited
+                await new Promise(r => setTimeout(r, 100));
             } catch (e) {
                 // Return a safe conservative estimate for USDC transfers + logic overhead
-                return 150000n;
+                sampleEstimates.push(150000n);
             }
-        }));
+        }
 
         const totalSampleGas = sampleEstimates.reduce((acc, val) => acc + val, 0n);
         const averageGas = totalSampleGas / BigInt(sampleSize);
@@ -466,21 +476,21 @@ class RelayerEngine {
         const totalCostWei = bufferedGas * gasPrice;
 
         const duration = (Date.now() - startTime) / 1000;
-        console.log(`[Estimate] COMPLETED in ${duration}s. Total extrapolated gas: ${extrapolatedTotalGas}. Buffered: ${bufferedGas}. Total: ${ethers.formatEther(totalCostWei)} MATIC`);
+        console.log(`[Estimate] COMPLETED in ${duration} s.Total extrapolated gas: ${extrapolatedTotalGas}.Buffered: ${bufferedGas}.Total: ${ethers.formatEther(totalCostWei)} MATIC`);
 
         return { totalGas: bufferedGas, totalCostWei };
     }
 
     // 9. Distribute buffered gas cost equally among relayers
     async distributeGasToRelayers(batchId, relayers) {
-        console.log(`[Background] distributeGasToRelayers | Batch:${batchId} | Relayers:${relayers.length}`);
+        console.log(`[Background] distributeGasToRelayers | Batch:${batchId} | Relayers:${relayers.length} `);
         const { totalCostWei } = await this.estimateBatchGas(batchId);
         if (relayers.length === 0) {
             console.warn(`[Background] ⚠️ distributeGasToRelayers: No relayers provided!`);
             return;
         }
         const perRelayerWei = totalCostWei / BigInt(relayers.length);
-        console.log(`🪙 [Background] Total Estimated: ${ethers.formatEther(totalCostWei)} MATIC -> ${ethers.formatEther(perRelayerWei)} per relayer`);
+        console.log(`🪙[Background] Total Estimated: ${ethers.formatEther(totalCostWei)} MATIC -> ${ethers.formatEther(perRelayerWei)} per relayer`);
         await this.fundRelayers(relayers, perRelayerWei);
     }
 
@@ -500,7 +510,7 @@ class RelayerEngine {
         console.log(`[Fund] Required Total: ${ethers.formatEther(totalValueToSend)} MATIC for ${count} relayers.`);
 
         if (faucetBal < totalValueToSend) {
-            console.error(`❌ Faucet has INSUFFICIENT FUNDS. Funding will likely fail.`);
+            console.error(`❌ Faucet has INSUFFICIENT FUNDS.Funding will likely fail.`);
             // Continue anyway to see explicit revert reason, or handle gracefully
         }
 
@@ -527,15 +537,15 @@ class RelayerEngine {
 
             const tx = await contract.distributeMatic(addresses, amountWei, overrides);
 
-            console.log(`[Fund] Atomic Batch Tx SENT: ${tx.hash}`);
+            console.log(`[Fund] Atomic Batch Tx SENT: ${tx.hash} `);
             const receipt = await tx.wait();
-            console.log(`[Fund] Atomic Batch Tx CONFIRMED in block ${receipt.blockNumber}!`);
+            console.log(`[Fund] Atomic Batch Tx CONFIRMED in block ${receipt.blockNumber} !`);
 
             // Proactive sync for all
             await Promise.all(relayers.map(r => this.syncRelayerBalance(r.address)));
 
         } catch (err) {
-            console.error(`❌ Atomic batch funding failed:`, err.message);
+            console.error(`❌ Atomic batch funding failed: `, err.message);
             console.log(`⚠️ Entering Sequential Fallback...`);
 
             // Fallback to manual sequential
@@ -555,10 +565,10 @@ class RelayerEngine {
                         nonce: nonce++,
                         gasLimit: 21000n
                     });
-                    console.log(`   ✅ Sequential sent to ${r.address.substring(0, 8)}: ${tx.hash}`);
+                    console.log(`   ✅ Sequential sent to ${r.address.substring(0, 8)}: ${tx.hash} `);
                     this.trackFallbackTx(tx, r.address);
                 } catch (ser) {
-                    console.error(`   ❌ Fallback failed for ${r.address}:`, ser.message);
+                    console.error(`   ❌ Fallback failed for ${r.address}: `, ser.message);
                 }
             }
         }
@@ -580,7 +590,7 @@ class RelayerEngine {
         try {
             for (const r of relayers) {
                 await this.pool.query(
-                    `INSERT INTO relayers (batch_id, address, private_key, status) VALUES ($1, $2, $3, 'active')`,
+                    `INSERT INTO relayers(batch_id, address, private_key, status) VALUES($1, $2, $3, 'active')`,
                     [batchId, r.address, r.privateKey]
                 );
             }
@@ -621,11 +631,11 @@ class RelayerEngine {
 
                     return tx.hash;
                 } else {
-                    console.log(`[Refund] Skipping ${wallet.address.substring(0, 6)}: Balance too low (${ethers.formatEther(balance)} MATIC)`);
+                    console.log(`[Refund] Skipping ${wallet.address.substring(0, 6)}: Balance too low(${ethers.formatEther(balance)} MATIC)`);
                     return null;
                 }
             } catch (err) {
-                console.warn(`[Refund] Failed for relayer ${r.address.substring(0, 6)}:`, err.message);
+                console.warn(`[Refund] Failed for relayer ${r.address.substring(0, 6)}: `, err.message);
                 return null;
             }
         });
@@ -633,7 +643,7 @@ class RelayerEngine {
         const hashes = await Promise.all(refundPromises);
         const successful = hashes.filter(h => h !== null).length;
 
-        console.log(`[Refund] Sweep complete for Batch ${batchId}. ${successful}/${relayers.length} relayers returned funds.`);
+        console.log(`[Refund] Sweep complete for Batch ${batchId}.${successful}/${relayers.length} relayers returned funds.`);
 
         // Update DB status
         await this.pool.query(`UPDATE relayers SET status = 'drained', last_activity = NOW() WHERE batch_id = $1`, [batchId]);

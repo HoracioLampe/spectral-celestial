@@ -470,10 +470,8 @@ app.post('/api/batches/:id/merkle', async (req, res) => {
         // 2. Limpiar Merkle previo (si existe)
         await client.query('DELETE FROM merkle_nodes WHERE batch_id = $1', [batchId]);
 
-        // 2. Fetch Network Info for Hashing
-        const providerUrl = process.env.PROVIDER_URL || "https://dawn-palpable-telescope.matic.quiknode.pro/e7d140234fbac5b00d93bfedf2e1c555fa2fdb65/";
-        const provider = new ethers.JsonRpcProvider(providerUrl);
-        const network = await provider.getNetwork();
+        // 2. Fetch Network Info for Hashing (Cached)
+        const network = await getNetworkInfo();
         const chainId = network.chainId;
         const contractAddress = process.env.CONTRACT_ADDRESS || "0x78318c7A0d4E7e403A5008F9DA066A489B65cBad";
 
@@ -569,6 +567,26 @@ app.post('/api/batches/:id/merkle', async (req, res) => {
 
 // Relayer System Endpoint
 const RelayerEngine = require('./services/relayerEngine');
+const PROVIDER_URL = process.env.PROVIDER_URL || "https://dawn-palpable-telescope.matic.quiknode.pro/e7d140234fbac5b00d93bfedf2e1c555fa2fdb65/";
+let sharedProvider = null;
+let cachedNetwork = null;
+
+function getProvider() {
+    if (!sharedProvider) {
+        sharedProvider = new ethers.JsonRpcProvider(PROVIDER_URL, undefined, {
+            staticNetwork: true // Optimizes by skipping redundant eth_chainId calls
+        });
+    }
+    return sharedProvider;
+}
+
+async function getNetworkInfo() {
+    if (!cachedNetwork) {
+        cachedNetwork = await getProvider().getNetwork();
+    }
+    return cachedNetwork;
+}
+
 app.post('/api/batches/:id/process', async (req, res) => {
     try {
         const batchId = parseInt(req.params.id);
@@ -596,7 +614,6 @@ app.post('/api/batches/:id/process', async (req, res) => {
         }
 
         console.log(`[API] Processing Batch ${batchId} requested with relayerCount ${relayerCount || 5}`);
-        const PROVIDER_URL = process.env.PROVIDER_URL || "https://dawn-palpable-telescope.matic.quiknode.pro/e7d140234fbac5b00d93bfedf2e1c555fa2fdb65/";
         const engine = new RelayerEngine(pool, PROVIDER_URL, faucetPk);
 
         console.log(`[API] Engine initialized with contract: ${engine.contractAddress}`);
@@ -619,8 +636,7 @@ app.get('/api/relayers/:batchId', async (req, res) => {
         const relayers = relayerRes.rows;
         console.log(`[API] Found ${relayers.length} relayers in DB`);
 
-        const PROVIDER_URL = process.env.PROVIDER_URL || "https://dawn-palpable-telescope.matic.quiknode.pro/e7d140234fbac5b00d93bfedf2e1c555fa2fdb65/";
-        const provider = new ethers.JsonRpcProvider(PROVIDER_URL);
+        const provider = getProvider();
         const balances = [];
 
         for (const r of relayers) {
