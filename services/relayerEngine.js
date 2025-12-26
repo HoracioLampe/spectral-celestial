@@ -155,41 +155,56 @@ class RelayerEngine {
         }
     }
 
-    // 8. Estimate total gas for a batch (including 50% buffer) and return total cost in wei
+    // 8. Estimate total gas for a batch using statistical sampling (FAST)
     async estimateBatchGas(batchId) {
+        const startTime = Date.now();
+        console.log(`[Estimate] Starting optimization for batch ${batchId}`);
+
         // Fetch all pending transactions for the batch
-        console.log(`[Estimate] Fetching transactions for batch ${batchId}`);
-        const txRes = await this.pool.query('SELECT * FROM batch_transactions WHERE batch_id = $1', [batchId]);
+        const txRes = await this.pool.query('SELECT id, amount_usdc, wallet_address_to FROM batch_transactions WHERE batch_id = $1', [batchId]);
         const txs = txRes.rows;
-        console.log(`[Estimate] Found ${txs.length} transactions in batch ${batchId}`);
-        if (txs.length === 0) return { totalGas: 0n, totalCostWei: 0n };
+        const totalCount = txs.length;
+
+        console.log(`[Estimate] Found ${totalCount} transactions in batch ${batchId}`);
+        if (totalCount === 0) return { totalGas: 0n, totalCostWei: 0n };
+
         const batchRes = await this.pool.query('SELECT funder_address FROM batches WHERE id = $1', [batchId]);
         const funder = batchRes.rows[0]?.funder_address || ethers.ZeroAddress;
         const contract = new ethers.Contract(this.contractAddress, this.contractABI, this.provider);
-        let totalGas = 0n;
-        for (const tx of txs) {
+
+        // Sampling Strategy: Estimate first 5 transactions to get an average
+        const sampleSize = Math.min(5, totalCount);
+        const sampleTxs = txs.slice(0, sampleSize);
+
+        console.log(`[Estimate] Estimating sample of ${sampleSize} transactions...`);
+
+        const sampleEstimates = await Promise.all(sampleTxs.map(async (tx) => {
             const amountVal = ethers.parseUnits(tx.amount_usdc.toString(), 6);
-            const proof = [];
+            const proof = []; // Proof generation is currently a stub
             try {
-                const gas = await contract.executeTransaction.estimateGas(
-                    batchId,
-                    tx.id,
-                    funder,
-                    tx.wallet_address_to,
-                    amountVal,
-                    proof
+                return await contract.executeTransaction.estimateGas(
+                    batchId, tx.id, funder, tx.wallet_address_to, amountVal, proof
                 );
-                totalGas = totalGas + gas;
             } catch (e) {
-                console.error(`Status: Gas estimation failed for tx ${tx.id} (using fallback 200k):`, e.message);
-                totalGas = totalGas + 200000n; // Fallback gas
+                console.warn(`[Estimate] Sample estimation failed for tx ${tx.id}, using fallback 200k`);
+                return 200000n;
             }
-        }
-        // Add 50% buffer
-        const bufferedGas = totalGas * 150n / 100n;
+        }));
+
+        const totalSampleGas = sampleEstimates.reduce((acc, val) => acc + val, 0n);
+        const averageGas = totalSampleGas / BigInt(sampleSize);
+        const extrapolatedTotalGas = averageGas * BigInt(totalCount);
+
+        // Add 50% buffer for safety
+        const bufferedGas = extrapolatedTotalGas * 150n / 100n;
+
         const feeData = await this.provider.getFeeData();
         const gasPrice = feeData.gasPrice || 35000000000n; // fallback to 35 gwei
         const totalCostWei = bufferedGas * gasPrice;
+
+        const duration = (Date.now() - startTime) / 1000;
+        console.log(`[Estimate] COMPLETED in ${duration}s. Total extrapolated gas: ${extrapolatedTotalGas}. Buffered: ${bufferedGas}.`);
+
         return { totalGas: bufferedGas, totalCostWei };
     }
 
