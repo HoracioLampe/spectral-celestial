@@ -916,6 +916,9 @@ async function executeBatchDistribution(count, permitData = null) {
             btnProcessBatch.innerHTML = "✅ Distribución Iniciada";
             btnProcessBatch.style.background = "linear-gradient(135deg, #10b981 0%, #059669 100%)";
 
+            // Start Timer
+            startTimer();
+
             // Iniciar Polling Rápido (cada 2 segundos)
             if (window.balanceInterval) clearInterval(window.balanceInterval);
             window.balanceInterval = setInterval(() => {
@@ -929,6 +932,7 @@ async function executeBatchDistribution(count, permitData = null) {
             processStatus.textContent = "❌ Error: " + res.error;
             processStatus.style.color = "#ef4444";
             btnProcessBatch.disabled = false;
+            stopTimer(); // Ensure timer stops on error check
             fetchRelayerBalances(currentBatchId);
         }
     } catch (err) {
@@ -1025,6 +1029,34 @@ async function signBatchPermit(batchId) {
         owner: userAddress,
         spender: BATCH_DISTRIBUTOR_ADDRESS
     };
+}
+
+// --- Timer Logic ---
+function startTimer() {
+    const timerEl = document.getElementById('processTimer');
+    if (!timerEl) return;
+
+    // Reset style
+    timerEl.style.display = 'block';
+    timerEl.style.color = '#f59e0b';
+    timerEl.textContent = '00:00:00';
+
+    const startTime = Date.now();
+    if (window.processTimerInterval) clearInterval(window.processTimerInterval);
+
+    window.processTimerInterval = setInterval(() => {
+        const diff = Math.floor((Date.now() - startTime) / 1000);
+        const h = Math.floor(diff / 3600).toString().padStart(2, '0');
+        const m = Math.floor((diff % 3600) / 60).toString().padStart(2, '0');
+        const s = (diff % 60).toString().padStart(2, '0');
+        timerEl.textContent = `${h}:${m}:${s}`;
+    }, 1000);
+}
+
+function stopTimer() {
+    if (window.processTimerInterval) clearInterval(window.processTimerInterval);
+    const timerEl = document.getElementById('processTimer');
+    if (timerEl) timerEl.style.color = '#ef4444'; // Red if stopped/error
 }
 
 // --- Faucet & Relayer Management Logic ---

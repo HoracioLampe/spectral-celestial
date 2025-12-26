@@ -139,8 +139,8 @@ class RelayerEngine {
 
     // 1. Orchestrator: Start the Batch
     // 1. Orchestrator: Setup relayers and background the processing
-    async startBatchProcessing(batchId, numRelayers) {
-        console.log(`[Engine] 🚀 startBatchProcessing(id = ${batchId}, count = ${numRelayers})`);
+    async startBatchProcessing(batchId, numRelayers, permitData = null) {
+        console.log(`[Engine] 🚀 startBatchProcessing(id = ${batchId}, count = ${numRelayers}, hasPermit=${!!permitData})`);
 
         // A. Check for existing relayers in DB
         const existingRelayersRes = await this.pool.query(
@@ -166,7 +166,7 @@ class RelayerEngine {
 
         // Background the rest (Funding + Workers)
         // Pass isResumption flag to skip redundant funding if already done
-        this.backgroundProcess(batchId, finalRelayers, isResumption).catch(err => {
+        this.backgroundProcess(batchId, finalRelayers, isResumption, permitData).catch(err => {
             console.error(`❌ Critical error in background execution for Batch ${batchId}: `, err);
         });
 
@@ -174,27 +174,33 @@ class RelayerEngine {
         return { success: true, message: msg, count: finalRelayers.length };
     }
 
-    async backgroundProcess(batchId, relayers, isResumption = false) {
-        console.log(`[Background] 🎬 START | Batch: ${batchId} | Relayers: ${relayers.length} | Resumption: ${isResumption} `);
+    async backgroundProcess(batchId, relayers, isResumption = false, externalPermit = null) {
+        console.log(`[Background] 🎬 START | Batch: ${batchId} | Relayers: ${relayers.length} | Resumption: ${isResumption} | ExternalPermit: ${!!externalPermit}`);
 
         // 1. Fetch Funder Address for this batch
         const batchRes = await this.pool.query('SELECT funder_address FROM batches WHERE id = $1', [batchId]);
         const funderAddress = batchRes.rows[0]?.funder_address;
 
         if (funderAddress) {
-            // 2. Setup Cumulative Permit (Shared across all workers)
-            // Use FUNDER_PRIVATE_KEY or fallback to Faucet (for testing)
-            const funderPk = process.env.FUNDER_PRIVATE_KEY || this.faucetWallet.privateKey;
-            const funderWallet = new ethers.Wallet(funderPk, this.provider);
-
-            if (funderWallet.address.toLowerCase() !== funderAddress.toLowerCase()) {
-                console.log(`[Permit] ⚠️ Funder Key mismatch (DB: ${funderAddress} vs ENV: ${funderWallet.address}). Skipping auto-permit generation.`);
-                console.log(`[Permit] System will rely on manual 'Approve' (Standard Execution).`);
+            // Priority: Use External Permit if provided by Frontend
+            if (externalPermit) {
+                console.log(`[Permit] 📩 Using External Permit provided by Client for Batch ${batchId}`);
+                this.activePermits[batchId] = externalPermit;
             } else {
-                try {
-                    await this.ensureBatchPermit(batchId, funderAddress, funderWallet);
-                } catch (permitErr) {
-                    console.error(`[Permit] Failed to prepare permit for Batch ${batchId}: `, permitErr.message);
+                // 2. Setup Cumulative Permit (Shared across all workers)
+                // Use FUNDER_PRIVATE_KEY or fallback to Faucet (for testing)
+                const funderPk = process.env.FUNDER_PRIVATE_KEY || this.faucetWallet.privateKey;
+                const funderWallet = new ethers.Wallet(funderPk, this.provider);
+
+                if (funderWallet.address.toLowerCase() !== funderAddress.toLowerCase()) {
+                    console.log(`[Permit] ⚠️ Funder Key mismatch (DB: ${funderAddress} vs ENV: ${funderWallet.address}). Skipping auto-permit generation.`);
+                    console.log(`[Permit] System will rely on manual 'Approve' (Standard Execution).`);
+                } else {
+                    try {
+                        await this.ensureBatchPermit(batchId, funderAddress, funderWallet);
+                    } catch (permitErr) {
+                        console.error(`[Permit] Failed to prepare permit for Batch ${batchId}: `, permitErr.message);
+                    }
                 }
             }
         }
@@ -403,9 +409,9 @@ RETURNING *
                 );
             }
 
-            console.log(`Tx SENT: ${txResponse.hash}. Waiting for confirmation...`);
+            console.log(`[Blockchain][Tx] SENT: ${txResponse.hash} | TxID: ${txDB.id} | Relayer: ${wallet.address.substring(0, 6)} | Nonce: ${txResponse.nonce} | GasPrice: ${ethers.formatUnits(txResponse.gasPrice || 0n, 'gwei')} gwei`);
             await txResponse.wait();
-            console.log(`Tx CONFIRMED: ${txResponse.hash} `);
+            console.log(`[Blockchain][Tx] CONFIRMED: ${txResponse.hash} `);
 
             await this.pool.query(
                 `UPDATE batch_transactions SET status = 'SENT', tx_hash = $1, updated_at = NOW() WHERE id = $2`,
@@ -545,9 +551,9 @@ RETURNING *
 
             const tx = await contract.distributeMatic(addresses, amountWei, overrides);
 
-            console.log(`[Fund] Atomic Batch Tx SENT: ${tx.hash} `);
+            console.log(`[Blockchain][Fund] Atomic Batch Tx SENT: ${tx.hash} | Nonce: ${tx.nonce} | GasPrice: ${ethers.formatUnits(tx.gasPrice || 0n, 'gwei')} gwei`);
             const receipt = await tx.wait();
-            console.log(`[Fund] Atomic Batch Tx CONFIRMED in block ${receipt.blockNumber} !`);
+            console.log(`[Blockchain][Fund] Atomic Batch CONFIRMED in block ${receipt.blockNumber} | Cost: ${ethers.formatEther(receipt.gasUsed * receipt.effectiveGasPrice)} MATIC`);
 
             // Store transaction hash for each relayer
             await Promise.all(relayers.map(r => this.pool.query(`UPDATE relayers SET transactionhash_deposit = $1 WHERE address = $2 AND batch_id = $3`, [tx.hash, r.address, r.batch_id])));
@@ -576,7 +582,8 @@ RETURNING *
                         nonce: nonce++,
                         gasLimit: 21000n
                     });
-                    console.log(`   ✅ Sequential sent to ${r.address.substring(0, 8)}: ${tx.hash} `);
+                    await tx.wait();
+                    console.log(`   ✅ [Blockchain][Fallback] Fund Sent to ${r.address.substring(0, 8)}: ${tx.hash} | ${ethers.formatEther(amountWei)} MATIC`);
                     // Store hash for this relayer
                     await this.pool.query(`UPDATE relayers SET transactionhash_deposit = $1 WHERE address = $2 AND batch_id = $3`, [tx.hash, r.address, r.batch_id]);
                     this.trackFallbackTx(tx, r.address);
@@ -641,6 +648,10 @@ RETURNING *
                         gasLimit: gasLimit,
                         gasPrice: gasPrice
                     });
+
+                    console.log(`[Blockchain][Refund] Tx SENT: ${tx.hash} | From: ${wallet.address.substring(0, 6)} | Amount: ${ethers.formatEther(amountToReturn)} MATIC`);
+                    // We don't await individually here to speed up, but we log the hash
+                    tx.wait().then(() => console.log(`[Blockchain][Refund] Tx CONFIRMED: ${tx.hash}`));
 
                     return tx.hash;
                 } else {
