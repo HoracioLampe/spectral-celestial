@@ -531,8 +531,13 @@ RETURNING *
             };
 
             if (feeData.maxFeePerGas) {
+                // Apply a 20% buffer to both max fee and priority fee
                 overrides.maxFeePerGas = feeData.maxFeePerGas * 120n / 100n;
-                overrides.maxPriorityFeePerGas = feeData.maxPriorityFeePerGas * 150n / 100n;
+                overrides.maxPriorityFeePerGas = feeData.maxPriorityFeePerGas * 120n / 100n;
+                // Guard: priority fee must never exceed max fee
+                if (overrides.maxPriorityFeePerGas > overrides.maxFeePerGas) {
+                    overrides.maxPriorityFeePerGas = overrides.maxFeePerGas;
+                }
             } else {
                 overrides.gasPrice = feeData.gasPrice ? (feeData.gasPrice * 120n / 100n) : 50000000000n;
             }
