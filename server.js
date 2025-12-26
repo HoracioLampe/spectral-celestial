@@ -643,15 +643,8 @@ app.get('/api/faucet', async (req, res) => {
 
 app.post('/api/faucet/generate', async (req, res) => {
     try {
-        // Only generate if none exists (or if explicitly requested - for now just if none)
-        const check = await pool.query('SELECT id FROM faucets LIMIT 1');
-        if (check.rows.length > 0) {
-            return res.status(400).json({ error: "Faucet already exists" });
-        }
-
         const wallet = ethers.Wallet.createRandom();
         await pool.query('INSERT INTO faucets (address, private_key) VALUES ($1, $2)', [wallet.address, wallet.privateKey]);
-
         res.json({ message: "Faucet generated", address: wallet.address });
     } catch (err) {
         res.status(500).json({ error: err.message });

@@ -81,13 +81,16 @@ async function checkFaucetStatus() {
         } else {
             if (btnProcess) btnProcess.disabled = true;
             if (faucetStatus) {
-                faucetStatus.textContent = "❌ No hay Faucet. Haz clic en 'Generar Faucet'.";
+                faucetStatus.textContent = "❌ No hay Faucet. Haz clic en 'Gestione Faucet' > 'Generar'.";
                 faucetStatus.style.color = "#ef4444";
             }
-            if (mainAddress) mainAddress.textContent = "No configurado";
+            const mainLink = document.getElementById('mainFaucetLink');
+            if (mainLink) mainLink.textContent = "---";
         }
     } catch (err) {
         console.error('Error checking faucet:', err);
+        const mainLink = document.getElementById('mainFaucetLink');
+        if (mainLink) mainLink.textContent = "⚠️ Error RPC";
     }
 }
 
@@ -978,11 +981,16 @@ window.refreshRelayerBalances = () => {
     }
 };
 
-// Auto-refresh every 15s normally, but executeBatchDistribution handles high-speed polling
+// Auto-refresh every 15s normally
 setInterval(() => {
     if (currentBatchId && !window.processingBatch) {
         refreshRelayerBalances();
     }
+    checkFaucetStatus();
 }, 15000);
+
+// Initial calls
+checkFaucetStatus();
+refreshRelayerBalances();
 
 
