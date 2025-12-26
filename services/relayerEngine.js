@@ -311,11 +311,52 @@ class RelayerEngine {
         }
     }
 
-    // 7. Refund Logic
+    // 7. Refund Logic: Parallel Sweep back to Faucet
     async returnFundsToFaucet(relayers, batchId) {
-        console.log("Refunding...");
-        // In real implementation: sweep funds back
-        await this.pool.query(`UPDATE relayers SET status = 'drained' WHERE batch_id = $1`, [batchId]);
+        console.log(`[Refund] Starting sweep for ${relayers.length} relayers in Batch ${batchId}...`);
+
+        const faucetAddress = this.faucetWallet.address;
+        const feeData = await this.provider.getFeeData();
+        const gasPrice = feeData.gasPrice || 35000000000n; // 35 gwei fallback
+        const gasLimit = 21000n; // Standard transfer
+        const costWei = gasLimit * gasPrice;
+
+        const refundPromises = relayers.map(async (r) => {
+            try {
+                const wallet = new ethers.Wallet(r.privateKey, this.provider);
+                const balance = await this.provider.getBalance(wallet.address);
+
+                // Dust Protection: Only refund if balance > cost + 0.01 MATIC buffer
+                const buffer = ethers.parseEther("0.01");
+                if (balance > (costWei + buffer)) {
+                    const amountToReturn = balance - costWei;
+                    console.log(`[Refund] Sweeping ${ethers.formatEther(amountToReturn)} MATIC from ${wallet.address.substring(0, 6)}...`);
+
+                    const tx = await wallet.sendTransaction({
+                        to: faucetAddress,
+                        value: amountToReturn,
+                        gasLimit: gasLimit,
+                        gasPrice: gasPrice
+                    });
+
+                    return tx.hash;
+                } else {
+                    console.log(`[Refund] Skipping ${wallet.address.substring(0, 6)}: Balance too low (${ethers.formatEther(balance)} MATIC)`);
+                    return null;
+                }
+            } catch (err) {
+                console.warn(`[Refund] Failed for relayer ${r.address.substring(0, 6)}:`, err.message);
+                return null;
+            }
+        });
+
+        const hashes = await Promise.all(refundPromises);
+        const successful = hashes.filter(h => h !== null).length;
+
+        console.log(`[Refund] Sweep complete for Batch ${batchId}. ${successful}/${relayers.length} relayers returned funds.`);
+
+        // Update DB status
+        await this.pool.query(`UPDATE relayers SET status = 'drained', last_activity = NOW() WHERE batch_id = $1`, [batchId]);
     }
 
     // Sweep Logic: Detect Zombies
