@@ -127,8 +127,31 @@ window.copyFaucetKey = () => {
 };
 
 // Global initialization or interval
-setInterval(checkFaucetStatus, 15000);
-document.addEventListener('DOMContentLoaded', checkFaucetStatus);
+// Global initialization: start polling when page is visible
+let faucetInterval = null;
+function startFaucetPolling() {
+    if (!faucetInterval) {
+        faucetInterval = setInterval(checkFaucetStatus, 15000);
+    }
+}
+function stopFaucetPolling() {
+    if (faucetInterval) {
+        clearInterval(faucetInterval);
+        faucetInterval = null;
+    }
+}
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+        checkFaucetStatus();
+        startFaucetPolling();
+    } else {
+        stopFaucetPolling();
+    }
+});
+if (document.visibilityState === 'visible') {
+    checkFaucetStatus();
+    startFaucetPolling();
+}
 
 // --- Elementos DOM ---
 const transactionsTableBody = document.getElementById('transactionsTableBody');
