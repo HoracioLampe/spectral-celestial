@@ -26,6 +26,14 @@ app.use(express.json());
 // Servir archivos estáticos
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Configuración Pública para el Frontend
+app.get('/api/config', (req, res) => {
+    res.json({
+        RPC_URL: process.env.PROVIDER_URL || "https://polygon-rpc.com",
+        WS_RPC_URL: process.env.WS_PROVIDER_URL || "wss://polygon-rpc.com"
+    });
+});
+
 // Inicializar base de datos
 const initDB = async () => {
     try {
@@ -624,7 +632,8 @@ app.get('/api/faucet', async (req, res) => {
             return res.json({ address: null, balance: "0", privateKey: null });
         }
         const { address, private_key: privateKey } = result.rows[0];
-        const provider = new ethers.JsonRpcProvider(process.env.PROVIDER_URL || "https://polygon-rpc.com");
+        const providerUrl = process.env.PROVIDER_URL || "https://polygon-rpc.com";
+        const provider = new ethers.JsonRpcProvider(providerUrl);
         const balanceWei = await provider.getBalance(address);
         res.json({ address, balance: ethers.formatEther(balanceWei), privateKey });
     } catch (err) {

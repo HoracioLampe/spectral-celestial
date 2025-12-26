@@ -1,4 +1,22 @@
 const API_TRANSACTIONS = '/api/transactions';
+let APP_CONFIG = { RPC_URL: '', WS_RPC_URL: '' };
+
+async function getConfig() {
+    try {
+        const res = await fetch('/api/config');
+        APP_CONFIG = await res.json();
+    } catch (e) {
+        console.error("Error fetching config:", e);
+    }
+}
+
+function getExplorerUrl(address) {
+    // We can expand this to check for network in config if needed
+    return `https://polygonscan.com/address/${address}`;
+}
+
+// Initialize config
+getConfig();
 
 // --- Faucet Monitoring ---
 // Fix: Relayer funding fallback & Persistence logging - 2025-12-25 16:59
@@ -22,7 +40,7 @@ async function checkFaucetStatus() {
             const modalLink = document.getElementById('faucetModalLink');
             if (modalLink) {
                 modalLink.textContent = `${data.address} ↗️`;
-                modalLink.href = `https://polygonscan.com/address/${data.address}`;
+                modalLink.href = getExplorerUrl(data.address);
                 modalLink.dataset.address = data.address;
             }
 
@@ -33,7 +51,7 @@ async function checkFaucetStatus() {
             const mainLink = document.getElementById('mainFaucetLink');
             if (mainLink) {
                 mainLink.textContent = `${shortAddr} ↗️`;
-                mainLink.href = `https://polygonscan.com/address/${data.address}`;
+                mainLink.href = getExplorerUrl(data.address);
                 mainLink.dataset.address = data.address;
             }
             if (mainBalance) mainBalance.textContent = `${parseFloat(data.balance).toFixed(4)} MATIC`;
