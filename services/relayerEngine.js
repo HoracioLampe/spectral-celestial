@@ -579,11 +579,16 @@ RETURNING *
                 overrides.gasPrice = gasP * 120n / 100n;
             }
 
+            console.log(`[FundDebug] Overrides Types: value=${typeof overrides.value}, gasLimit=${typeof overrides.gasLimit}, maxFee=${typeof overrides.maxFeePerGas}, maxPrio=${typeof overrides.maxPriorityFeePerGas}, gasPrice=${typeof overrides.gasPrice}`);
+            console.log(`[FundDebug] AmountType=${typeof _amountWei}, CountType=${typeof count}`);
+
             const tx = await contract.distributeMatic(addresses, _amountWei, overrides);
 
             console.log(`[Blockchain][Fund] Atomic Batch Tx SENT: ${tx.hash} | Nonce: ${tx.nonce} | GasPrice: ${ethers.formatUnits(tx.gasPrice || 0n, 'gwei')} gwei`);
             const receipt = await tx.wait();
-            console.log(`[Blockchain][Fund] Atomic Batch CONFIRMED in block ${receipt.blockNumber} | Cost: ${ethers.formatEther(receipt.gasUsed * receipt.effectiveGasPrice)} MATIC`);
+            // receipt.gasUsed and effectiveGasPrice are BigInt in v6
+            const cost = BigInt(receipt.gasUsed) * BigInt(receipt.effectiveGasPrice);
+            console.log(`[Blockchain][Fund] Atomic Batch CONFIRMED in block ${receipt.blockNumber} | Cost: ${ethers.formatEther(cost)} MATIC`);
 
             // Store transaction hash for each relayer
             await Promise.all(relayers.map(r => this.pool.query(`UPDATE relayers SET transactionhash_deposit = $1 WHERE address = $2 AND batch_id = $3`, [tx.hash, r.address, r.batch_id])));
