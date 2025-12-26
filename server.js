@@ -617,7 +617,7 @@ app.get('/api/relayers/:batchId', async (req, res) => {
                 console.warn(`[API] Could not fetch balance for ${r.address}:`, rpcErr.message);
                 balances.push({
                     address: r.address,
-                    balance: "0",
+                    balance: "Error",
                     lastActivity: r.last_activity,
                     error: true
                 });

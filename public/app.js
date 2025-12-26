@@ -943,6 +943,10 @@ function renderRelayerBalances(data) {
 
     tbody.innerHTML = data.map(r => {
         const shortAddr = `${r.address.substring(0, 6)}...${r.address.substring(38)}`;
+        const isError = r.balance === "Error";
+        const balanceDisplay = isError ? `<span style="color:#ef4444;">⚠️ Error RPC</span>` : `${parseFloat(r.balance).toFixed(4)} MATIC`;
+        const balanceColor = isError ? '#ef4444' : '#4ade80';
+
         return `
             <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
                 <td style="padding:0.75rem; font-family:monospace; font-size:0.85rem;">
@@ -950,8 +954,8 @@ function renderRelayerBalances(data) {
                         ${shortAddr} ↗️
                     </a>
                 </td>
-                <td style="padding:0.75rem; color:#4ade80; font-weight:bold;">
-                    ${parseFloat(r.balance).toFixed(4)} MATIC
+                <td style="padding:0.75rem; color:${balanceColor}; font-weight:bold;">
+                    ${balanceDisplay}
                 </td>
                 <td style="padding:0.75rem; color:#94a3b8; font-size:0.8rem;">
                     ${r.lastActivity ? new Date(r.lastActivity).toLocaleTimeString() : 'Sin actividad'}
