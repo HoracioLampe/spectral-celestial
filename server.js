@@ -568,7 +568,7 @@ app.post('/api/batches/:id/merkle', async (req, res) => {
 });
 
 // Relayer System Endpoint
-const RelayerEngine = require('./services/relayerEngine');
+// Relayer System Endpoint
 const PROVIDER_URL = process.env.PROVIDER_URL || "https://dawn-palpable-telescope.matic.quiknode.pro/e7d140234fbac5b00d93bfedf2e1c555fa2fdb65/";
 let sharedProvider = null;
 let cachedNetwork = null;
