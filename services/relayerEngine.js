@@ -515,6 +515,8 @@ RETURNING *
         }
 
         const addresses = relayers.map(r => r.address);
+        console.log(`[Fund] Preparing atomic distribution to ${relayers.length} relayers. Amount per relayer: ${ethers.formatEther(amountWei)} MATIC`);
+        console.log(`[Fund] Relayer addresses: ${addresses.join(', ')}`);
 
         try {
             console.log(`[Fund] Sending Atomic Distribution via Smart Contract: ${this.contractAddress}...`);
@@ -540,7 +542,10 @@ RETURNING *
             console.log(`[Fund] Atomic Batch Tx SENT: ${tx.hash} `);
             const receipt = await tx.wait();
             console.log(`[Fund] Atomic Batch Tx CONFIRMED in block ${receipt.blockNumber} !`);
-
+            // Log distribution details per relayer
+            relayers.forEach(r => {
+                console.log(`[Fund] Relayer ${r.address.substring(0, 6)}... funded with ${ethers.formatEther(amountWei)} MATIC`);
+            });
             // Proactive sync for all
             await Promise.all(relayers.map(r => this.syncRelayerBalance(r.address)));
 
