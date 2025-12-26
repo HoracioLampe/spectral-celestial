@@ -595,10 +595,13 @@ app.post('/api/batches/:id/process', async (req, res) => {
             await pool.query('INSERT INTO faucets (address, private_key) VALUES ($1, $2)', [wallet.address, faucetPk]);
         }
 
+        console.log(`[API] Processing Batch ${batchId} requested with relayerCount ${relayerCount || 5}`);
         const PROVIDER_URL = process.env.PROVIDER_URL || "https://dawn-palpable-telescope.matic.quiknode.pro/e7d140234fbac5b00d93bfedf2e1c555fa2fdb65/";
         const engine = new RelayerEngine(pool, PROVIDER_URL, faucetPk);
 
+        console.log(`[API] Engine initialized with contract: ${engine.contractAddress}`);
         const setup = await engine.startBatchProcessing(batchId, relayerCount || 5);
+        console.log(`[API] startBatchProcessing result:`, setup);
         res.json({ message: "Relayers setup and processing started", batchId, relayers: setup.count });
     } catch (err) {
         console.error(err);
