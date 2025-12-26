@@ -949,6 +949,7 @@ function renderRelayerBalances(data) {
 
         return `
             <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                <td style="padding:0.75rem; color:#94a3b8; font-size:0.8rem; font-weight:bold;">#${r.id}</td>
                 <td style="padding:0.75rem; font-family:monospace; font-size:0.85rem;">
                     <a href="${getExplorerUrl(r.address)}" target="_blank" class="hash-link">
                         ${shortAddr} ↗️
@@ -970,18 +971,29 @@ function renderRelayerBalances(data) {
     const processStatus = document.getElementById('processStatus');
 
     if (data.length > 0) {
+        // Special case: if we have relayers but the status is still PROCESSING,
+        // we allow "Continuar" instead of just blocking.
+        const isFinished = processStatus && (processStatus.textContent.includes("✅") || processStatus.textContent.includes("Terminado"));
+
         if (btnProcessBatch) {
-            btnProcessBatch.disabled = true;
-            btnProcessBatch.innerHTML = "✅ Distribución Iniciada";
-            btnProcessBatch.style.background = "linear-gradient(135deg, #10b981 0%, #059669 100%)";
-            btnProcessBatch.style.cursor = "default";
+            if (!isFinished) {
+                btnProcessBatch.disabled = false;
+                btnProcessBatch.innerHTML = "Re-intentar / Continuar 🔥";
+                btnProcessBatch.style.background = "linear-gradient(135deg, #f59e0b 0%, #d97706 100%)";
+                btnProcessBatch.style.cursor = "pointer";
+            } else {
+                btnProcessBatch.disabled = true;
+                btnProcessBatch.innerHTML = "✅ Distribución Finalizada";
+                btnProcessBatch.style.background = "linear-gradient(135deg, #10b981 0%, #059669 100%)";
+                btnProcessBatch.style.cursor = "default";
+            }
         }
         if (btnDistributeGas) {
             btnDistributeGas.disabled = true;
-            btnDistributeGas.textContent = "Gas Ya Distribuido";
+            btnDistributeGas.textContent = "Gas Distribuido";
         }
-        if (processStatus && !processStatus.textContent.includes("Procesando")) {
-            processStatus.innerHTML = "ℹ️ Este lote ya tiene relayers asignados y está en curso.";
+        if (processStatus && !processStatus.textContent.includes("Procesando") && !isFinished) {
+            processStatus.innerHTML = "ℹ️ Reanudar: Puedes reactivar los relayers si el proceso se detuvo.";
             processStatus.style.color = "#60a5fa";
         }
     }

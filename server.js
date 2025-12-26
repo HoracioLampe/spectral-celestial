@@ -563,10 +563,12 @@ app.post('/api/batches/:id/process', async (req, res) => {
         if (isNaN(batchId)) return res.status(400).json({ error: 'Invalid batchId' });
         const { relayerCount } = req.body;
 
-        // IDEMPOTENCY CHECK: Do not allow re-processing if relayers already exist
-        const existingRelayers = await pool.query('SELECT address FROM relayers WHERE batch_id = $1 LIMIT 1', [batchId]);
-        if (existingRelayers.rows.length > 0) {
-            return res.status(400).json({ error: "Este lote ya ha sido procesado y tiene relayers asignados." });
+        // RELAXED IDEMPOTENCY: allow resumption if status is READY or PROCESSING
+        const batchStatusRes = await pool.query('SELECT status FROM batches WHERE id = $1', [batchId]);
+        const currentStatus = batchStatusRes.rows[0]?.status;
+
+        if (currentStatus === 'SENT' || currentStatus === 'COMPLETED') {
+            return res.status(400).json({ error: `Este lote ya terminó (Estado: ${currentStatus})` });
         }
         // Fetch Faucet from DB
         const faucetRes = await pool.query('SELECT private_key FROM faucets ORDER BY id DESC LIMIT 1');
@@ -598,7 +600,7 @@ app.get('/api/relayers/:batchId', async (req, res) => {
         const batchId = parseInt(req.params.batchId);
         if (isNaN(batchId)) return res.status(400).json({ error: 'Invalid batchId' });
         console.log(`[API] Fetching relayers for batch ${batchId}...`);
-        const relayerRes = await pool.query('SELECT address, last_activity, last_balance FROM relayers WHERE batch_id = $1', [batchId]);
+        const relayerRes = await pool.query('SELECT id, address, last_activity, last_balance FROM relayers WHERE batch_id = $1 ORDER BY id ASC', [batchId]);
         const relayers = relayerRes.rows;
         console.log(`[API] Found ${relayers.length} relayers in DB`);
 
@@ -617,6 +619,7 @@ app.get('/api/relayers/:batchId', async (req, res) => {
                 await pool.query('UPDATE relayers SET last_balance = $1 WHERE address = $2', [freshBalance, r.address]);
 
                 balances.push({
+                    id: r.id,
                     address: r.address,
                     balance: freshBalance,
                     lastActivity: r.last_activity
@@ -625,6 +628,7 @@ app.get('/api/relayers/:batchId', async (req, res) => {
                 console.warn(`[API] RPC Error for ${r.address}: ${rpcErr.message}. Returning last known balance.`);
                 // Fallback to last known balance from DB
                 balances.push({
+                    id: r.id,
                     address: r.address,
                     balance: r.last_balance || "0",
                     lastActivity: r.last_activity,

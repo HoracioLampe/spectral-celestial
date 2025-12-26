@@ -2,22 +2,26 @@
 pragma solidity ^0.8.19;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol"; // Updated for OZ v5
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Permit.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 
 /**
  * @title BatchDistributor
  * @notice Distributes USDC batches using Merkle Proofs and EIP-2612 Permits.
  * @dev Optimized for gas efficiency and security (ReentrancyGuard, Leaf Mapping).
  */
-contract BatchDistributor is Ownable, ReentrancyGuard {
+contract BatchDistributor is Ownable, ReentrancyGuard, Pausable {
     using SafeERC20 for IERC20;
 
     // --- State Variables ---
 
     // The USDC Token Address on Polygon
     IERC20 public immutable usdcToken;
+    IERC20Permit public immutable usdcPermit;
 
     // Mapping: Batch ID => Merkle Root
     mapping(uint256 => bytes32) public batchRoots;
@@ -46,48 +50,73 @@ contract BatchDistributor is Ownable, ReentrancyGuard {
     constructor(address _usdcToken) Ownable(msg.sender) {
         require(_usdcToken != address(0), "Invalid Token Address");
         usdcToken = IERC20(_usdcToken);
+        usdcPermit = IERC20Permit(_usdcToken);
     }
 
     // --- Admin Functions ---
 
     /**
      * @notice Registers the Merkle Root for a specific batch.
-     * @dev Only Owner/Admin can call this. Ideally called via Gnosis Safe.
      * @param batchId The unique ID of the batch.
-     * @param merkleRoot The calculated Merkle Root of the batch transactions.
+     * @param merkleRoot The Merkle Root.
      */
     function setBatchRoot(uint256 batchId, bytes32 merkleRoot) external onlyOwner {
         require(merkleRoot != bytes32(0), "Invalid Root");
-        require(batchRoots[batchId] == bytes32(0), "Root already set"); // Immutable once set for safety
-        
+        require(batchRoots[batchId] == bytes32(0), "Root already set");
         batchRoots[batchId] = merkleRoot;
         emit BatchRootSet(batchId, merkleRoot);
     }
 
+    // --- Internal Logic ---
+
     /**
      * @notice Distributes MATIC to multiple addresses in a single transaction.
-     * @dev Only used by the owner (Faucet) to fund relayers.
+     * @dev Only used by the owner (Faucet) to fund relayers. 
+     *      Added batch limit (500) to prevent block gas limit DOS.
      * @param recipients Array of relayers to fund.
      * @param amount Amount of MATIC (in wei) per relayer.
      */
-    function distributeMatic(address[] calldata recipients, uint256 amount) external payable onlyOwner {
+    function distributeMatic(address[] calldata recipients, uint256 amount) external payable onlyOwner nonReentrant whenNotPaused {
+        require(recipients.length <= 500, "Batch size too large (max 500)");
         require(msg.value >= recipients.length * amount, "Insufficient MATIC sent");
+        
         for (uint256 i = 0; i < recipients.length; i++) {
-            (bool success, ) = recipients[i].call{value: amount}("");
-            // We continue even if one fails to avoid blocking the whole batch
+            address recipient = recipients[i];
+            if (recipient != address(0)) {
+                (bool success, ) = recipient.call{value: amount}("");
+                require(success, "MATIC transfer failed");
+            }
         }
     }
 
     /**
+     * @notice Executes a transaction with a Permit signature in a single call.
+     * @dev Includes logic to check current allowance before calling permit to save gas.
+     */
+    function executeWithPermit(
+        uint256 batchId,
+        uint256 txId,
+        address funder,
+        address recipient,
+        uint256 amount,
+        bytes32[] calldata proof,
+        uint256 deadline,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external nonReentrant whenNotPaused {
+        // 1. Submit Permit (Atomic Allowance) 
+        // Optimization: only permit if needed (handles multiple relayers sending same funder permit)
+        if (usdcToken.allowance(funder, address(this)) < amount) {
+            try usdcPermit.permit(funder, address(this), amount, deadline, v, r, s) {} catch {}
+        }
+
+        // 2. Call internal execution logic
+        _execute(batchId, txId, funder, recipient, amount, proof);
+    }
+
+    /**
      * @notice Executes a specific transaction from a batch.
-     * @dev Verifies the Merkle Proof and transfers funds from Funder to Recipient.
-     *      Requires Funder to have given allowance to this contract via Permit or Approve.
-     * @param batchId The Batch ID.
-     * @param txId The unique Transaction ID within the batch.
-     * @param funder The wallet providing the funds.
-     * @param recipient The wallet receiving funds.
-     * @param amount The amount of USDC (6 decimals) to transfer.
-     * @param proof The Merkle Proof (sibling hashes).
      */
     function executeTransaction(
         uint256 batchId,
@@ -96,13 +125,36 @@ contract BatchDistributor is Ownable, ReentrancyGuard {
         address recipient,
         uint256 amount,
         bytes32[] calldata proof
-    ) external nonReentrant {
-        // 1. Recreate the Leaf Hash
-        // Must match exactly the JS implementation: 
-        // ethers.utils.solidityKeccak256(['uint256','uint256','address','address','uint256'], ...)
-        bytes32 leaf = keccak256(abi.encodePacked(batchId, txId, funder, recipient, amount));
+    ) external nonReentrant whenNotPaused {
+        _execute(batchId, txId, funder, recipient, amount, proof);
+    }
 
-        // 2. Verify Idempotency (Anti-Replay)
+    /**
+     * @dev Internal execution logic with hardened security.
+     */
+    function _execute(
+        uint256 batchId,
+        uint256 txId,
+        address funder,
+        address recipient,
+        uint256 amount,
+        bytes32[] calldata proof
+    ) internal {
+        // HARDENED LEAF CALCULATION (Safe Hashing):
+        // abi.encode is preferred over encodePacked for Merkle leaves to prevent collisions
+        bytes32 leaf = keccak256(
+            abi.encode(
+                block.chainid,
+                address(this),
+                batchId, 
+                txId, 
+                funder, 
+                recipient, 
+                amount
+            )
+        );
+
+        // 2. Verify Idempotency
         require(!processedLeaves[leaf], "Tx already executed");
 
         // 3. Retrieve Root
@@ -112,56 +164,71 @@ contract BatchDistributor is Ownable, ReentrancyGuard {
         // 4. Verify Merkle Proof
         require(MerkleProof.verify(proof, root, leaf), "Invalid Merkle Proof");
 
-        // 5. Mark as Processed (Effect)
+        // 5. Mark as Processed
         processedLeaves[leaf] = true;
 
-        // 6. Transfer Funds (Interaction)
-        // Uses SafeERC20 to handle non-standard returns
-        // The Funder must have `permitted` or `approved` this contract beforehand.
+        // 6. Transfer Funds
+        require(amount > 0, "Amount must be > 0");
+        require(recipient != address(0), "Invalid recipient");
         usdcToken.safeTransferFrom(funder, recipient, amount);
 
-        // 7. Emit Event for Indexers
+        // 7. Emit Event
         emit TransactionExecuted(batchId, txId, recipient, funder, amount, leaf);
     }
 
     // --- Emergency / Utility ---
 
     /**
-     * @notice Rescues accidental tokens sent to this contract.
+     * @notice Withdraws all MATIC from the contract to the owner.
      */
-    function rescueFunds(address tokenAddress) external onlyOwner {
+    function withdraw() external onlyOwner nonReentrant {
+        uint256 balance = address(this).balance;
+        require(balance > 0, "No MATIC to withdraw");
+        (bool success, ) = owner().call{value: balance}("");
+        require(success, "Withdraw failed");
+        emit FundsRescued(address(0), balance);
+    }
+
+    /**
+     * @notice Rescues ERC20 tokens sent to the contract by mistake.
+     */
+    function rescueTokens(address tokenAddress) external onlyOwner nonReentrant {
+        require(tokenAddress != address(0), "Invalid token address");
         IERC20 token = IERC20(tokenAddress);
         uint256 balance = token.balanceOf(address(this));
         require(balance > 0, "No funds");
-        token.safeTransfer(msg.sender, balance);
+        token.safeTransfer(owner(), balance);
         emit FundsRescued(tokenAddress, balance);
     }
 
-    // --- Verification Helpers (For Debugging JS Consistency) ---
+    // --- Pausable Controls ---
 
-    /**
-     * @notice Pure function to recreate the leaf hash exactly as Solidity does it.
-     * @dev Use this to compare against your `server.js` console.log output.
-     */
+    function pause() external onlyOwner {
+        _pause();
+    }
+
+    function unpause() external onlyOwner {
+        _unpause();
+    }
+
+    // Verification Helper updated for new Leaf format (abi.encode)
     function generateLeafHash(
         uint256 batchId,
         uint256 txId,
         address funder,
         address recipient,
         uint256 amount
-    ) external pure returns (bytes32) {
-        return keccak256(abi.encodePacked(batchId, txId, funder, recipient, amount));
-    }
-
-    /**
-     * @notice Validates a proof against a given root without executing anything.
-     * @return isValid True if the proof matches the root.
-     */
-    function verifyProof(
-        bytes32 root,
-        bytes32[] calldata proof,
-        bytes32 leaf
-    ) external pure returns (bool isValid) {
-        return MerkleProof.verify(proof, root, leaf);
+    ) external view returns (bytes32) {
+        return keccak256(
+            abi.encode(
+                block.chainid,
+                address(this),
+                batchId, 
+                txId, 
+                funder, 
+                recipient, 
+                amount
+            )
+        );
     }
 }

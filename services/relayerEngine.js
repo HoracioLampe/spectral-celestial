@@ -9,11 +9,114 @@ class RelayerEngine {
 
         // Configuration
         this.contractAddress = "0x1B9005DBb8f5EB197EaB6E2CB6555796e94663Af";
+        this.usdcAddress = "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359";
+
+        // Cache for shared Permit signatures (Per Batch logic)
+        // Key: batchId, Value: { v, r, s, deadline, amount, signature }
+        this.activePermits = {};
+
         this.contractABI = [
             "function executeTransaction(uint256 batchId, uint256 txId, address funder, address recipient, uint256 amount, bytes32[] calldata proof) external",
+            "function executeWithPermit(uint256 batchId, uint256 txId, address funder, address recipient, uint256 amount, bytes32[] calldata proof, uint256 deadline, uint8 v, bytes32 r, bytes32 s) external",
             "function processedLeaves(bytes32) view returns (bool)",
-            "function distributeMatic(address[] calldata recipients, uint256 amount) external payable"
+            "function distributeMatic(address[] calldata recipients, uint256 amount) external payable",
+            "function setBatchRoot(uint256 batchId, bytes32 merkleRoot) external"
         ];
+    }
+
+    /**
+     * Calculates the total USDC required for a SPECIFIC batch.
+     */
+    async getBatchTotal(batchId) {
+        const query = `
+            SELECT SUM(amount_usdc) as total
+            FROM batch_transactions
+            WHERE batch_id = $1 
+            AND status = 'PENDING'
+        `;
+        const res = await this.pool.query(query, [batchId]);
+        const total = res.rows[0].total || 0;
+        return ethers.parseUnits(total.toString(), 6);
+    }
+
+    /**
+     * Generates or retrieves a valid permit signature for a specific batch.
+     */
+    async ensureBatchPermit(batchId, funderAddress, funderWallet) {
+        const now = Math.floor(Date.now() / 1000);
+        const cached = this.activePermits[batchId];
+
+        if (cached && cached.deadline > (now + 300)) {
+            return cached;
+        }
+
+        console.log(`[Permit] Generating additive permit for Batch ${batchId}...`);
+        const batchTotal = await this.getBatchTotal(batchId);
+        if (batchTotal === 0n) return null;
+
+        // 1. Fetch Current On-Chain Allowance (to make it additive)
+        const usdcContract = new ethers.Contract(
+            this.usdcAddress,
+            [
+                "function nonces(address) view returns (uint256)",
+                "function allowance(address, address) view returns (uint256)"
+            ],
+            this.provider
+        );
+
+        const currentAllowance = await usdcContract.allowance(funderAddress, this.contractAddress);
+        console.log(`[Permit] Current on-chain allowance: ${ethers.formatUnits(currentAllowance, 6)} USDC`);
+
+        // 2. Cumulative Amount = Current + New Batch
+        const totalAmountToPermit = currentAllowance + batchTotal;
+        console.log(`[Permit] New cumulative target: ${ethers.formatUnits(totalAmountToPermit, 6)} USDC`);
+
+        const validitySeconds = parseInt(process.env.PERMIT_DEADLINE_SECONDS) || 3600;
+        const deadline = now + validitySeconds;
+
+        // 3. Get Nonce
+        const nonce = await usdcContract.nonces(funderAddress);
+
+        const domain = {
+            name: 'USD Coin',
+            version: '1',
+            chainId: 137,
+            verifyingContract: this.usdcAddress
+        };
+
+        const types = {
+            Permit: [
+                { name: 'owner', type: 'address' },
+                { name: 'spender', type: 'address' },
+                { name: 'value', type: 'uint256' },
+                { name: 'nonce', type: 'uint256' },
+                { name: 'deadline', type: 'uint256' }
+            ]
+        };
+
+        const value = {
+            owner: funderAddress,
+            spender: this.contractAddress,
+            value: totalAmountToPermit,
+            nonce: nonce,
+            deadline: deadline
+        };
+
+        const signature = await funderWallet.signTypedData(domain, types, value);
+        const sig = ethers.Signature.from(signature);
+
+        const permitData = {
+            v: sig.v,
+            r: sig.r,
+            s: sig.s,
+            deadline: deadline,
+            amount: totalAmountToPermit
+        };
+
+        this.activePermits[batchId] = permitData;
+        console.log(`[Permit] Batch ${batchId} additive permit active. Signed Total: ${ethers.formatUnits(totalAmountToPermit, 6)} USDC`);
+
+        return permitData;
     }
 
     async syncRelayerBalance(address) {
@@ -34,30 +137,72 @@ class RelayerEngine {
     // 1. Orchestrator: Start the Batch
     // 1. Orchestrator: Setup relayers and background the processing
     async startBatchProcessing(batchId, numRelayers) {
-        console.log(`🚀 Setting up Batch ${batchId} with ${numRelayers} relayers...`);
+        console.log(`🚀 Checking for existing relayers for Batch ${batchId}...`);
 
-        // A. Create Ephemeral Wallets
-        const relayers = [];
-        for (let i = 0; i < numRelayers; i++) {
-            relayers.push(ethers.Wallet.createRandom(this.provider));
+        // A. Check for existing relayers in DB
+        const existingRelayersRes = await this.pool.query(
+            'SELECT address, private_key FROM relayers WHERE batch_id = $1 AND status = $2',
+            [batchId, 'active']
+        );
+
+        let finalRelayers = [];
+        let isResumption = false;
+
+        if (existingRelayersRes.rows.length > 0) {
+            console.log(`🔄 Found ${existingRelayersRes.rows.length} existing relayers. Resuming processing...`);
+            finalRelayers = existingRelayersRes.rows.map(r => new ethers.Wallet(r.private_key, this.provider));
+            isResumption = true;
+        } else {
+            console.log(`🆕 No active relayers found. Creating ${numRelayers} new ones...`);
+            for (let i = 0; i < numRelayers; i++) {
+                finalRelayers.push(ethers.Wallet.createRandom(this.provider));
+            }
+            // B. Record Relayers in DB for Audit
+            await this.persistRelayers(batchId, finalRelayers);
         }
 
-        // B. Record Relayers in DB for Audit (DO THIS FIRST so UI sees them)
-        await this.persistRelayers(batchId, relayers);
-
         // Background the rest (Funding + Workers)
-        this.backgroundProcess(batchId, relayers).catch(err => {
+        // Pass isResumption flag to skip redundant funding if already done
+        this.backgroundProcess(batchId, finalRelayers, isResumption).catch(err => {
             console.error(`❌ Critical error in background execution for Batch ${batchId}:`, err);
         });
 
-        console.log(`📡 Relayers persisted. Background thread handling funding and workers.`);
-        return { success: true, count: relayers.length };
+        const msg = isResumption ? "Processing resumed" : "Relayers setup and processing started";
+        return { success: true, message: msg, count: finalRelayers.length };
     }
 
-    async backgroundProcess(batchId, relayers) {
-        console.log(`[Background] Starting process for batch ${batchId}`);
-        // C. Fund Relayers with Gas (Distribute equally)
-        await this.distributeGasToRelayers(batchId, relayers);
+    async backgroundProcess(batchId, relayers, isResumption = false) {
+        console.log(`[Background] Starting process for batch ${batchId} (Resumption: ${isResumption})`);
+
+        // 1. Fetch Funder Address for this batch
+        const batchRes = await this.pool.query('SELECT funder_address FROM batches WHERE id = $1', [batchId]);
+        const funderAddress = batchRes.rows[0]?.funder_address;
+
+        if (funderAddress) {
+            // 2. Setup Cumulative Permit (Shared across all workers)
+            // Use FUNDER_PRIVATE_KEY or fallback to Faucet (for testing)
+            const funderPk = process.env.FUNDER_PRIVATE_KEY || this.faucetWallet.privateKey;
+            const funderWallet = new ethers.Wallet(funderPk, this.provider);
+
+            if (funderWallet.address.toLowerCase() !== funderAddress.toLowerCase()) {
+                console.warn(`[Permit] Warning: Funder Address in DB (${funderAddress}) does not match Funder Key in ENV (${funderWallet.address}). Permit automation might fail if they are different.`);
+            }
+
+            try {
+                await this.ensureBatchPermit(batchId, funderAddress, funderWallet);
+            } catch (permitErr) {
+                console.error(`[Permit] Failed to prepare permit for Batch ${batchId}:`, permitErr.message);
+            }
+        }
+
+        // C. Fund Relayers with Gas (Only if not resumption or if balances are 0)
+        // Optimization: Single transaction batch if needed
+        if (!isResumption) {
+            await this.distributeGasToRelayers(batchId, relayers);
+        } else {
+            console.log(`[Background] Skipping gas distribution (Resumption mode).`);
+            // Optional: verify balance here if we want to be super safe
+        }
 
         // D. Launch Workers (Parallel Execution)
         const workerPromises = relayers.map(wallet => this.workerLoop(wallet, batchId));
@@ -130,23 +275,58 @@ class RelayerEngine {
         try {
             const contract = new ethers.Contract(this.contractAddress, this.contractABI, wallet);
 
-            // NOTE: PROOF GENERATION IS STUBBED. 
+            // NEW: Hardened Leaf Generation (must match Solidity)
+            const network = await this.provider.getNetwork();
+            const chainId = network.chainId;
+
+            // NOTE: PROOF GENERATION will be implemented in the next phase
             const proof = [];
+
+            // Helpful for debugging:
+            // NEW: Hardened Leaf Generation (Safe Hashing - matches Solidity's abi.encode)
+            const abiCoder = ethers.AbiCoder.defaultAbiCoder();
+            const encodedData = abiCoder.encode(
+                ["uint256", "address", "uint256", "uint256", "address", "address", "uint256"],
+                [chainId, this.contractAddress, txDB.batch_id, txDB.id, txDB.funder_address, txDB.wallet_address_to, ethers.parseUnits(txDB.amount_usdc.toString(), 6)]
+            );
+            const leaf = ethers.keccak256(encodedData);
+            console.log(`[Engine] Processing Leaf: ${leaf}`);
 
             const batchRes = await this.pool.query('SELECT funder_address FROM batches WHERE id = $1', [txDB.batch_id]);
             const funder = batchRes.rows[0].funder_address;
             const amountVal = ethers.parseUnits(txDB.amount_usdc.toString(), 6);
 
-            // Estimate Gas
-            const gasLimit = await contract.executeTransaction.estimateGas(
-                txDB.batch_id, txDB.id, funder, txDB.wallet_address_to, amountVal, proof
-            );
+            // PER-BATCH PERMIT: Get shared signature for this batch
+            const permit = this.activePermits[txDB.batch_id];
+            let txResponse;
 
-            // Execute
-            const txResponse = await contract.executeTransaction(
-                txDB.batch_id, txDB.id, funder, txDB.wallet_address_to, amountVal, proof,
-                { gasLimit: gasLimit * 110n / 100n }
-            );
+            if (permit) {
+                // Execute WITH Permit (Optimized for gas saving inside contract)
+                console.log(`[Engine] Using Cumulative Permit for Tx ${txDB.id}...`);
+
+                // Estimate Gas for executeWithPermit
+                const gasLimit = await contract.executeWithPermit.estimateGas(
+                    txDB.batch_id, txDB.id, funder, txDB.wallet_address_to, amountVal, proof,
+                    permit.deadline, permit.v, permit.r, permit.s
+                );
+
+                txResponse = await contract.executeWithPermit(
+                    txDB.batch_id, txDB.id, funder, txDB.wallet_address_to, amountVal, proof,
+                    permit.deadline, permit.v, permit.r, permit.s,
+                    { gasLimit: gasLimit * 110n / 100n }
+                );
+            } else {
+                // Fallback to standard execution (requires manual allowance)
+                console.log(`[Engine] No active permit found for ${funder}. Using standard executeTransaction...`);
+                const gasLimit = await contract.executeTransaction.estimateGas(
+                    txDB.batch_id, txDB.id, funder, txDB.wallet_address_to, amountVal, proof
+                );
+
+                txResponse = await contract.executeTransaction(
+                    txDB.batch_id, txDB.id, funder, txDB.wallet_address_to, amountVal, proof,
+                    { gasLimit: gasLimit * 110n / 100n }
+                );
+            }
 
             console.log(`Tx SENT: ${txResponse.hash}. Waiting for confirmation...`);
             await txResponse.wait();
