@@ -600,7 +600,7 @@ RETURNING *
                 gasLimit: 80000n * count + 100000n // More accurate batch limit
             };
 
-            if (feeData.maxFeePerGas) {
+            if (feeData.maxFeePerGas != null) {
                 // Apply a 20% buffer to both max fee and priority fee
                 // Ensure explicit BigInt conversion just in case
                 const maxFee = BigInt(feeData.maxFeePerGas);
@@ -613,7 +613,7 @@ RETURNING *
                     overrides.maxPriorityFeePerGas = overrides.maxFeePerGas;
                 }
             } else {
-                const gasP = feeData.gasPrice ? BigInt(feeData.gasPrice) : 50000000000n;
+                const gasP = (feeData.gasPrice != null) ? BigInt(feeData.gasPrice) : 50000000000n;
                 overrides.gasPrice = gasP * 120n / 100n;
             }
 
