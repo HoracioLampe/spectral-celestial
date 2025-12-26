@@ -23,7 +23,8 @@ class RelayerEngine {
             "function executeWithPermit(uint256 batchId, uint256 txId, address funder, address recipient, uint256 amount, bytes32[] calldata proof, uint256 deadline, uint8 v, bytes32 r, bytes32 s) external",
             "function processedLeaves(bytes32) view returns (bool)",
             "function distributeMatic(address[] calldata recipients, uint256 amount) external payable",
-            "function setBatchRoot(uint256 batchId, bytes32 merkleRoot) external"
+            "function setBatchRoot(uint256 batchId, bytes32 merkleRoot) external",
+            "function setBatchRootWithSignature(address funder, uint256 batchId, bytes32 merkleRoot, bytes calldata signature) external"
         ];
     }
 
