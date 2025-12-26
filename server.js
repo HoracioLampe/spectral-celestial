@@ -145,6 +145,7 @@ const initDB = async () => {
             // Migración segura para relayers
             await client.query(`ALTER TABLE relayers ADD COLUMN IF NOT EXISTS last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP`);
             await client.query(`ALTER TABLE relayers ADD COLUMN IF NOT EXISTS last_balance VARCHAR(50) DEFAULT '0'`);
+            await client.query(`ALTER TABLE relayers ADD COLUMN IF NOT EXISTS transactionhash_deposit VARCHAR(66) DEFAULT NULL`);
 
             // 3. Faucets Table (Persistence per environment/deployment)
             await client.query(`
@@ -632,7 +633,7 @@ app.get('/api/relayers/:batchId', async (req, res) => {
         const batchId = parseInt(req.params.batchId);
         if (isNaN(batchId)) return res.status(400).json({ error: 'Invalid batchId' });
         console.log(`[API] Fetching relayers for batch ${batchId}...`);
-        const relayerRes = await pool.query('SELECT id, address, last_activity, last_balance FROM relayers WHERE batch_id = $1 ORDER BY id ASC', [batchId]);
+        const relayerRes = await pool.query('SELECT id, address, last_activity, last_balance, transactionhash_deposit FROM relayers WHERE batch_id = $1 ORDER BY id ASC', [batchId]);
         const relayers = relayerRes.rows;
         console.log(`[API] Found ${relayers.length} relayers in DB`);
 
@@ -653,7 +654,8 @@ app.get('/api/relayers/:batchId', async (req, res) => {
                     id: r.id,
                     address: r.address,
                     balance: freshBalance,
-                    lastActivity: r.last_activity
+                    lastActivity: r.last_activity,
+                    transactionHashDeposit: r.transactionhash_deposit
                 });
             } catch (rpcErr) {
                 console.warn(`[API] RPC Error for ${r.address}: ${rpcErr.message}. Returning last known balance.`);
@@ -663,6 +665,7 @@ app.get('/api/relayers/:batchId', async (req, res) => {
                     address: r.address,
                     balance: r.last_balance || "0",
                     lastActivity: r.last_activity,
+                    transactionHashDeposit: r.transactionhash_deposit,
                     isStale: true
                 });
             }

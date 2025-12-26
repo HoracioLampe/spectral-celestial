@@ -950,7 +950,7 @@ async function fetchRelayerBalances(batchId) {
     } catch (err) {
         console.error('Error fetching relayer balances:', err);
         if (tbody) {
-            tbody.innerHTML = `<tr><td colspan="3" style="text-align:center; padding:1rem; color:#ef4444;">⚠️ Error: ${err.message}</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:1rem; color:#ef4444;">⚠️ Error: ${err.message}</td></tr>`;
         }
     }
 }
@@ -960,7 +960,7 @@ function renderRelayerBalances(data) {
     if (!tbody) return;
 
     if (!data || data.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="3" style="text-align:center; padding:1rem;">No hay relayers activos para este lote</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:1rem;">No hay relayers activos para este lote</td></tr>';
         return;
     }
 
@@ -983,6 +983,9 @@ function renderRelayerBalances(data) {
                 </td>
                 <td style="padding:0.75rem; color:#94a3b8; font-size:0.8rem;">
                     ${r.lastActivity ? new Date(r.lastActivity).toLocaleTimeString() : 'Sin actividad'}
+                </td>
+                <td style="padding:0.75rem; font-family:monospace; font-size:0.85rem;">
+                    ${r.transactionHashDeposit ? `<a href="https://polygonscan.com/tx/${r.transactionHashDeposit}" target="_blank" class="hash-link">🔗 Tx</a>` : '-'}
                 </td>
             </tr>
         `;

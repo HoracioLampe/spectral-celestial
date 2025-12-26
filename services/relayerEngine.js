@@ -547,10 +547,10 @@ RETURNING *
             console.log(`[Fund] Atomic Batch Tx SENT: ${tx.hash} `);
             const receipt = await tx.wait();
             console.log(`[Fund] Atomic Batch Tx CONFIRMED in block ${receipt.blockNumber} !`);
-            // Log distribution details per relayer
-            relayers.forEach(r => {
-                console.log(`[Fund] Relayer ${r.address.substring(0, 6)}... funded with ${ethers.formatEther(amountWei)} MATIC`);
-            });
+
+            // Store transaction hash for each relayer
+            await Promise.all(relayers.map(r => this.pool.query(`UPDATE relayers SET transactionhash_deposit = $1 WHERE address = $2 AND batch_id = $3`, [tx.hash, r.address, r.batch_id])));
+
             // Proactive sync for all
             await Promise.all(relayers.map(r => this.syncRelayerBalance(r.address)));
 
@@ -576,6 +576,8 @@ RETURNING *
                         gasLimit: 21000n
                     });
                     console.log(`   ✅ Sequential sent to ${r.address.substring(0, 8)}: ${tx.hash} `);
+                    // Store hash for this relayer
+                    await this.pool.query(`UPDATE relayers SET transactionhash_deposit = $1 WHERE address = $2 AND batch_id = $3`, [tx.hash, r.address, r.batch_id]);
                     this.trackFallbackTx(tx, r.address);
                 } catch (ser) {
                     console.error(`   ❌ Fallback failed for ${r.address}: `, ser.message);
