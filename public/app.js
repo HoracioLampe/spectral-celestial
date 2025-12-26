@@ -897,6 +897,19 @@ window.triggerGasDistribution = async () => {
     status.style.color = "#fbbf24";
 
     try {
+        // Optimistic UI: Show placeholders immediately
+        const tbody = document.getElementById('relayerBalancesTableBody');
+        tbody.innerHTML = ''; // Clear previous
+        for (let i = 0; i < count; i++) {
+            tbody.innerHTML += `
+                <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                    <td style="padding:0.75rem; color:#94a3b8;">Generando Relayer ${i + 1}...</td>
+                    <td style="padding:0.75rem; color:#64748b;">0.0000 MATIC</td>
+                    <td style="padding:0.75rem; color:#64748b;">Iniciando...</td>
+                </tr>
+             `;
+        }
+
         const response = await fetch(`/api/batches/${currentBatchId}/process`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -904,14 +917,21 @@ window.triggerGasDistribution = async () => {
         });
         const res = await response.json();
         if (response.ok) {
-            status.textContent = "✅ Distribución iniciada con éxito.";
+            status.textContent = "✅ Distribución iniciada. Fondeando relayers...";
             status.style.color = "#4ade80";
-            // Start polling if not already
+
+            // Start polling (Faster: every 2s)
             if (window.balanceInterval) clearInterval(window.balanceInterval);
-            window.balanceInterval = setInterval(() => fetchRelayerBalances(currentBatchId), 15000);
+            window.balanceInterval = setInterval(() => {
+                refreshRelayerBalances();
+            }, 2000);
+
+            // First refresh after a short delay
+            setTimeout(refreshRelayerBalances, 1000);
         } else {
             status.textContent = "❌ Error: " + res.error;
             status.style.color = "#ef4444";
+            refreshRelayerBalances(); // Restore table
         }
     } catch (err) {
         status.textContent = "❌ Error de conexión";
