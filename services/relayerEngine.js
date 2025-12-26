@@ -412,7 +412,7 @@ class RelayerEngine {
         console.log(`[Estimate] Starting optimization for batch ${batchId}`);
 
         // Fetch all pending transactions for the batch
-        const txRes = await this.pool.query('SELECT id, amount_usdc, wallet_address_to FROM batch_transactions WHERE batch_id = $1', [batchId]);
+        const txRes = await this.pool.query('SELECT id, amount_usdc, wallet_address_to FROM batch_transactions WHERE batch_id = $1 AND status = $2', [batchId, 'PENDING']);
         const txs = txRes.rows;
         const totalCount = txs.length;
 
@@ -431,14 +431,14 @@ class RelayerEngine {
 
         const sampleEstimates = await Promise.all(sampleTxs.map(async (tx) => {
             const amountVal = ethers.parseUnits(tx.amount_usdc.toString(), 6);
-            const proof = []; // Proof generation is currently a stub
+            const proof = [ethers.ZeroHash]; // Placeholder proof for estimation
             try {
                 return await contract.executeTransaction.estimateGas(
                     batchId, tx.id, funder, tx.wallet_address_to, amountVal, proof
                 );
             } catch (e) {
-                console.warn(`[Estimate] Sample estimation failed for tx ${tx.id}, using fallback 200k`);
-                return 200000n;
+                // Return a safe conservative estimate for USDC transfers + logic overhead
+                return 150000n;
             }
         }));
 
@@ -446,15 +446,15 @@ class RelayerEngine {
         const averageGas = totalSampleGas / BigInt(sampleSize);
         const extrapolatedTotalGas = averageGas * BigInt(totalCount);
 
-        // Add 50% buffer for safety
-        const bufferedGas = extrapolatedTotalGas * 150n / 100n;
+        // Add 20% buffer for safety (reduced from 50% to avoid extreme overfunding)
+        const bufferedGas = extrapolatedTotalGas * 120n / 100n;
 
         const feeData = await this.provider.getFeeData();
-        const gasPrice = feeData.gasPrice || 35000000000n; // fallback to 35 gwei
+        const gasPrice = feeData.gasPrice || 50000000000n; // fallback to 50 gwei (standard for Polygon)
         const totalCostWei = bufferedGas * gasPrice;
 
         const duration = (Date.now() - startTime) / 1000;
-        console.log(`[Estimate] COMPLETED in ${duration}s. Total extrapolated gas: ${extrapolatedTotalGas}. Buffered: ${bufferedGas}.`);
+        console.log(`[Estimate] COMPLETED in ${duration}s. Total extrapolated gas: ${extrapolatedTotalGas}. Buffered: ${bufferedGas}. Total: ${ethers.formatEther(totalCostWei)} MATIC`);
 
         return { totalGas: bufferedGas, totalCostWei };
     }
@@ -475,51 +475,74 @@ class RelayerEngine {
             return;
         }
 
+        const faucetAddr = this.faucetWallet.address;
+        const faucetBal = await this.provider.getBalance(faucetAddr);
         const count = relayers.length;
-        const totalWei = amountWei * BigInt(count);
-        console.log(`[Fund] Funding ${count} relayers with ${ethers.formatEther(amountWei)} MATIC each (SINGLE TX BATCH) via Smart Contract`);
+        const totalValueToSend = amountWei * BigInt(count);
+
+        console.log(`[Fund] Faucet ${faucetAddr} | Balance: ${ethers.formatEther(faucetBal)} MATIC`);
+        console.log(`[Fund] Required Total: ${ethers.formatEther(totalValueToSend)} MATIC for ${count} relayers.`);
+
+        if (faucetBal < totalValueToSend) {
+            console.error(`❌ Faucet has INSUFFICIENT FUNDS. Funding will likely fail.`);
+            // Continue anyway to see explicit revert reason, or handle gracefully
+        }
+
+        const addresses = relayers.map(r => r.address);
 
         try {
+            console.log(`[Fund] Sending Atomic Distribution via Smart Contract: ${this.contractAddress}...`);
             const contract = new ethers.Contract(this.contractAddress, this.contractABI, this.faucetWallet);
-            const addresses = relayers.map(r => r.address);
 
-            // Fetch current fee data for reliable transaction
+            // Fetch current fee data
             const feeData = await this.provider.getFeeData();
-            const maxFeePerGas = feeData.maxFeePerGas || undefined;
-            const maxPriorityFeePerGas = feeData.maxPriorityFeePerGas || undefined;
+            // Use legacy gasPrice if EIP-1559 fees are missing for stability on some RPCs
+            const overrides = {
+                value: totalValueToSend,
+                gasLimit: 80000n * BigInt(count) + 100000n // More accurate batch limit
+            };
 
-            // Execute single transaction for all fundings
-            const tx = await contract.distributeMatic(addresses, amountWei, {
-                value: totalWei,
-                maxFeePerGas,
-                maxPriorityFeePerGas,
-                gasLimit: 150000n * BigInt(count) // Increased safe limit for batch logic
-            });
+            if (feeData.maxFeePerGas) {
+                overrides.maxFeePerGas = feeData.maxFeePerGas * 120n / 100n;
+                overrides.maxPriorityFeePerGas = feeData.maxPriorityFeePerGas * 150n / 100n;
+            } else {
+                overrides.gasPrice = feeData.gasPrice ? (feeData.gasPrice * 120n / 100n) : 50000000000n;
+            }
 
-            console.log(`[Fund] Atomic Batch Tx SENT: ${tx.hash}. Waiting for confirmation...`);
-            await tx.wait();
-            console.log(`[Fund] Atomic Batch Tx CONFIRMED! All ${count} relayers funded in one transaction.`);
+            const tx = await contract.distributeMatic(addresses, amountWei, overrides);
+
+            console.log(`[Fund] Atomic Batch Tx SENT: ${tx.hash}`);
+            const receipt = await tx.wait();
+            console.log(`[Fund] Atomic Batch Tx CONFIRMED in block ${receipt.blockNumber}!`);
 
             // Proactive sync for all
             await Promise.all(relayers.map(r => this.syncRelayerBalance(r.address)));
 
         } catch (err) {
-            console.error(`❌ Atomic batch funding failed, falling back to sequential:`, err.message);
+            console.error(`❌ Atomic batch funding failed:`, err.message);
+            console.log(`⚠️ Entering Sequential Fallback...`);
 
-            // Fallback to manual sequential if contract call fails (e.g. not redeployed yet)
+            // Fallback to manual sequential
             let nonce = await this.faucetWallet.getNonce();
             for (const r of relayers) {
                 try {
+                    // Check if relayer already has enough balance to skip
+                    const relBal = await this.provider.getBalance(r.address);
+                    if (relBal >= amountWei) {
+                        console.log(`   ⏭️ Skipping ${r.address.substring(0, 8)} (already has ${ethers.formatEther(relBal)} MATIC)`);
+                        continue;
+                    }
+
                     const tx = await this.faucetWallet.sendTransaction({
                         to: r.address,
                         value: amountWei,
                         nonce: nonce++,
                         gasLimit: 21000n
                     });
-                    console.log(`   - Fallback sent to ${r.address.substring(0, 8)}`);
+                    console.log(`   ✅ Sequential sent to ${r.address.substring(0, 8)}: ${tx.hash}`);
                     this.trackFallbackTx(tx, r.address);
                 } catch (ser) {
-                    console.error(`   - Fallback failed for ${r.address}:`, ser.message);
+                    console.error(`   ❌ Fallback failed for ${r.address}:`, ser.message);
                 }
             }
         }
