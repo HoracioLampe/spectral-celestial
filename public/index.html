@@ -256,12 +256,10 @@
                                 style="margin-top: 0.75rem; padding: 0.5rem 1rem; border-radius: 8px; font-size: 0.85rem; display: flex; justify-content: space-between; align-items: center; border: 1px solid rgba(255,255,255,0.05);">
                                 <div style="display: flex; gap: 0.75rem; align-items: center;">
                                     <span style="color: #94a3b8;">Faucet:</span>
-                                    <span id="mainFaucetAddress"
-                                        style="color: #60a5fa; font-family: monospace;">Cargando...</span>
+                                    <a id="mainFaucetLink" href="#" target="_blank" class="hash-link"
+                                        style="color: #60a5fa; font-family: monospace;">Cargando...</a>
                                     <button onclick="copyFaucetAddress()" class="btn-icon"
                                         title="Copiar Dirección">📋</button>
-                                    <a id="faucetExplorerLink" href="#" target="_blank" class="btn-icon"
-                                        title="Ver en Explorer">🔗</a>
                                 </div>
                                 <div style="display: flex; gap: 0.75rem;">
                                     <span style="color: #94a3b8;">Balance:</span>
@@ -359,8 +357,8 @@
             <div style="background: rgba(255,255,255,0.05); padding: 0.75rem; border-radius: 8px; margin-bottom: 1rem;">
                 <p
                     style="font-size: 0.8rem; color: #94a3b8; margin: 0; display: flex; align-items: center; gap: 0.5rem;">
-                    Address: <span id="faucetAddress"
-                        style="color: #60a5fa; font-family: monospace; word-break: break-all;">---</span>
+                    Address: <a id="faucetModalLink" href="#" target="_blank" class="hash-link"
+                        style="color: #60a5fa; font-family: monospace; word-break: break-all;">---</a>
                     <button onclick="copyFaucetAddress()" class="btn-icon" style="font-size: 0.7rem;">📋</button>
                 </p>
                 <p

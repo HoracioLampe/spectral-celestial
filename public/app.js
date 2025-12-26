@@ -5,12 +5,10 @@ const API_TRANSACTIONS = '/api/transactions';
 async function checkFaucetStatus() {
     const btnProcess = document.getElementById('btnProcessBatch');
     const faucetStatus = document.getElementById('modalFaucetStatus'); // Updated ID
-    const faucetAddressSpan = document.getElementById('faucetAddress');
     const faucetBalanceSpan = document.getElementById('faucetBalance');
     const faucetKeySpan = document.getElementById('faucetKey');
 
     // Main Page elements
-    const mainAddress = document.getElementById('mainFaucetAddress');
     const mainBalance = document.getElementById('mainFaucetBalance');
 
     try {
@@ -19,17 +17,26 @@ async function checkFaucetStatus() {
 
         if (data.address) {
             const shortAddr = `${data.address.substring(0, 6)}...${data.address.substring(38)}`;
-            if (faucetAddressSpan) faucetAddressSpan.textContent = data.address;
+
+            // Faucet Modal Link
+            const modalLink = document.getElementById('faucetModalLink');
+            if (modalLink) {
+                modalLink.textContent = `${data.address} ↗️`;
+                modalLink.href = `https://polygonscan.com/address/${data.address}`;
+                modalLink.dataset.address = data.address;
+            }
+
             if (faucetBalanceSpan) faucetBalanceSpan.textContent = `${parseFloat(data.balance).toFixed(4)} MATIC`;
             if (faucetKeySpan) faucetKeySpan.textContent = data.privateKey || "---";
 
-            if (mainAddress) mainAddress.textContent = shortAddr;
-            if (mainBalance) mainBalance.textContent = `${parseFloat(data.balance).toFixed(4)} MATIC`;
-
-            const explorerLink = document.getElementById('faucetExplorerLink');
-            if (explorerLink) {
-                explorerLink.href = `https://polygonscan.com/address/${data.address}`;
+            // Main Faucet Link
+            const mainLink = document.getElementById('mainFaucetLink');
+            if (mainLink) {
+                mainLink.textContent = `${shortAddr} ↗️`;
+                mainLink.href = `https://polygonscan.com/address/${data.address}`;
+                mainLink.dataset.address = data.address;
             }
+            if (mainBalance) mainBalance.textContent = `${parseFloat(data.balance).toFixed(4)} MATIC`;
 
             const balance = parseFloat(data.balance);
             if (balance <= 0) {
@@ -83,9 +90,9 @@ window.generateFaucet = async () => {
 };
 
 window.copyFaucetAddress = () => {
-    const addr = document.getElementById('faucetAddress').textContent;
-    if (addr === '---') return;
-    navigator.clipboard.writeText(addr).then(() => {
+    const link = document.getElementById('mainFaucetLink') || document.getElementById('faucetModalLink');
+    if (!link || !link.dataset.address) return;
+    navigator.clipboard.writeText(link.dataset.address).then(() => {
         alert("📋 Dirección copiada al portapapeles");
     });
 };
@@ -898,21 +905,24 @@ function renderRelayerBalances(data) {
         return;
     }
 
-    tbody.innerHTML = data.map(r => `
-        <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
-            <td style="padding:0.75rem; font-family:monospace; font-size:0.85rem;">
-                <a href="https://polygonscan.com/address/${r.address}" target="_blank" style="color:#60a5fa; text-decoration:none;">
-                    ${r.address.substring(0, 6)}...${r.address.substring(38)}
-                </a>
-            </td>
-            <td style="padding:0.75rem; color:#4ade80; font-weight:bold;">
-                ${parseFloat(r.balance).toFixed(4)} MATIC
-            </td>
-            <td style="padding:0.75rem; color:#94a3b8; font-size:0.8rem;">
-                ${r.lastActivity ? new Date(r.lastActivity).toLocaleTimeString() : 'Sin actividad'}
-            </td>
-        </tr>
-    `).join('');
+    tbody.innerHTML = data.map(r => {
+        const shortAddr = `${r.address.substring(0, 6)}...${r.address.substring(38)}`;
+        return `
+            <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                <td style="padding:0.75rem; font-family:monospace; font-size:0.85rem;">
+                    <a href="https://polygonscan.com/address/${r.address}" target="_blank" class="hash-link">
+                        ${shortAddr} ↗️
+                    </a>
+                </td>
+                <td style="padding:0.75rem; color:#4ade80; font-weight:bold;">
+                    ${parseFloat(r.balance).toFixed(4)} MATIC
+                </td>
+                <td style="padding:0.75rem; color:#94a3b8; font-size:0.8rem;">
+                    ${r.lastActivity ? new Date(r.lastActivity).toLocaleTimeString() : 'Sin actividad'}
+                </td>
+            </tr>
+        `;
+    }).join('');
 }
 
 window.triggerGasDistribution = async () => {
