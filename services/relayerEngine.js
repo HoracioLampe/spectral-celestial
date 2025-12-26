@@ -188,13 +188,14 @@ class RelayerEngine {
             const funderWallet = new ethers.Wallet(funderPk, this.provider);
 
             if (funderWallet.address.toLowerCase() !== funderAddress.toLowerCase()) {
-                console.warn(`[Permit] Warning: Funder Address in DB(${funderAddress}) does not match Funder Key in ENV(${funderWallet.address}).Permit automation might fail if they are different.`);
-            }
-
-            try {
-                await this.ensureBatchPermit(batchId, funderAddress, funderWallet);
-            } catch (permitErr) {
-                console.error(`[Permit] Failed to prepare permit for Batch ${batchId}: `, permitErr.message);
+                console.log(`[Permit] ⚠️ Funder Key mismatch (DB: ${funderAddress} vs ENV: ${funderWallet.address}). Skipping auto-permit generation.`);
+                console.log(`[Permit] System will rely on manual 'Approve' (Standard Execution).`);
+            } else {
+                try {
+                    await this.ensureBatchPermit(batchId, funderAddress, funderWallet);
+                } catch (permitErr) {
+                    console.error(`[Permit] Failed to prepare permit for Batch ${batchId}: `, permitErr.message);
+                }
             }
         }
 
