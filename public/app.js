@@ -862,6 +862,12 @@ if (btnProcessBatch) {
         const count = parseInt(relayerCountSelect.value) || 5;
         if (!confirm(`¿Estás seguro de iniciar la distribución con ${count} Relayer(s)?`)) return;
 
+        // Force Wallet Connection Check
+        if (!signer || !userAddress) {
+            alert("⚠️ Debes conectar tu Wallet primero para poder firmar las autorizaciones (Permit y Root).");
+            return;
+        }
+
         // Try to sign Permit if connected
         let permitData = null;
         let rootSignatureData = null;
