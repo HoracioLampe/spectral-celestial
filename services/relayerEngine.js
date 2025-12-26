@@ -15,6 +15,21 @@ class RelayerEngine {
         ];
     }
 
+    async syncRelayerBalance(address) {
+        try {
+            const balWei = await this.provider.getBalance(address);
+            const balanceStr = ethers.formatEther(balWei);
+            await this.pool.query(
+                `UPDATE relayers SET last_balance = $1, last_activity = NOW() WHERE address = $2`,
+                [balanceStr, address]
+            );
+            return balanceStr;
+        } catch (e) {
+            console.warn(`[Engine] Could not proactive-sync balance for ${address}:`, e.message);
+            return null;
+        }
+    }
+
     // 1. Orchestrator: Start the Batch
     // 1. Orchestrator: Setup relayers and background the processing
     async startBatchProcessing(batchId, numRelayers) {
@@ -132,18 +147,17 @@ class RelayerEngine {
                 { gasLimit: gasLimit * 110n / 100n }
             );
 
-            console.log(`Tx SENT: ${txResponse.hash}`);
+            console.log(`Tx SENT: ${txResponse.hash}. Waiting for confirmation...`);
+            await txResponse.wait();
+            console.log(`Tx CONFIRMED: ${txResponse.hash}`);
 
             await this.pool.query(
                 `UPDATE batch_transactions SET status = 'SENT', tx_hash = $1, updated_at = NOW() WHERE id = $2`,
                 [txResponse.hash, txDB.id]
             );
 
-            // Update Relayer Last Activity
-            await this.pool.query(
-                `UPDATE relayers SET last_activity = NOW() WHERE address = $1`,
-                [wallet.address]
-            );
+            // Update Relayer Last Activity & Balance (PROACTIVE)
+            await this.syncRelayerBalance(wallet.address);
         } catch (e) {
             if (e.message && e.message.includes("Tx already executed")) {
                 console.log(`⚠️ Tx ${txDB.id} already on-chain. Recovered.`);
@@ -238,10 +252,11 @@ class RelayerEngine {
                     nonce: nonce++
                 });
                 console.log(`   - Sent to ${r.address.substring(0, 8)}... tx: ${tx.hash}`);
-                await tx.wait(); // Wait for confirmation before next to avoid gas/nonce overlap issues
+                await tx.wait(); // Wait for confirmation
+                console.log(`   - CONFIRMED to ${r.address.substring(0, 8)}`);
 
-                // Update Relayer Last Activity in DB
-                await this.pool.query(`UPDATE relayers SET last_activity = NOW() WHERE address = $1`, [r.address]);
+                // Update Relayer Last Balance & Activity (PROACTIVE)
+                await this.syncRelayerBalance(r.address);
             } catch (err) {
                 console.error(`❌ Failed to fund relayer ${r.address}:`, err.message);
             }

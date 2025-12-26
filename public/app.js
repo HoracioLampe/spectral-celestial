@@ -943,9 +943,9 @@ function renderRelayerBalances(data) {
 
     tbody.innerHTML = data.map(r => {
         const shortAddr = `${r.address.substring(0, 6)}...${r.address.substring(38)}`;
-        const isError = r.balance === "Error";
-        const balanceDisplay = isError ? `<span style="color:#ef4444;">⚠️ Error RPC</span>` : `${parseFloat(r.balance).toFixed(4)} MATIC`;
-        const balanceColor = isError ? '#ef4444' : '#4ade80';
+        const isStale = r.isStale === true;
+        const balanceDisplay = isStale ? `${parseFloat(r.balance).toFixed(4)} MATIC <span style="font-size: 0.7rem; color: #fbbf24;">(Persistente 💾)</span>` : `${parseFloat(r.balance).toFixed(4)} MATIC`;
+        const balanceColor = isStale ? '#fbbf24' : '#4ade80';
 
         return `
             <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">

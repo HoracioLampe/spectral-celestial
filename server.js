@@ -144,6 +144,7 @@ const initDB = async () => {
 
             // Migración segura para relayers
             await client.query(`ALTER TABLE relayers ADD COLUMN IF NOT EXISTS last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP`);
+            await client.query(`ALTER TABLE relayers ADD COLUMN IF NOT EXISTS last_balance VARCHAR(50) DEFAULT '0'`);
 
             // 3. Faucets Table (Persistence per environment/deployment)
             await client.query(`
@@ -597,29 +598,37 @@ app.get('/api/relayers/:batchId', async (req, res) => {
         const batchId = parseInt(req.params.batchId);
         if (isNaN(batchId)) return res.status(400).json({ error: 'Invalid batchId' });
         console.log(`[API] Fetching relayers for batch ${batchId}...`);
-        const relayerRes = await pool.query('SELECT address, last_activity FROM relayers WHERE batch_id = $1', [batchId]);
+        const relayerRes = await pool.query('SELECT address, last_activity, last_balance FROM relayers WHERE batch_id = $1', [batchId]);
         const relayers = relayerRes.rows;
         console.log(`[API] Found ${relayers.length} relayers in DB`);
 
-        const providerUrl = process.env.PROVIDER_URL || "https://polygon-rpc.com";
-        const provider = new ethers.JsonRpcProvider(providerUrl);
+        const PROVIDER_URL = process.env.PROVIDER_URL || "https://polygon-rpc.com";
+        const provider = new ethers.JsonRpcProvider(PROVIDER_URL);
         const balances = [];
+
         for (const r of relayers) {
             try {
                 console.log(`[API] Checking balance for ${r.address}`);
+                // Try RPC first
                 const balWei = await provider.getBalance(r.address);
+                const freshBalance = ethers.formatEther(balWei);
+
+                // Update DB with fresh balance for next time
+                await pool.query('UPDATE relayers SET last_balance = $1 WHERE address = $2', [freshBalance, r.address]);
+
                 balances.push({
                     address: r.address,
-                    balance: ethers.formatEther(balWei),
+                    balance: freshBalance,
                     lastActivity: r.last_activity
                 });
             } catch (rpcErr) {
-                console.warn(`[API] Could not fetch balance for ${r.address}:`, rpcErr.message);
+                console.warn(`[API] RPC Error for ${r.address}: ${rpcErr.message}. Returning last known balance.`);
+                // Fallback to last known balance from DB
                 balances.push({
                     address: r.address,
-                    balance: "Error",
+                    balance: r.last_balance || "0",
                     lastActivity: r.last_activity,
-                    error: true
+                    isStale: true
                 });
             }
         }
