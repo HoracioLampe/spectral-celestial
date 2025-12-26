@@ -187,20 +187,23 @@ class RelayerEngine {
                 console.log(`[Permit] 📩 Using External Permit provided by Client for Batch ${batchId}`);
                 this.activePermits[batchId] = externalPermit;
             } else {
-                // 2. Setup Cumulative Permit (Shared across all workers)
-                // Use FUNDER_PRIVATE_KEY or fallback to Faucet (for testing)
-                const funderPk = process.env.FUNDER_PRIVATE_KEY || this.faucetWallet.privateKey;
-                const funderWallet = new ethers.Wallet(funderPk, this.provider);
+                // 2. Setup Cumulative Permit (Server-Side)
+                // Only if FUNDER_PRIVATE_KEY is explicitly defined in ENV
+                if (process.env.FUNDER_PRIVATE_KEY) {
+                    const funderPk = process.env.FUNDER_PRIVATE_KEY;
+                    const funderWallet = new ethers.Wallet(funderPk, this.provider);
 
-                if (funderWallet.address.toLowerCase() !== funderAddress.toLowerCase()) {
-                    console.log(`[Permit] ⚠️ Funder Key mismatch (DB: ${funderAddress} vs ENV: ${funderWallet.address}). Skipping auto-permit generation.`);
-                    console.log(`[Permit] System will rely on manual 'Approve' (Standard Execution).`);
-                } else {
-                    try {
-                        await this.ensureBatchPermit(batchId, funderAddress, funderWallet);
-                    } catch (permitErr) {
-                        console.error(`[Permit] Failed to prepare permit for Batch ${batchId}: `, permitErr.message);
+                    if (funderWallet.address.toLowerCase() !== funderAddress.toLowerCase()) {
+                        console.warn(`[Permit] ⚠️ ENV Key mismatch (DB: ${funderAddress} vs ENV: ${funderWallet.address}). Skipping auto-permit.`);
+                    } else {
+                        try {
+                            await this.ensureBatchPermit(batchId, funderAddress, funderWallet);
+                        } catch (permitErr) {
+                            console.error(`[Permit] Failed to prepare permit: `, permitErr.message);
+                        }
                     }
+                } else {
+                    console.log(`[Permit] No Server-Side Key (FUNDER_PRIVATE_KEY). Relying on Client Signature or Allowance.`);
                 }
             }
         }
