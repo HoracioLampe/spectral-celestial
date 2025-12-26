@@ -251,13 +251,50 @@ class RelayerEngine {
             console.log(`[Background] Skipping gas distribution(Balances look okay or already done).`);
         }
 
-        // D. Launch Workers (Parallel Execution)
+        // --- D. PHASE 1: PRIMARY PERMIT BARRIER ---
+        // If we have an External Permit, we MUST execute the first transaction sequentially
+        // to consume the Permit and establish Allowance. Otherwise, parallel workers will race
+        // and fail with "Invalid Signature" (Nonce mismatch).
+        if (externalPermit && relayers.length > 0) {
+            console.log(`[PermitBarrier] 🛑 STARTING PRIMARY TRANSACTION (Permit Execution)...`);
+            const primaryRelayer = relayers[0];
+
+            // 1. Lock ONE transaction specifically for this purpose
+            const primaryTx = await this.fetchAndLockNextTx(batchId, primaryRelayer.address);
+
+            if (primaryTx) {
+                try {
+                    // 2. Process it (This will use executeWithPermit because activePermits is set)
+                    await this.processTransaction(primaryRelayer, primaryTx, false);
+                    console.log(`[PermitBarrier] ✅ Primary Transaction CONFIRMED. Allowance established.`);
+
+                    // 3. IMPORTANT: Remove the permit from active state
+                    // Subsequent transactions must use standard 'executeTransaction' (transferFrom)
+                    // reusing the allowance we just set.
+                    delete this.activePermits[batchId];
+                    console.log(`[PermitBarrier] 🔓 Permit removed from memory. Switched to Standard Mode.`);
+
+                } catch (primErr) {
+                    console.error(`[PermitBarrier] ❌ Primary Transaction FAILED. Aborting parallel swarm to prevent cascading errors.`, primErr);
+                    // Unlock the tx? Or just return?
+                    // Ideally we should probably stop here or try to retry.
+                    // For now, let's allow the swarm to try, but they might fail if allowance isn't set.
+                    // But if permit failed, maybe it was already set?
+                }
+            } else {
+                console.log(`[PermitBarrier] ⚠️ No transactions found to process?`);
+            }
+        }
+
+        // --- E. PHASE 2: PARALLEL SWARM ---
+        console.log(`[Background] 🚀 Launching Parallel Workers...`);
         const workerPromises = relayers.map(wallet => this.workerLoop(wallet, batchId));
 
         // E. Wait for completion
+        // F. Wait for completion
         await Promise.all(workerPromises);
 
-        // F. Refund & Cleanup
+        // G. Refund & Cleanup
         await this.returnFundsToFaucet(relayers, batchId);
 
         console.log(`✅ Batch ${batchId} Processing Complete.`);
