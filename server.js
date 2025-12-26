@@ -594,10 +594,31 @@ app.post('/api/batches/:id/process', async (req, res) => {
         if (isNaN(batchId)) return res.status(400).json({ error: 'Invalid batchId' });
         const { relayerCount, permitData } = req.body;
 
-        // ... (existing code)
+        // RELAXED IDEMPOTENCY: allow resumption if status is READY or PROCESSING
+        const batchStatusRes = await pool.query('SELECT status FROM batches WHERE id = $1', [batchId]);
+        const currentStatus = batchStatusRes.rows[0]?.status;
+
+        if (currentStatus === 'SENT' || currentStatus === 'COMPLETED') {
+            return res.status(400).json({ error: `Este lote ya terminó (Estado: ${currentStatus})` });
+        }
+
+        // Fetch Faucet from DB
+        const faucetRes = await pool.query('SELECT private_key FROM faucets ORDER BY id DESC LIMIT 1');
+        let faucetPk = process.env.FAUCET_PRIVATE_KEY;
+
+        if (faucetRes.rows.length > 0) {
+            faucetPk = faucetRes.rows[0].private_key;
+        } else if (!faucetPk) {
+            // Generate if missing completely
+            const wallet = ethers.Wallet.createRandom();
+            faucetPk = wallet.privateKey;
+            await pool.query('INSERT INTO faucets (address, private_key) VALUES ($1, $2)', [wallet.address, faucetPk]);
+        }
+
+        const providerUrl = process.env.PROVIDER_URL || "https://dawn-palpable-telescope.matic.quiknode.pro/e7d140234fbac5b00d93bfedf2e1c555fa2fdb65/";
 
         console.log(`[API] Processing Batch ${batchId} requested with relayerCount ${relayerCount || 5}`);
-        const engine = new RelayerEngine(pool, PROVIDER_URL, faucetPk);
+        const engine = new RelayerEngine(pool, providerUrl, faucetPk);
 
         console.log(`[API] Engine initialized with contract: ${engine.contractAddress}`);
         const setup = await engine.startBatchProcessing(batchId, relayerCount || 5, permitData);
@@ -610,48 +631,24 @@ app.post('/api/batches/:id/process', async (req, res) => {
 });
 
 // Endpoint: Get relayer balances for a batch
+// Endpoint: Get relayer balances for a batch (Optimized: Read from DB only)
 app.get('/api/relayers/:batchId', async (req, res) => {
     try {
         const batchId = parseInt(req.params.batchId);
         if (isNaN(batchId)) return res.status(400).json({ error: 'Invalid batchId' });
-        console.log(`[API] Fetching relayers for batch ${batchId}...`);
+
+        // Fetch from DB (RelayerEngine updates these values proactively)
         const relayerRes = await pool.query('SELECT id, address, last_activity, last_balance, transactionhash_deposit FROM relayers WHERE batch_id = $1 ORDER BY id ASC', [batchId]);
         const relayers = relayerRes.rows;
-        console.log(`[API] Found ${relayers.length} relayers in DB`);
 
-        const provider = getProvider();
-        const balances = [];
+        const balances = relayers.map(r => ({
+            id: r.id,
+            address: r.address,
+            balance: r.last_balance || "0",
+            lastActivity: r.last_activity,
+            transactionHashDeposit: r.transactionhash_deposit
+        }));
 
-        for (const r of relayers) {
-            try {
-                console.log(`[API] Checking balance for ${r.address}`);
-                // Try RPC first
-                const balWei = await provider.getBalance(r.address);
-                const freshBalance = ethers.formatEther(balWei);
-
-                // Update DB with fresh balance for next time
-                await pool.query('UPDATE relayers SET last_balance = $1 WHERE address = $2', [freshBalance, r.address]);
-
-                balances.push({
-                    id: r.id,
-                    address: r.address,
-                    balance: freshBalance,
-                    lastActivity: r.last_activity,
-                    transactionHashDeposit: r.transactionhash_deposit
-                });
-            } catch (rpcErr) {
-                console.warn(`[API] RPC Error for ${r.address}: ${rpcErr.message}. Returning last known balance.`);
-                // Fallback to last known balance from DB
-                balances.push({
-                    id: r.id,
-                    address: r.address,
-                    balance: r.last_balance || "0",
-                    lastActivity: r.last_activity,
-                    transactionHashDeposit: r.transactionhash_deposit,
-                    isStale: true
-                });
-            }
-        }
         res.json(balances);
     } catch (err) {
         console.error('Error fetching relayer balances:', err);
