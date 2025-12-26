@@ -195,13 +195,25 @@ class RelayerEngine {
             }
         }
 
-        // C. Fund Relayers with Gas (Only if not resumption or if balances are 0)
-        // Optimization: Single transaction batch if needed
-        if (!isResumption) {
+        // C. Fund Relayers with Gas
+        console.log(`[Background] Funding Decision | isResumption:${isResumption}`);
+
+        // Even if resumption, let's verify if they actually NEED funds
+        let needsFunding = !isResumption;
+        if (isResumption && relayers.length > 0) {
+            const firstRelBal = await this.provider.getBalance(relayers[0].address);
+            console.log(`[Background] Verifying Relayer 0 Balance: ${ethers.formatEther(firstRelBal)} MATIC`);
+            if (firstRelBal < ethers.parseEther("0.01")) {
+                console.log(`[Background] Relayers appear underfunded despite resumption. Re-triggering distribution.`);
+                needsFunding = true;
+            }
+        }
+
+        if (needsFunding) {
+            console.log(`[Background] Triggering distributeGasToRelayers...`);
             await this.distributeGasToRelayers(batchId, relayers);
         } else {
-            console.log(`[Background] Skipping gas distribution (Resumption mode).`);
-            // Optional: verify balance here if we want to be super safe
+            console.log(`[Background] Skipping gas distribution (Balances look okay or already done).`);
         }
 
         // D. Launch Workers (Parallel Execution)
