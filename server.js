@@ -593,7 +593,7 @@ app.post('/api/batches/:id/process', async (req, res) => {
     try {
         const batchId = parseInt(req.params.id);
         if (isNaN(batchId)) return res.status(400).json({ error: 'Invalid batchId' });
-        const { relayerCount, permitData } = req.body;
+        const { relayerCount, permitData, rootSignatureData } = req.body;
 
         // RELAXED IDEMPOTENCY: allow resumption if status is READY or PROCESSING
         const batchStatusRes = await pool.query('SELECT status FROM batches WHERE id = $1', [batchId]);
@@ -622,7 +622,7 @@ app.post('/api/batches/:id/process', async (req, res) => {
         const engine = new RelayerEngine(pool, providerUrl, faucetPk);
 
         console.log(`[API] Engine initialized with contract: ${engine.contractAddress}`);
-        const setup = await engine.startBatchProcessing(batchId, relayerCount || 5, permitData);
+        const setup = await engine.startBatchProcessing(batchId, relayerCount || 5, permitData, rootSignatureData);
         console.log(`[API] startBatchProcessing result:`, setup);
         res.json({ message: "Relayers setup and processing started", batchId, relayers: setup.count });
     } catch (err) {

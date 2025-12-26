@@ -139,8 +139,8 @@ class RelayerEngine {
 
     // 1. Orchestrator: Start the Batch
     // 1. Orchestrator: Setup relayers and background the processing
-    async startBatchProcessing(batchId, numRelayers, permitData = null) {
-        console.log(`[Engine] 🚀 startBatchProcessing(id = ${batchId}, count = ${numRelayers}, hasPermit=${!!permitData})`);
+    async startBatchProcessing(batchId, numRelayers, permitData = null, rootSignatureData = null) {
+        console.log(`[Engine] 🚀 startBatchProcessing(id = ${batchId}, count = ${numRelayers}, hasPermit=${!!permitData}, hasRootSig=${!!rootSignatureData})`);
 
         // A. Check for existing relayers in DB
         const existingRelayersRes = await this.pool.query(
@@ -166,7 +166,7 @@ class RelayerEngine {
 
         // Background the rest (Funding + Workers)
         // Pass isResumption flag to skip redundant funding if already done
-        this.backgroundProcess(batchId, finalRelayers, isResumption, permitData).catch(err => {
+        this.backgroundProcess(batchId, finalRelayers, isResumption, permitData, rootSignatureData).catch(err => {
             console.error(`❌ Critical error in background execution for Batch ${batchId}: `, err);
         });
 
@@ -174,12 +174,33 @@ class RelayerEngine {
         return { success: true, message: msg, count: finalRelayers.length };
     }
 
-    async backgroundProcess(batchId, relayers, isResumption = false, externalPermit = null) {
-        console.log(`[Background] 🎬 START | Batch: ${batchId} | Relayers: ${relayers.length} | Resumption: ${isResumption} | ExternalPermit: ${!!externalPermit}`);
+    async backgroundProcess(batchId, relayers, isResumption = false, externalPermit = null, rootSignatureData = null) {
+        console.log(`[Background] 🎬 START | Batch: ${batchId} | Relayers: ${relayers.length} | Resumption: ${isResumption} | ExternalPermit: ${!!externalPermit} | RootSig: ${!!rootSignatureData}`);
 
         // 1. Fetch Funder Address for this batch
         const batchRes = await this.pool.query('SELECT funder_address FROM batches WHERE id = $1', [batchId]);
         const funderAddress = batchRes.rows[0]?.funder_address;
+
+        // 1.5 Set Batch Root via Signature (if provided)
+        if (rootSignatureData && funderAddress) {
+            try {
+                console.log(`[Engine] ✍️ Executing setBatchRoot with signature...`);
+                const contract = new ethers.Contract(this.contractAddress, this.contractABI, this.faucetWallet);
+                // setBatchRootWithSignature(address funder, uint256 batchId, bytes32 merkleRoot, bytes calldata signature)
+                const tx = await contract.setBatchRootWithSignature(
+                    rootSignatureData.funder,
+                    BigInt(batchId),
+                    rootSignatureData.merkleRoot,
+                    rootSignatureData.signature
+                );
+                console.log(`[Blockchain][Root] SetBatchRoot TX Sent: ${tx.hash}`);
+                await tx.wait();
+                console.log(`[Blockchain][Root] SetBatchRoot Confirmed.`);
+            } catch (rootErr) {
+                console.error(`[Engine] ❌ Failed to set batch root via signature: ${rootErr.message}`);
+                // Proceeding might fail if root not set, but we continue in case it was already set.
+            }
+        }
 
         if (funderAddress) {
             // Priority: Use External Permit if provided by Frontend
@@ -513,8 +534,9 @@ RETURNING *
 
         const faucetAddr = this.faucetWallet.address;
         const faucetBal = await this.provider.getBalance(faucetAddr);
-        const count = relayers.length;
-        const totalValueToSend = amountWei * BigInt(count);
+        const count = BigInt(relayers.length); // Explicit BigInt
+        const _amountWei = BigInt(amountWei); // Explicit cast
+        const totalValueToSend = _amountWei * count;
 
         console.log(`[Fund] Faucet ${faucetAddr} | Balance: ${ethers.formatEther(faucetBal)} MATIC`);
         console.log(`[Fund] Required Total: ${ethers.formatEther(totalValueToSend)} MATIC for ${count} relayers.`);
@@ -525,7 +547,7 @@ RETURNING *
         }
 
         const addresses = relayers.map(r => r.address);
-        console.log(`[Fund] Preparing atomic distribution to ${relayers.length} relayers. Amount per relayer: ${ethers.formatEther(amountWei)} MATIC`);
+        console.log(`[Fund] Preparing atomic distribution to ${relayers.length} relayers. Amount per relayer: ${ethers.formatEther(_amountWei)} MATIC`);
         console.log(`[Fund] Relayer addresses: ${addresses.join(', ')}`);
 
         try {
@@ -537,22 +559,27 @@ RETURNING *
             // Use legacy gasPrice if EIP-1559 fees are missing for stability on some RPCs
             const overrides = {
                 value: totalValueToSend,
-                gasLimit: 80000n * BigInt(count) + 100000n // More accurate batch limit
+                gasLimit: 80000n * count + 100000n // More accurate batch limit
             };
 
             if (feeData.maxFeePerGas) {
                 // Apply a 20% buffer to both max fee and priority fee
-                overrides.maxFeePerGas = feeData.maxFeePerGas * 120n / 100n;
-                overrides.maxPriorityFeePerGas = feeData.maxPriorityFeePerGas * 120n / 100n;
+                // Ensure explicit BigInt conversion just in case
+                const maxFee = BigInt(feeData.maxFeePerGas);
+                const maxPriority = BigInt(feeData.maxPriorityFeePerGas || 0n);
+
+                overrides.maxFeePerGas = maxFee * 120n / 100n;
+                overrides.maxPriorityFeePerGas = maxPriority * 120n / 100n;
                 // Guard: priority fee must never exceed max fee
                 if (overrides.maxPriorityFeePerGas > overrides.maxFeePerGas) {
                     overrides.maxPriorityFeePerGas = overrides.maxFeePerGas;
                 }
             } else {
-                overrides.gasPrice = feeData.gasPrice ? (feeData.gasPrice * 120n / 100n) : 50000000000n;
+                const gasP = feeData.gasPrice ? BigInt(feeData.gasPrice) : 50000000000n;
+                overrides.gasPrice = gasP * 120n / 100n;
             }
 
-            const tx = await contract.distributeMatic(addresses, amountWei, overrides);
+            const tx = await contract.distributeMatic(addresses, _amountWei, overrides);
 
             console.log(`[Blockchain][Fund] Atomic Batch Tx SENT: ${tx.hash} | Nonce: ${tx.nonce} | GasPrice: ${ethers.formatUnits(tx.gasPrice || 0n, 'gwei')} gwei`);
             const receipt = await tx.wait();

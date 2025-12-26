@@ -864,22 +864,33 @@ if (btnProcessBatch) {
 
         // Try to sign Permit if connected
         let permitData = null;
-        if (signer && userAddress) { // signer is global from connection logic
+        let rootSignatureData = null;
+
+        if (signer && userAddress) {
             try {
+                // 1. Check if Root needs signing (Gasless)
+                // Always ask for now, or check contract state if possible. 
+                // We ask user because we assume if they are using Permit, they want gasless root set too.
+                if (confirm("¿Deseas firmar la RAÍZ DEL MERKLE (Gasless) para autorizar este lote?")) {
+                    rootSignatureData = await signBatchRoot(currentBatchId);
+                }
+
+                // 2. Check Permit
                 if (confirm("¿Deseas firmar un PERMIT automático para evitar 'Approve' manual?")) {
                     permitData = await signBatchPermit(currentBatchId);
                 }
             } catch (e) {
-                console.warn("Permit signing failed or cancelled:", e);
-                alert("⚠️ Firma de Permit cancelada. Se intentará usar 'Approve' existente.");
+                console.warn("Signing process interrupted:", e);
+                alert("⚠️ Proceso de firma interrumpido: " + e.message);
+                // We allow continuing without signatures (maybe they did manual tx)
             }
         }
 
-        await executeBatchDistribution(count, permitData);
+        await executeBatchDistribution(count, permitData, rootSignatureData);
     });
 }
 
-async function executeBatchDistribution(count, permitData = null) {
+async function executeBatchDistribution(count, permitData = null, rootSignatureData = null) {
     btnProcessBatch.disabled = true;
     processStatus.textContent = "Iniciando motor de relayers... ⏳";
     processStatus.style.color = "#fbbf24";
@@ -903,7 +914,11 @@ async function executeBatchDistribution(count, permitData = null) {
         const response = await fetch(`/api/batches/${currentBatchId}/process`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ relayerCount: count, permitData: permitData })
+            body: JSON.stringify({
+                relayerCount: count,
+                permitData: permitData,
+                rootSignatureData: rootSignatureData
+            })
         });
         const res = await response.json();
 
@@ -1028,6 +1043,64 @@ async function signBatchPermit(batchId) {
         // Optional: Include owner/spender for verification
         owner: userAddress,
         spender: BATCH_DISTRIBUTOR_ADDRESS
+    };
+}
+
+async function signBatchRoot(batchId) {
+    if (!signer || !userAddress) throw new Error("Wallet no conectada");
+
+    // 1. Get Merkle Root from UI (or fetch if needed)
+    const rootEl = document.getElementById('displayMerkleRoot');
+    const merkleRoot = rootEl ? rootEl.textContent.trim() : null;
+
+    if (!merkleRoot || !merkleRoot.startsWith("0x")) {
+        throw new Error("No hay Merkle Root válido generado para firmar.");
+    }
+
+    // 2. Fetch Nonce from Contract
+    let provider;
+    if (window.ethereum) provider = new ethers.providers.Web3Provider(window.ethereum);
+    else provider = new ethers.providers.JsonRpcProvider("https://polygon-rpc.com");
+
+    const minABI = ["function nonces(address owner) view returns (uint256)"];
+    const contract = new ethers.Contract(BATCH_DISTRIBUTOR_ADDRESS, minABI, provider);
+    const nonce = await contract.nonces(userAddress); // BigNumber
+
+    console.log(`[RootSign] Signing root ${merkleRoot} for batch ${batchId} with nonce ${nonce}`);
+
+    // 3. Construct EIP-712 Data
+    // Domain is same as Permit usually (Name, Version, Verifier Contract, ChainId)
+    // We assume same domain as USDC or BatchDistributor? 
+    // Wait, the contract uses `toEthSignedMessageHash`. 
+    // AND it uses `keccak256(abi.encode(TYPEHASH, ...))`.
+    // The contract implements EIP-712 style struct hashing but seemingly MANUALLY in `setBatchRootWithSignature`.
+    // It DOES NOT use `_hashTypedDataV4`. 
+    // It uses `recover(toEthSignedMessageHash(structHash), signature)`.
+    // `toEthSignedMessageHash` prepends "\x19Ethereum Signed Message:\n32".
+    // This is NOT standard EIP-712 Typed Data signing. This is "Sign Hash" (eth_sign / personal_sign of a hash).
+    // Or it's a mix.
+    // Let's look at `setBatchRootWithSignature`:
+    // `bytes32 structHash = keccak(abi.encode(TYPEHASH, params...))`
+    // `recover(toEthSignedMessageHash(structHash), signature)`
+    // This means we must calculate the StructHash on client, AND THEN sign it as a binary message (or hex string).
+
+    const TYPEHASH = ethers.utils.keccak256(ethers.utils.toUtf8Bytes("SetBatchRoot(address funder,uint256 batchId,bytes32 merkleRoot,uint256 nonce)"));
+
+    const abiCoder = ethers.utils.defaultAbiCoder;
+    const structHash = ethers.utils.keccak256(abiCoder.encode(
+        ['bytes32', 'address', 'uint256', 'bytes32', 'uint256'],
+        [TYPEHASH, userAddress, batchId, merkleRoot, nonce]
+    ));
+
+    // Sign the HASH using personal_sign (to match toEthSignedMessageHash)
+    // Note: in Ethers v5, signer.signMessage(binaryData) prepends the prefix.
+    // So we just pass the structHash bytes.
+    const signature = await signer.signMessage(ethers.utils.arrayify(structHash));
+
+    return {
+        merkleRoot,
+        signature,
+        funder: userAddress
     };
 }
 
