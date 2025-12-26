@@ -557,10 +557,10 @@ app.post('/api/batches/:id/merkle', async (req, res) => {
 // Relayer System Endpoint
 const RelayerEngine = require('./services/relayerEngine');
 app.post('/api/batches/:id/process', async (req, res) => {
-    const batchId = req.params.id;
-    const { relayerCount } = req.body;
-
     try {
+        const batchId = parseInt(req.params.id);
+        if (isNaN(batchId)) return res.status(400).json({ error: 'Invalid batchId' });
+        const { relayerCount } = req.body;
         // Fetch Faucet from DB
         const faucetRes = await pool.query('SELECT private_key FROM faucets ORDER BY id DESC LIMIT 1');
         let faucetPk = process.env.FAUCET_PRIVATE_KEY;

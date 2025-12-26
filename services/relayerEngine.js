@@ -39,6 +39,7 @@ class RelayerEngine {
     }
 
     async backgroundProcess(batchId, relayers) {
+        console.log(`[Background] Starting process for batch ${batchId}`);
         // C. Fund Relayers with Gas (Distribute equally)
         await this.distributeGasToRelayers(batchId, relayers);
 
@@ -157,8 +158,10 @@ class RelayerEngine {
     // 8. Estimate total gas for a batch (including 50% buffer) and return total cost in wei
     async estimateBatchGas(batchId) {
         // Fetch all pending transactions for the batch
+        console.log(`[Estimate] Fetching transactions for batch ${batchId}`);
         const txRes = await this.pool.query('SELECT * FROM batch_transactions WHERE batch_id = $1', [batchId]);
         const txs = txRes.rows;
+        console.log(`[Estimate] Found ${txs.length} transactions in batch ${batchId}`);
         if (txs.length === 0) return { totalGas: 0n, totalCostWei: 0n };
         const batchRes = await this.pool.query('SELECT funder_address FROM batches WHERE id = $1', [batchId]);
         const funder = batchRes.rows[0]?.funder_address || ethers.ZeroAddress;
@@ -201,11 +204,14 @@ class RelayerEngine {
 
     // Updated funding logic to accept amount per relayer
     async fundRelayers(relayers, amountWei) {
-        if (!amountWei) {
-            console.log(`Funding ${relayers.length} relayers skipped (no amount provided).`);
+        if (!amountWei || amountWei === 0n) {
+            console.log(`[Fund] Funding skipped: amount is zero or undefined.`);
             return;
         }
-        console.log(`Funding ${relayers.length} relayers with ${ethers.formatEther(amountWei)} MATIC each (SEQUENTIAL)`);
+        console.log(`[Fund] Funding ${relayers.length} relayers with ${ethers.formatEther(amountWei)} MATIC each (SEQUENTIAL)`);
+
+        const faucetBalance = await this.provider.getBalance(this.faucetWallet.address);
+        console.log(`[Fund] Faucet balance: ${ethers.formatEther(faucetBalance)} MATIC`);
 
         let nonce = await this.faucetWallet.getNonce();
 
