@@ -805,36 +805,64 @@ const processStatus = document.getElementById('processStatus');
 if (btnProcessBatch) {
     btnProcessBatch.addEventListener('click', async () => {
         if (!currentBatchId) return;
+        const count = parseInt(relayerCountSelect.value) || 5;
+        if (!confirm(`¿Estás seguro de iniciar la distribución con ${count} Relayer(s)?`)) return;
 
-        const count = parseInt(relayerCountSelect.value);
-        if (!confirm(`¿Estás seguro de iniciar la distribución con ${count} Relayers?\nEsto consumirá gas del Faucet.`)) return;
-
-        btnProcessBatch.disabled = true;
-        processStatus.textContent = "Iniciando motor de relayers... ⏳";
-
-        try {
-            const response = await fetch(`/api/batches/${currentBatchId}/process`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ relayerCount: count })
-            });
-            const res = await response.json();
-
-            if (response.ok) {
-                processStatus.textContent = "✅ Procesando en segundo plano. Los relayers están trabajando.";
-                processStatus.style.color = "#4ade80";
-                // Optional: Start polling for status here
-            } else {
-                processStatus.textContent = "❌ Error: " + res.error;
-                processStatus.style.color = "#ef4444";
-                btnProcessBatch.disabled = false;
-            }
-        } catch (err) {
-            console.error(err);
-            processStatus.textContent = "❌ Error de conexión";
-            btnProcessBatch.disabled = false;
-        }
+        await executeBatchDistribution(count);
     });
+}
+
+async function executeBatchDistribution(count) {
+    btnProcessBatch.disabled = true;
+    processStatus.textContent = "Iniciando motor de relayers... ⏳";
+    processStatus.style.color = "#fbbf24";
+
+    // Optimistic UI: Mostrar placeholders de inmediato
+    const tbody = document.getElementById('relayerBalancesTableBody');
+    if (tbody) {
+        tbody.innerHTML = '';
+        for (let i = 0; i < count; i++) {
+            tbody.innerHTML += `
+                <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                    <td style="padding:0.75rem; color:#94a3b8;">Generando Relayer ${i + 1}...</td>
+                    <td style="padding:0.75rem; color:#64748b;">0.0000 MATIC</td>
+                    <td style="padding:0.75rem; color:#64748b;">Iniciando...</td>
+                </tr>
+            `;
+        }
+    }
+
+    try {
+        const response = await fetch(`/api/batches/${currentBatchId}/process`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ relayerCount: count })
+        });
+        const res = await response.json();
+
+        if (response.ok) {
+            processStatus.textContent = "✅ Procesando. Los relayers están recibiendo gas.";
+            processStatus.style.color = "#4ade80";
+
+            // Iniciar Polling Rápido (cada 2 segundos)
+            if (window.balanceInterval) clearInterval(window.balanceInterval);
+            window.balanceInterval = setInterval(() => {
+                fetchRelayerBalances(currentBatchId);
+            }, 2000);
+
+            // Primer refresco inmediato (500ms) ya que la API espera a que estén en BD
+            setTimeout(() => fetchRelayerBalances(currentBatchId), 500);
+        } else {
+            processStatus.textContent = "❌ Error: " + res.error;
+            processStatus.style.color = "#ef4444";
+            btnProcessBatch.disabled = false;
+            fetchRelayerBalances(currentBatchId);
+        }
+    } catch (err) {
+        console.error(err);
+        processStatus.textContent = "❌ Error de conexión";
+        btnProcessBatch.disabled = false;
+    }
 }
 
 // --- Faucet & Relayer Management Logic ---
@@ -889,54 +917,19 @@ function renderRelayerBalances(data) {
 
 window.triggerGasDistribution = async () => {
     if (!currentBatchId) return alert("Seleccione un lote primero");
-    const count = parseInt(document.getElementById('relayerCountInput').value) || 5;
-    const buffer = parseInt(document.getElementById('bufferPercent').value) || 50;
 
-    const status = document.getElementById('faucetStatus');
-    status.textContent = "⌛ Distribuyendo MATIC desde el Faucet...";
-    status.style.color = "#fbbf24";
+    // Get count from whichever input is available (Modal or Main)
+    const modalInput = document.getElementById('relayerCountInput');
+    const mainSelect = document.getElementById('relayerCount');
+    const count = parseInt(modalInput?.value || mainSelect?.value) || 5;
 
-    try {
-        // Optimistic UI: Show placeholders immediately
-        const tbody = document.getElementById('relayerBalancesTableBody');
-        tbody.innerHTML = ''; // Clear previous
-        for (let i = 0; i < count; i++) {
-            tbody.innerHTML += `
-                <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
-                    <td style="padding:0.75rem; color:#94a3b8;">Generando Relayer ${i + 1}...</td>
-                    <td style="padding:0.75rem; color:#64748b;">0.0000 MATIC</td>
-                    <td style="padding:0.75rem; color:#64748b;">Iniciando...</td>
-                </tr>
-             `;
-        }
-
-        const response = await fetch(`/api/batches/${currentBatchId}/process`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ relayerCount: count, gasBuffer: buffer })
-        });
-        const res = await response.json();
-        if (response.ok) {
-            status.textContent = "✅ Distribución iniciada. Fondeando relayers...";
-            status.style.color = "#4ade80";
-
-            // Start polling (Faster: every 2s)
-            if (window.balanceInterval) clearInterval(window.balanceInterval);
-            window.balanceInterval = setInterval(() => {
-                refreshRelayerBalances();
-            }, 2000);
-
-            // First refresh after a short delay
-            setTimeout(refreshRelayerBalances, 1000);
-        } else {
-            status.textContent = "❌ Error: " + res.error;
-            status.style.color = "#ef4444";
-            refreshRelayerBalances(); // Restore table
-        }
-    } catch (err) {
-        status.textContent = "❌ Error de conexión";
-        status.style.color = "#ef4444";
+    const modalStatus = document.getElementById('modalFaucetStatus');
+    if (modalStatus) {
+        modalStatus.textContent = "⌛ Iniciando distribución...";
+        modalStatus.style.color = "#fbbf24";
     }
+
+    await executeBatchDistribution(count);
 };
 
 window.refreshRelayerBalances = () => {
@@ -948,11 +941,10 @@ window.refreshRelayerBalances = () => {
     }
 };
 
-// Auto-refresh if currentBatchId changes (handled via existing logic or detail view open)
-// We add a hook to the detail view opening logic if possible, or just interval
+// Auto-refresh every 15s normally, but executeBatchDistribution handles high-speed polling
 setInterval(() => {
-    if (currentBatchId && document.getElementById('relayerBalancesTable')) {
-        fetchRelayerBalances(currentBatchId);
+    if (currentBatchId && !window.processingBatch) {
+        refreshRelayerBalances();
     }
 }, 15000);
 

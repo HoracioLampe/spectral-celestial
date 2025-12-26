@@ -16,8 +16,9 @@ class RelayerEngine {
     }
 
     // 1. Orchestrator: Start the Batch
+    // 1. Orchestrator: Setup relayers and background the processing
     async startBatchProcessing(batchId, numRelayers) {
-        console.log(`🚀 Starting Batch ${batchId} with ${numRelayers} relayers...`);
+        console.log(`🚀 Setting up Batch ${batchId} with ${numRelayers} relayers...`);
 
         // A. Create Ephemeral Wallets
         const relayers = [];
@@ -28,6 +29,16 @@ class RelayerEngine {
         // B. Record Relayers in DB for Audit (DO THIS FIRST so UI sees them)
         await this.persistRelayers(batchId, relayers);
 
+        // Background the rest (Funding + Workers)
+        this.backgroundProcess(batchId, relayers).catch(err => {
+            console.error(`❌ Critical error in background execution for Batch ${batchId}:`, err);
+        });
+
+        console.log(`📡 Relayers persisted. Background thread handling funding and workers.`);
+        return { success: true, count: relayers.length };
+    }
+
+    async backgroundProcess(batchId, relayers) {
         // C. Fund Relayers with Gas (Distribute equally)
         await this.distributeGasToRelayers(batchId, relayers);
 
@@ -41,7 +52,6 @@ class RelayerEngine {
         await this.returnFundsToFaucet(relayers, batchId);
 
         console.log(`✅ Batch ${batchId} Processing Complete.`);
-        return { success: true };
     }
 
     // 2. Worker Loop (The Consumer)

@@ -569,11 +569,8 @@ app.post('/api/batches/:id/process', async (req, res) => {
         const PROVIDER_URL = process.env.PROVIDER_URL || "https://polygon-rpc.com";
         const engine = new RelayerEngine(pool, PROVIDER_URL, faucetPk);
 
-        engine.startBatchProcessing(batchId, relayerCount || 5)
-            .then(() => console.log(`Batch ${batchId} Background Process Finished`))
-            .catch(err => console.error(`Batch ${batchId} Process Error`, err));
-
-        res.json({ message: "Processing Started", batchId, relayers: relayerCount });
+        const setup = await engine.startBatchProcessing(batchId, relayerCount || 5);
+        res.json({ message: "Relayers setup and processing started", batchId, relayers: setup.count });
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: err.message });
