@@ -97,6 +97,9 @@ app.post('/api/batches', async (req, res) => {
 app.post('/api/batches/:id/upload', upload.single('file'), async (req, res) => {
     const client = await pool.connect();
     try {
+        const batchId = req.params.id;
+        const filePath = req.file.path;
+
         // Create batch id log
         console.log(`[UPLOAD] Starting for Batch ID: ${batchId}`);
         console.log(`[UPLOAD] Reading file: ${filePath}`);
@@ -436,10 +439,10 @@ app.get('/api/setup', async (req, res) => {
     }
 });
 
-const VERSION = "2.2.21";
+const VERSION = "2.2.22";
 const PORT_LISTEN = process.env.PORT || 3000;
 
 app.listen(PORT_LISTEN, () => {
     console.log(`Server is running on port ${PORT_LISTEN}`);
-    console.log(`🚀 Version: ${VERSION} (DB Triggers Active)`);
+    console.log(`🚀 Version: ${VERSION} (RefError Fix)`);
 });
