@@ -392,7 +392,9 @@ app.get('/api/faucet', async (req, res) => {
 
         if (result.rows.length > 0) {
             const row = result.rows[0];
-            const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
+            // Use fallback if env is missing
+            const rpcUrl = process.env.RPC_URL || "https://polygon-rpc.com";
+            const provider = new ethers.JsonRpcProvider(rpcUrl);
             const balance = await provider.getBalance(row.address);
             res.json({
                 address: row.address,
@@ -403,6 +405,7 @@ app.get('/api/faucet', async (req, res) => {
             res.json({ address: null, balance: '0' });
         }
     } catch (err) {
+        console.error("Error fetching faucet:", err);
         res.status(500).json({ error: err.message });
     }
 });
