@@ -139,9 +139,9 @@ app.post('/api/batches/:id/upload', upload.single('file'), async (req, res) => {
                 row[k.toLowerCase().trim()] = rawRow[k];
             });
 
-            const wallet = row['wallet'] || row['address'] || row['recipient'] || row['to'];
+            const wallet = row['wallet'] || row['address'] || row['recipient'] || row['to'] || row['address wallet'];
             const amount = row['amount'] || row['usdc'] || row['value'];
-            const ref = row['reference'] || row['ref'];
+            const ref = row['reference'] || row['ref'] || row['transactionid'];
 
             if (loopIndex <= 3) {
                 console.log(`[UPLOAD] Processing Row ${loopIndex}: Wallet=${wallet}, Amount=${amount}`);
@@ -149,7 +149,7 @@ app.post('/api/batches/:id/upload', upload.single('file'), async (req, res) => {
 
             if (wallet && amount) {
                 // Remove spaces and validate address
-                const cleanWallet = wallet.trim();
+                const cleanWallet = wallet.toString().trim();
                 let cleanAmount = amount;
 
                 // Handle comma decimals if present
@@ -211,7 +211,12 @@ app.post('/api/batches/:id/upload', upload.single('file'), async (req, res) => {
 
     } catch (err) {
         await client.query('ROLLBACK');
-        console.error(err);
+        console.error("[UPLOAD] Error:", err);
+        // Clean up file on error too
+        try {
+            if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+        } catch (e) { }
+
         res.status(500).json({ error: err.message });
     } finally {
         client.release();
@@ -382,15 +387,34 @@ app.get('/api/relayers/:batchId', async (req, res) => {
 // Faucet Management API
 app.get('/api/faucet', async (req, res) => {
     try {
-        const result = await pool.query('SELECT address, private_key FROM faucets ORDER BY id DESC LIMIT 1');
-        if (result.rows.length === 0) {
-            return res.json({ address: null, balance: "0", privateKey: null });
+        // 1. Check existing faucet in DB
+        const result = await pool.query('SELECT * FROM faucet_wallets LIMIT 1');
+
+        if (result.rows.length > 0) {
+            const row = result.rows[0];
+            const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
+            const balance = await provider.getBalance(row.address);
+            res.json({
+                address: row.address,
+                privateKey: row.private_key,
+                balance: ethers.formatEther(balance)
+            });
+        } else {
+            res.json({ address: null, balance: '0' });
         }
-        const { address, private_key: privateKey } = result.rows[0];
-        const providerUrl = process.env.PROVIDER_URL || "https://dawn-palpable-telescope.matic.quiknode.pro/e7d140234fbac5b00d93bfedf2e1c555fa2fdb65/";
-        const provider = new ethers.JsonRpcProvider(providerUrl);
-        const balanceWei = await provider.getBalance(address);
-        res.json({ address, balance: ethers.formatEther(balanceWei), privateKey });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/faucet/generate', async (req, res) => {
+    try {
+        const wallet = ethers.Wallet.createRandom();
+
+        await pool.query('DELETE FROM faucet_wallets'); // Ensure only one exists
+        await pool.query('INSERT INTO faucet_wallets (address, private_key) VALUES ($1, $2)', [wallet.address, wallet.privateKey]);
+
+        res.json({ address: wallet.address });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -439,10 +463,10 @@ app.get('/api/setup', async (req, res) => {
     }
 });
 
-const VERSION = "2.2.22";
+const VERSION = "2.2.23";
 const PORT_LISTEN = process.env.PORT || 3000;
 
 app.listen(PORT_LISTEN, () => {
     console.log(`Server is running on port ${PORT_LISTEN}`);
-    console.log(`🚀 Version: ${VERSION} (RefError Fix)`);
+    console.log(`🚀 Version: ${VERSION} (Column Mismatch Fix)`);
 });
