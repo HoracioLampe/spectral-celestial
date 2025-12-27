@@ -131,12 +131,12 @@ app.post('/api/batches/:id/upload', upload.single('file'), async (req, res) => {
 
         // Update Batch Totals
         const updateRes = await client.query(
-            'UPDATE batches SET total_transactions = $1, total_usdc = $2, status = $3, updated_at = NOW() WHERE id = $4 RETURNING *',
+            'UPDATE batches SET total_transactions = $1, total_usdc = $2, status = $3 WHERE id = $4 RETURNING *',
             [validTxs, totalUSDC.toString(), 'READY', batchId]
         );
 
         await client.query('COMMIT');
-        fs.unlinkSync(filePath); // Delete temp file
+        if (fs.existsSync(filePath)) fs.unlinkSync(filePath); // Delete temp file
 
         const txRes = await client.query('SELECT * FROM batch_transactions WHERE batch_id = $1 ORDER BY id ASC', [batchId]);
 
@@ -375,10 +375,10 @@ app.get('/api/setup', async (req, res) => {
     }
 });
 
-const VERSION = "2.2.16";
+const VERSION = "2.2.17";
 const PORT_LISTEN = process.env.PORT || 3000;
 
 app.listen(PORT_LISTEN, () => {
     console.log(`Server is running on port ${PORT_LISTEN}`);
-    console.log(`🚀 Version: ${VERSION} (History & Merkle Fix)`);
+    console.log(`🚀 Version: ${VERSION} (Upload Fix)`);
 });
