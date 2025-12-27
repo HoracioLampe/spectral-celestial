@@ -436,10 +436,10 @@ app.get('/api/setup', async (req, res) => {
     }
 });
 
-const VERSION = "2.2.20";
+const VERSION = "2.2.21";
 const PORT_LISTEN = process.env.PORT || 3000;
 
 app.listen(PORT_LISTEN, () => {
     console.log(`Server is running on port ${PORT_LISTEN}`);
-    console.log(`🚀 Version: ${VERSION} (Feedback UI)`);
+    console.log(`🚀 Version: ${VERSION} (DB Triggers Active)`);
 });
