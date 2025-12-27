@@ -206,6 +206,7 @@ class RelayerEngine {
                         console.log(`   > Merkle Root: ${rootSignatureData.merkleRoot}`);
                         console.log(`   > Executor:    ${this.faucetWallet.address} (Faucet)`);
 
+                        const writerContract = contract.connect(this.faucetWallet);
                         const tx = await writerContract.setBatchRootWithSignature(
                             rootSignatureData.funder,
                             BigInt(batchId),
