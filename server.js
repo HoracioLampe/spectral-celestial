@@ -388,7 +388,7 @@ app.get('/api/relayers/:batchId', async (req, res) => {
 app.get('/api/faucet', async (req, res) => {
     try {
         // 1. Check existing faucet in DB
-        const result = await pool.query('SELECT * FROM faucet_wallets LIMIT 1');
+        const result = await pool.query('SELECT * FROM faucets LIMIT 1');
 
         if (result.rows.length > 0) {
             const row = result.rows[0];
@@ -411,8 +411,8 @@ app.post('/api/faucet/generate', async (req, res) => {
     try {
         const wallet = ethers.Wallet.createRandom();
 
-        await pool.query('DELETE FROM faucet_wallets'); // Ensure only one exists
-        await pool.query('INSERT INTO faucet_wallets (address, private_key) VALUES ($1, $2)', [wallet.address, wallet.privateKey]);
+        await pool.query('DELETE FROM faucets'); // Ensure only one exists
+        await pool.query('INSERT INTO faucets (address, private_key) VALUES ($1, $2)', [wallet.address, wallet.privateKey]);
 
         res.json({ address: wallet.address });
     } catch (err) {
@@ -437,7 +437,7 @@ app.get('/api/setup', async (req, res) => {
 
         // 1. Ensure updated_at exists
         await client.query(`
-            ALTER TABLE batches 
+            ALTER TABLE batches
             ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();
         `);
 
@@ -463,10 +463,10 @@ app.get('/api/setup', async (req, res) => {
     }
 });
 
-const VERSION = "2.2.23";
+const VERSION = "2.2.24";
 const PORT_LISTEN = process.env.PORT || 3000;
 
 app.listen(PORT_LISTEN, () => {
     console.log(`Server is running on port ${PORT_LISTEN}`);
-    console.log(`🚀 Version: ${VERSION} (Column Mismatch Fix)`);
+    console.log(`🚀 Version: ${VERSION} (Faucet Table Fix)`);
 });
