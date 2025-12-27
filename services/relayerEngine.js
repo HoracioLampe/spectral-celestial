@@ -407,46 +407,53 @@ RETURNING *
     }
 
     /**
-     * Fetches Merkle proof for a specific transaction in a batch.
+     * Fetches Merkle proof for a specific transaction in a batch using position indices.
      */
     async getMerkleProof(batchId, transactionId) {
-        const proofRes = await this.pool.query(
-            `SELECT hash, position_index, level FROM merkle_nodes WHERE batch_id = $1 AND level = 0 AND transaction_id = $2`,
+        // 1. Get the starting leaf position
+        const startRes = await this.pool.query(
+            `SELECT position_index, hash FROM merkle_nodes WHERE batch_id = $1 AND level = 0 AND transaction_id = $2`,
             [batchId, transactionId]
         );
-        if (proofRes.rows.length === 0) return [];
+        if (startRes.rows.length === 0) return [];
 
-        let currentHash = proofRes.rows[0].hash;
+        // 2. Determine the maximum level (Root level)
+        const maxLevelRes = await this.pool.query(
+            `SELECT MAX(level) as max_level FROM merkle_nodes WHERE batch_id = $1`,
+            [batchId]
+        );
+        const maxLevel = maxLevelRes.rows[0].max_level;
+        if (!maxLevel || maxLevel === 0) return [];
+
+        let currentIndex = startRes.rows[0].position_index;
         const proof = [];
 
-        // Fetch sibling hashes level by level
-        let level = 0;
-        while (true) {
-            const nodeRes = await this.pool.query(
-                `SELECT hash, parent_hash, position_index FROM merkle_nodes WHERE batch_id = $1 AND level = $2 AND hash = $3`,
-                [batchId, level, currentHash]
-            );
-            if (nodeRes.rows.length === 0) break;
+        // 3. Traverse up the tree level by level to gather siblings
+        for (let level = 0; level < maxLevel; level++) {
+            // Sibling index is calculated by XORing with 1 (0<->1, 2<->3, etc.)
+            const siblingIndex = currentIndex ^ 1;
 
-            const node = nodeRes.rows[0];
-            const parentHash = node.parent_hash;
-            if (!parentHash) break; // Reached Root
-
-            // Sibling is the other child of the same parent
             const siblingRes = await this.pool.query(
-                `SELECT hash FROM merkle_nodes WHERE batch_id = $1 AND level = $2 AND parent_hash = $3 AND hash != $4`,
-                [batchId, level, parentHash, currentHash]
+                `SELECT hash FROM merkle_nodes WHERE batch_id = $1 AND level = $2 AND position_index = $3`,
+                [batchId, level, siblingIndex]
             );
 
             if (siblingRes.rows.length > 0) {
                 proof.push(siblingRes.rows[0].hash);
             } else {
-                // Odd node at this level, sibling is itself (duplication logic)
-                proof.push(currentHash);
+                // Sibling not found in DB (odd number of nodes at this level)
+                // In our Merkle implementation, the last node is duplicated as its own sibling
+                const currentRes = await this.pool.query(
+                    `SELECT hash FROM merkle_nodes WHERE batch_id = $1 AND level = $2 AND position_index = $3`,
+                    [batchId, level, currentIndex]
+                );
+                if (currentRes.rows.length > 0) {
+                    proof.push(currentRes.rows[0].hash);
+                }
             }
 
-            currentHash = parentHash;
-            level++;
+            // Parent index is always half of current index (0,1 -> 0; 2,3 -> 1, etc.)
+            currentIndex = currentIndex >> 1;
         }
         return proof;
     }

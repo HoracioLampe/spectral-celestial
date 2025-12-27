@@ -696,5 +696,5 @@ app.get('*', (req, res) => {
 
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
-    console.log("🚀 Version: 2.2.6 (Merkle Sorting Fix)");
+    console.log("🚀 Version: 2.2.7 (Merkle Index Fix)");
 });
