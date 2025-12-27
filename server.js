@@ -95,48 +95,95 @@ app.post('/api/batches', async (req, res) => {
 app.post('/api/batches/:id/upload', upload.single('file'), async (req, res) => {
     const client = await pool.connect();
     try {
-        const batchId = req.params.id;
-        const filePath = req.file.path;
+        // Create batch id log
+        console.log(`[UPLOAD] Starting for Batch ID: ${batchId}`);
+        console.log(`[UPLOAD] Reading file: ${filePath}`);
 
-        const workbook = xlsx.readFile(filePath);
-        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        let workbook;
+        try {
+            workbook = xlsx.readFile(filePath);
+        } catch (readErr) {
+            console.error("[UPLOAD] Error reading file:", readErr);
+            throw new Error("Failed to parse Excel file");
+        }
+
+        const sheetName = workbook.SheetNames[0];
+        console.log(`[UPLOAD] Sheet Name: ${sheetName}`);
+
+        const sheet = workbook.Sheets[sheetName];
         const data = xlsx.utils.sheet_to_json(sheet);
+        console.log(`[UPLOAD] Rows found: ${data.length}`);
+
+        if (data.length > 0) {
+            console.log("[UPLOAD] First row keys:", Object.keys(data[0]));
+            console.log("[UPLOAD] First row sample:", JSON.stringify(data[0]));
+        }
 
         await client.query('BEGIN');
 
         let totalUSDC = 0n;
         let validTxs = 0;
+        let loopIndex = 0;
 
         for (const row of data) {
+            loopIndex++;
             const wallet = row['Wallet'] || row['address'] || row['wallet'];
             const amount = row['Amount'] || row['amount'] || row['usdc'];
             const ref = row['Reference'] || row['reference'] || '';
 
+            if (loopIndex <= 3) {
+                console.log(`[UPLOAD] Processing Row ${loopIndex}: Wallet=${wallet}, Amount=${amount}`);
+            }
+
             if (wallet && amount) {
                 // Remove spaces and validate address
                 const cleanWallet = wallet.trim();
-                if (ethers.isAddress(cleanWallet)) {
-                    // Standardize amount to 6 decimals (microUSDC)
-                    const microAmount = BigInt(Math.round(parseFloat(amount) * 1000000));
-                    totalUSDC += microAmount;
-                    validTxs++;
+                let cleanAmount = amount;
 
-                    await client.query(
-                        'INSERT INTO batch_transactions (batch_id, wallet_address_to, amount_usdc, transaction_reference, status) VALUES ($1, $2, $3, $4, $5)',
-                        [batchId, cleanWallet, microAmount.toString(), ref, 'PENDING']
-                    );
+                // Handle comma decimals if present
+                if (typeof amount === 'string') {
+                    cleanAmount = amount.replace(',', '.');
                 }
+
+                if (ethers.isAddress(cleanWallet)) {
+                    try {
+                        // Standardize amount to 6 decimals (microUSDC)
+                        const val = parseFloat(cleanAmount);
+                        if (isNaN(val)) throw new Error("Invalid number");
+
+                        const microAmount = BigInt(Math.round(val * 1000000));
+                        totalUSDC += microAmount;
+                        validTxs++;
+
+                        await client.query(
+                            'INSERT INTO batch_transactions (batch_id, wallet_address_to, amount_usdc, transaction_reference, status) VALUES ($1, $2, $3, $4, $5)',
+                            [batchId, cleanWallet, microAmount.toString(), ref, 'PENDING']
+                        );
+                    } catch (rowErr) {
+                        console.error(`[UPLOAD] Row ${loopIndex} Error:`, rowErr.message);
+                    }
+                } else {
+                    console.warn(`[UPLOAD] Row ${loopIndex} Invalid Address: ${cleanWallet}`);
+                }
+            } else {
+                console.warn(`[UPLOAD] Row ${loopIndex} Missing Data:`, row);
             }
         }
+
+        console.log(`[UPLOAD] Finished Loop. ValidTxs: ${validTxs}`);
 
         // Update Batch Totals
         const updateRes = await client.query(
             'UPDATE batches SET total_transactions = $1, total_usdc = $2, status = $3 WHERE id = $4 RETURNING *',
             [validTxs, totalUSDC.toString(), 'READY', batchId]
         );
+        console.log("[UPLOAD] Batch Updated successfully");
 
         await client.query('COMMIT');
-        if (fs.existsSync(filePath)) fs.unlinkSync(filePath); // Delete temp file
+
+        try {
+            if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+        } catch (e) { console.error("Error deleting temp file:", e); }
 
         const txRes = await client.query('SELECT * FROM batch_transactions WHERE batch_id = $1 ORDER BY id ASC', [batchId]);
 
@@ -375,10 +422,10 @@ app.get('/api/setup', async (req, res) => {
     }
 });
 
-const VERSION = "2.2.17";
+const VERSION = "2.2.18";
 const PORT_LISTEN = process.env.PORT || 3000;
 
 app.listen(PORT_LISTEN, () => {
     console.log(`Server is running on port ${PORT_LISTEN}`);
-    console.log(`🚀 Version: ${VERSION} (Upload Fix)`);
+    console.log(`🚀 Version: ${VERSION} (Deep Debug Upload)`);
 });
