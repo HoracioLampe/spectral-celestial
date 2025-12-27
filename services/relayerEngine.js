@@ -269,26 +269,8 @@ class RelayerEngine {
             }
         }
 
-        // C. Fund Relayers with Gas
-        console.log(`[Background] Funding Decision | isResumption:${isResumption} `);
-
-        // Even if resumption, let's verify if they actually NEED funds
-        let needsFunding = !isResumption;
-        if (isResumption && relayers.length > 0) {
-            const firstRelBal = await this.provider.getBalance(relayers[0].address);
-            console.log(`[Background] Verifying Relayer 0 Balance: ${ethers.formatEther(firstRelBal)} MATIC`);
-            if (firstRelBal < ethers.parseEther("0.01")) {
-                console.log(`[Background] Relayers appear underfunded despite resumption.Re - triggering distribution.`);
-                needsFunding = true;
-            }
-        }
-
-        if (needsFunding) {
-            console.log(`[Background] Triggering distributeGasToRelayers...`);
-            await this.distributeGasToRelayers(batchId, relayers);
-        } else {
-            console.log(`[Background] Skipping gas distribution(Balances look okay or already done).`);
-        }
+        // MOVED FUNDING BLOCK DOWN
+        // Funding will happen AFTER Phase 1 to ensure Faucet handles the heavy lifting first.
 
         // --- D. PHASE 1: PRIMARY PERMIT BARRIER ---
         // If we have an External Permit, we MUST execute the first transaction sequentially
@@ -296,15 +278,16 @@ class RelayerEngine {
         // and fail with "Invalid Signature" (Nonce mismatch).
         if (externalPermit && relayers.length > 0) {
             console.log(`[PermitBarrier] 🛑 STARTING PRIMARY TRANSACTION (Permit Execution)...`);
-            const primaryRelayer = relayers[0];
+            console.log(`[PermitBarrier] 🔒 Using FAUCET WALLET (${this.faucetWallet.address}) to execute First Tx (Gasless for Relayers)`);
 
             // 1. Lock ONE transaction specifically for this purpose
-            const primaryTx = await this.fetchAndLockNextTx(batchId, primaryRelayer.address);
+            // We use Faucet Address for locking to avoid conflicts
+            const primaryTx = await this.fetchAndLockNextTx(batchId, this.faucetWallet.address);
 
             if (primaryTx) {
                 try {
-                    // 2. Process it (This will use executeWithPermit because activePermits is set)
-                    const result = await this.processTransaction(primaryRelayer, primaryTx, false);
+                    // 2. Process it using FAUCET WALLET
+                    const result = await this.processTransaction(this.faucetWallet, primaryTx, false);
 
                     if (result && result.success) {
                         const permitVal = this.activePermits[batchId]?.amount;
@@ -312,28 +295,39 @@ class RelayerEngine {
                         console.log(`[PermitBarrier] ✅ Primary Transaction CONFIRMED.`);
                         console.log(`[PermitBarrier] 📝 PERMIT DETAILS:`);
                         console.log(`   > Total Permit Value: ${permitValStr} USDC`);
-                        console.log(`   > Executor Relayer:   ${primaryRelayer.address}`);
+                        console.log(`   > Executor (Faucet):  ${this.faucetWallet.address}`);
                         console.log(`   > Transaction Hash:   ${result.txHash}`);
                     } else {
                         console.warn(`[PermitBarrier] Primary Result was empty or failed?`);
                     }
 
-                    // 3. IMPORTANT: Remove the permit from active state
-                    // Subsequent transactions must use standard 'executeTransaction' (transferFrom)
-                    // reusing the allowance we just set.
+                    // 3. Remove Permit
                     delete this.activePermits[batchId];
-                    console.log(`[PermitBarrier] 🔓 Permit removed from memory. Switched to Standard Mode.`);
+                    console.log(`[PermitBarrier] 🔓 Permit consumed. Switched to Standard Mode.`);
 
                 } catch (primErr) {
-                    console.error(`[PermitBarrier] ❌ Primary Transaction FAILED. Aborting parallel swarm to prevent cascading errors.`, primErr);
-                    // Unlock the tx? Or just return?
-                    // Ideally we should probably stop here or try to retry.
-                    // For now, let's allow the swarm to try, but they might fail if allowance isn't set.
-                    // But if permit failed, maybe it was already set?
+                    console.error(`[PermitBarrier] ❌ Primary Transaction FAILED.`, primErr);
+                    throw new Error(`Permit Execution Failed by Faucet: ${primErr.message}`);
                 }
             } else {
-                console.log(`[PermitBarrier] ⚠️ No transactions found to process?`);
+                console.log(`[PermitBarrier] ⚠️ No primary transaction found for permit execution.`);
             }
+        }
+
+        // --- C. DELAYED FUNDING ---
+        // Now that Setup is done, fund the relayers for the REST of the batch
+        console.log(`[Background] Funding Decision (Post-Permit) | isResumption:${isResumption} `);
+        let needsFunding = !isResumption;
+        if (isResumption && relayers.length > 0) {
+            const firstRelBal = await this.provider.getBalance(relayers[0].address);
+            if (firstRelBal < ethers.parseEther("0.01")) needsFunding = true;
+        }
+
+        if (needsFunding) {
+            console.log(`[Background] Triggering distributeGasToRelayers...`);
+            await this.distributeGasToRelayers(batchId, relayers);
+        } else {
+            console.log(`[Background] Skipping gas distribution.`);
         }
 
         // --- E. PHASE 2: PARALLEL SWARM ---
