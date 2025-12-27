@@ -384,7 +384,7 @@ app.get('/api/relayers/:batchId', async (req, res) => {
     }
 });
 
-const QUICKNODE_URL = "https://fluent-clean-orb.matic.quiknode.pro/d95e5af7a69e7b5f8c09a440a5985865d6f4ae93/";
+const QUICKNODE_URL = "https://dawn-palpable-telescope.matic.quiknode.pro/e7d140234fbac5b00d93bfedf2e1c555fa2fdb65/";
 
 // Faucet Management API
 app.get('/api/faucet', async (req, res) => {
