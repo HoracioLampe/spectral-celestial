@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
-// --- Interfaces (Afuera del contrato) ---
+// --- Interfaces ---
 
 interface IERC20 {
     function transferFrom(address from, address to, uint256 amount) external returns (bool);
@@ -14,10 +14,15 @@ interface IERC20Permit {
 
 /**
  * @title BatchDistributor
- * @notice Distribuidor de pagos descentralizado y seguro para Polygon.
+ * @notice Distribuidor de pagos descentralizado y seguro con soporte EIP-712.
  */
 contract BatchDistributor {
     
+    // --- EIP-712 ---
+    bytes32 public immutable DOMAIN_SEPARATOR;
+    bytes32 public constant SET_BATCH_ROOT_TYPEHASH = keccak256("SetBatchRoot(address funder,uint256 batchId,bytes32 merkleRoot,uint256 totalTransactions,uint256 totalAmount,uint256 nonce)");
+    bytes32 public constant SET_BATCH_PAUSE_TYPEHASH = keccak256("SetBatchPause(address funder,uint256 batchId,bool paused,uint256 nonce)");
+
     // --- Estado ---
     IERC20 public immutable usdcToken;
     IERC20Permit public immutable usdcPermit;
@@ -36,6 +41,16 @@ contract BatchDistributor {
         address _usdcToken = 0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359;
         usdcToken = IERC20(_usdcToken);
         usdcPermit = IERC20Permit(_usdcToken);
+
+        DOMAIN_SEPARATOR = keccak256(
+            abi.encode(
+                keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
+                keccak256(bytes("BatchDistributor")),
+                keccak256(bytes("1")),
+                block.chainid,
+                address(this)
+            )
+        );
     }
 
     // --- Gestión de Lotes ---
@@ -52,25 +67,52 @@ contract BatchDistributor {
         emit BatchPauseSet(msg.sender, batchId, paused);
     }
 
-    // --- Funciones Gasless (Firmas) ---
+    // --- Funciones Gasless (Firmas EIP-712) ---
 
-    function setBatchRootWithSignature(address funder, uint256 batchId, bytes32 merkleRoot, bytes calldata signature) external {
+    function setBatchRootWithSignature(
+        address funder, 
+        uint256 batchId, 
+        bytes32 merkleRoot, 
+        uint256 totalTransactions, 
+        uint256 totalAmount, 
+        bytes calldata signature
+    ) external {
         require(batchRoots[funder][batchId] == bytes32(0), "Root ya existe");
+        
         bytes32 structHash = keccak256(abi.encode(
-            keccak256("SetBatchRoot(address funder,uint256 batchId,bytes32 merkleRoot,uint256 nonce)"), 
-            funder, batchId, merkleRoot, nonces[funder]++
+            SET_BATCH_ROOT_TYPEHASH,
+            funder,
+            batchId,
+            merkleRoot,
+            totalTransactions,
+            totalAmount,
+            nonces[funder]++
         ));
-        require(recover(toEthSignedMessageHash(structHash), signature) == funder, "Firma invalida");
+
+        bytes32 hash = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, structHash));
+        require(recover(hash, signature) == funder, "Firma invalida");
+
         batchRoots[funder][batchId] = merkleRoot;
         emit BatchRootSet(funder, batchId, merkleRoot);
     }
 
-    function setBatchPauseWithSignature(address funder, uint256 batchId, bool paused, bytes calldata signature) external {
+    function setBatchPauseWithSignature(
+        address funder, 
+        uint256 batchId, 
+        bool paused, 
+        bytes calldata signature
+    ) external {
         bytes32 structHash = keccak256(abi.encode(
-            keccak256("SetBatchPause(address funder,uint256 batchId,bool paused,uint256 nonce)"), 
-            funder, batchId, paused, nonces[funder]++
+            SET_BATCH_PAUSE_TYPEHASH,
+            funder,
+            batchId,
+            paused,
+            nonces[funder]++
         ));
-        require(recover(toEthSignedMessageHash(structHash), signature) == funder, "Firma invalida");
+
+        bytes32 hash = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, structHash));
+        require(recover(hash, signature) == funder, "Firma invalida");
+
         batchPaused[funder][batchId] = paused;
         emit BatchPauseSet(funder, batchId, paused);
     }
@@ -99,7 +141,7 @@ contract BatchDistributor {
         emit TransactionExecuted(batchId, txId, recipient, funder, amount);
     }
 
-    // --- Utilidades del Contrato ---
+    // --- Utilidades ---
 
     function verifyMerkle(bytes32[] memory proof, bytes32 root, bytes32 leaf) internal pure returns (bool) {
         bytes32 computedHash = leaf;
@@ -112,10 +154,6 @@ contract BatchDistributor {
             }
         }
         return computedHash == root;
-    }
-
-    function toEthSignedMessageHash(bytes32 hash) internal pure returns (bytes32) {
-        return keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", hash));
     }
 
     function recover(bytes32 hash, bytes memory signature) internal pure returns (address) {

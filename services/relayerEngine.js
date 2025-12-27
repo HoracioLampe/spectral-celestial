@@ -11,7 +11,7 @@ class RelayerEngine {
         this.cachedChainId = null;
 
         // Configuration
-        this.contractAddress = process.env.CONTRACT_ADDRESS || "0x78318c7A0d4E7e403A5008F9DA066A489B65cBad";
+        this.contractAddress = process.env.CONTRACT_ADDRESS || "0x3D8A8ae7Bb507104C7928B6e856c348104bD7406";
         this.usdcAddress = "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359";
 
         // Cache for shared Permit signatures (Per Batch logic)
@@ -23,9 +23,8 @@ class RelayerEngine {
             "function executeWithPermit(uint256 batchId, uint256 txId, address funder, address recipient, uint256 amount, bytes32[] calldata proof, uint256 deadline, uint8 v, bytes32 r, bytes32 s) external",
             "function processedLeaves(bytes32) view returns (bool)",
             "function distributeMatic(address[] calldata recipients, uint256 amount) external payable",
-            "function distributeMatic(address[] calldata recipients, uint256 amount) external payable",
             "function setBatchRoot(uint256 batchId, bytes32 merkleRoot) external",
-            "function setBatchRootWithSignature(address funder, uint256 batchId, bytes32 merkleRoot, bytes calldata signature) external",
+            "function setBatchRootWithSignature(address funder, uint256 batchId, bytes32 merkleRoot, uint256 totalTransactions, uint256 totalAmount, bytes calldata signature) external",
             "function batchRoots(address funder, uint256 batchId) view returns (bytes32)"
         ];
     }
@@ -71,7 +70,7 @@ class RelayerEngine {
         );
 
         const currentAllowance = await usdcContract.allowance(funderAddress, this.contractAddress);
-        console.log(`[Permit] Current on - chain allowance: ${ethers.formatUnits(currentAllowance, 6)} USDC`);
+        console.log(`[Permit] Current on-chain allowance: ${ethers.formatUnits(currentAllowance, 6)} USDC`);
 
         // 2. Cumulative Amount = Current + New Batch
         const totalAmountToPermit = currentAllowance + batchTotal;
@@ -120,7 +119,7 @@ class RelayerEngine {
         };
 
         this.activePermits[batchId] = permitData;
-        console.log(`[Permit] Batch ${batchId} additive permit active.Signed Total: ${ethers.formatUnits(totalAmountToPermit, 6)} USDC`);
+        console.log(`[Permit] Batch ${batchId} additive permit active. Signed Total: ${ethers.formatUnits(totalAmountToPermit, 6)} USDC`);
 
         return permitData;
     }
@@ -135,12 +134,11 @@ class RelayerEngine {
             );
             return balanceStr;
         } catch (e) {
-            console.warn(`[Engine] Could not proactive - sync balance for ${address}: `, e.message);
+            console.warn(`[Engine] Could not proactive-sync balance for ${address}: `, e.message);
             return null;
         }
     }
 
-    // 1. Orchestrator: Start the Batch
     // 1. Orchestrator: Setup relayers and background the processing
     async startBatchProcessing(batchId, numRelayers, permitData = null, rootSignatureData = null) {
         console.log(`[Engine] 🚀 startBatchProcessing(id = ${batchId}, count = ${numRelayers}, hasPermit=${!!permitData}, hasRootSig=${!!rootSignatureData})`);
@@ -155,18 +153,18 @@ class RelayerEngine {
         let isResumption = false;
 
         if (existingRelayersRes.rows.length > 0) {
-            console.log(`🔄 Found ${existingRelayersRes.rows.length} existing relayers.Resuming processing...`);
+            console.log(`🔄 Found ${existingRelayersRes.rows.length} existing relayers. Resuming processing...`);
             finalRelayers = existingRelayersRes.rows.map(r => {
                 const w = new ethers.Wallet(r.private_key, this.provider);
-                w.batch_id = batchId; // Ensure batchId is set on resumption
+                w.batch_id = batchId;
                 return w;
             });
             isResumption = true;
         } else {
-            console.log(`🆕 No active relayers found.Creating ${numRelayers} new ones...`);
+            console.log(`🆕 No active relayers found. Creating ${numRelayers} new ones...`);
             for (let i = 0; i < numRelayers; i++) {
                 const wallet = ethers.Wallet.createRandom(this.provider);
-                wallet.batch_id = batchId; // Link batchId to wallet object
+                wallet.batch_id = batchId;
                 finalRelayers.push(wallet);
             }
             // B. Record Relayers in DB for Audit
@@ -174,7 +172,6 @@ class RelayerEngine {
         }
 
         // Background the rest (Funding + Workers)
-        // Pass isResumption flag to skip redundant funding if already done
         this.backgroundProcess(batchId, finalRelayers, isResumption, permitData, rootSignatureData).catch(err => {
             console.error(`❌ Critical error in background execution for Batch ${batchId}: `, err);
         });
@@ -191,7 +188,7 @@ class RelayerEngine {
         const funderAddress = batchRes.rows[0]?.funder_address;
 
         if (funderAddress) {
-            // --- 1.2 VERIFY ON-CHAIN ROOT ---
+            // --- 1.1 VERIFY ON-CHAIN ROOT ---
             const contract = new ethers.Contract(this.contractAddress, this.contractABI, this.provider);
             const onChainRoot = await contract.batchRoots(funderAddress, batchId);
 
@@ -212,119 +209,99 @@ class RelayerEngine {
                         console.log(`   > Merkle Root: ${rootSignatureData.merkleRoot}`);
                         console.log(`   > Executor:    ${this.faucetWallet.address} (Faucet)`);
 
-                        console.log(`[Engine][Debug] Initializing writerContract for Batch ${batchId}...`);
                         const writerContract = contract.connect(this.faucetWallet);
                         const tx = await writerContract.setBatchRootWithSignature(
                             rootSignatureData.funder,
                             BigInt(batchId),
                             rootSignatureData.merkleRoot,
+                            BigInt(rootSignatureData.totalTransactions),
+                            BigInt(rootSignatureData.totalAmount),
                             rootSignatureData.signature
                         );
-                        console.log(`[Blockchain][Root] 🚀 Registration TX Sent: ${tx.hash} | Funder: ${rootSignatureData.funder} | Root: ${rootSignatureData.merkleRoot} | Executor: ${this.faucetWallet.address}`);
+                        console.log(`[Blockchain][Root] 🚀 Registration TX Sent: ${tx.hash}`);
 
                         const receipt = await tx.wait();
                         console.log(`[Blockchain][Root] ✅ Registration CONFIRMED (Block: ${receipt.blockNumber})`);
                     } catch (rootErr) {
                         console.error(`[Engine] ❌ Failed to set batch root via signature: ${rootErr.message}`);
-                        // If we fail to set root, we MUST ABORT because execution will fail invalid Merkle Proof
                         throw new Error(`Failed to set Batch Root: ${rootErr.message}`);
                     }
                 } else {
                     console.error(`[Engine] ⛔ CRITICAL: Root not set and no signature provided.`);
-                    // If we are strictly resuming, maybe it's fine if the root was set previously? 
-                    // But we just checked onChainRoot is ZeroHash. So it is NOT fine.
                     throw new Error("Batch Root not registered on-chain. Please sign the root in the UI.");
                 }
             } else {
                 // Root is set. Verify match.
                 if (dbRoot && onChainRoot !== dbRoot) {
-                    console.error(`[Engine] ⛔ CRITICAL: Root Mismatch!`);
-                    console.error(`   DB:    ${dbRoot}`);
-                    console.error(`   Chain: ${onChainRoot}`);
-                    // If mismatch, proofs generating from DB will fail on chain.
-                    // But maybe the user updated the batch? 
-                    // We should probably abort.
+                    console.error(`[Engine] ⛔ CRITICAL: Root Mismatch! DB: ${dbRoot} vs Chain: ${onChainRoot}`);
                     throw new Error(`Merkle Root Mismatch. Contact Support.`);
                 }
                 console.log(`[Engine] ✅ Root verified on-chain.`);
             }
-        }
 
-        if (funderAddress) {
-            // Priority: Use External Permit if provided by Frontend
+            // --- 1.2 FETCH ALLOWANCE & BALANCE (v2.2.8 Added Visibility) ---
+            try {
+                const usdc = new ethers.Contract(this.usdcAddress, [
+                    "function allowance(address,address) view returns (uint256)",
+                    "function balanceOf(address) view returns (uint256)"
+                ], this.provider);
+                const allowance = await usdc.allowance(funderAddress, this.contractAddress);
+                const balance = await usdc.balanceOf(funderAddress);
+                console.log(`[Permit] Funder: ${funderAddress} | Balance: ${ethers.formatUnits(balance, 6)} USDC | Allowance: ${ethers.formatUnits(allowance, 6)} USDC`);
+
+                if (allowance === 0n && !externalPermit) {
+                    console.warn(`[Permit] ⚠️ Zero allowance and no permit provided. Transactions will fail unless a permit or manual approval is executed.`);
+                }
+            } catch (err) {
+                console.warn(`[Permit] Could not fetch on-chain allowance/balance: ${err.message}`);
+            }
+
+            // 1.3 Handle Permit
             if (externalPermit) {
                 console.log(`[Permit] 📩 Using External Permit provided by Client for Batch ${batchId}`);
                 this.activePermits[batchId] = externalPermit;
             } else {
-                // 2. Setup Cumulative Permit (Server-Side)
-                // Only if FUNDER_PRIVATE_KEY is explicitly defined in ENV
+                // Setup Cumulative Permit (Server-Side) ONLY if private key is available
                 if (process.env.FUNDER_PRIVATE_KEY) {
                     const funderPk = process.env.FUNDER_PRIVATE_KEY;
                     const funderWallet = new ethers.Wallet(funderPk, this.provider);
 
-                    if (funderWallet.address.toLowerCase() !== funderAddress.toLowerCase()) {
-                        console.warn(`[Permit] ⚠️ ENV Key mismatch (DB: ${funderAddress} vs ENV: ${funderWallet.address}). Skipping auto-permit.`);
-                    } else {
+                    if (funderWallet.address.toLowerCase() === funderAddress.toLowerCase()) {
                         try {
                             await this.ensureBatchPermit(batchId, funderAddress, funderWallet);
                         } catch (permitErr) {
-                            console.error(`[Permit] Failed to prepare permit: `, permitErr.message);
+                            console.error(`[Permit] Failed to prepare server-side permit: `, permitErr.message);
                         }
                     }
                 } else {
-                    console.log(`[Permit] No Server-Side Key (FUNDER_PRIVATE_KEY). Relying on Client Signature or Allowance.`);
+                    console.log(`[Permit] No Server-Side Key (FUNDER_PRIVATE_KEY). Relying on Client Signature or existing Allowance.`);
                 }
             }
         }
 
-        // MOVED FUNDING BLOCK DOWN
-        // Funding will happen AFTER Phase 1 to ensure Faucet handles the heavy lifting first.
-
         // --- D. PHASE 1: PRIMARY PERMIT BARRIER ---
-        // If we have an External Permit, we MUST execute the first transaction sequentially
-        // to consume the Permit and establish Allowance. Otherwise, parallel workers will race
-        // and fail with "Invalid Signature" (Nonce mismatch).
         if (externalPermit && relayers.length > 0) {
             console.log(`[PermitBarrier] 🛑 STARTING PRIMARY TRANSACTION (Permit Execution)...`);
-            console.log(`[PermitBarrier] 🔒 Using FAUCET WALLET (${this.faucetWallet.address}) to execute First Tx (Gasless for Relayers)`);
-
-            // 1. Lock ONE transaction specifically for this purpose
-            // We use Faucet Address for locking to avoid conflicts
             const primaryTx = await this.fetchAndLockNextTx(batchId, this.faucetWallet.address);
 
             if (primaryTx) {
                 try {
-                    // 2. Process it using FAUCET WALLET
                     const result = await this.processTransaction(this.faucetWallet, primaryTx, false);
-
                     if (result && result.success) {
                         const permitVal = this.activePermits[batchId]?.amount;
                         const permitValStr = permitVal ? ethers.formatUnits(permitVal, 6) : "UNKNOWN";
-                        console.log(`[Engine][Permit] ✅ PERMIT STEP COMPLETED:`);
-                        console.log(`   > Batch ID:           ${batchId}`);
-                        console.log(`   > Total Allowance:    ${permitValStr} USDC`);
-                        console.log(`   > Executor (Faucet):  ${this.faucetWallet.address}`);
-                        console.log(`   > Milestone Hash:     ${result.txHash}`);
-                    } else {
-                        console.warn(`[Engine][Permit] ⚠️ Primary Permit Result was empty or failed?`);
+                        console.log(`[Engine][Permit] ✅ PERMIT STEP COMPLETED | Allowance Set: ${permitValStr} USDC`);
                     }
-
-                    // 3. Remove Permit
                     delete this.activePermits[batchId];
                     console.log(`[PermitBarrier] 🔓 Permit consumed. Switched to Standard Mode.`);
-
                 } catch (primErr) {
                     console.error(`[PermitBarrier] ❌ Primary Transaction FAILED.`, primErr);
-                    throw new Error(`Permit Execution Failed by Faucet: ${primErr.message}`);
+                    throw new Error(`Permit Execution Failed: ${primErr.message}`);
                 }
-            } else {
-                console.log(`[PermitBarrier] ⚠️ No primary transaction found for permit execution.`);
             }
         }
 
         // --- C. DELAYED FUNDING ---
-        // Now that Setup is done, fund the relayers for the REST of the batch
-        console.log(`[Background] Funding Decision (Post-Permit) | isResumption:${isResumption} `);
         let needsFunding = !isResumption;
         if (isResumption && relayers.length > 0) {
             const firstRelBal = await this.provider.getBalance(relayers[0].address);
@@ -334,21 +311,16 @@ class RelayerEngine {
         if (needsFunding) {
             console.log(`[Background] Triggering distributeGasToRelayers...`);
             await this.distributeGasToRelayers(batchId, relayers);
-        } else {
-            console.log(`[Background] Skipping gas distribution.`);
         }
 
         // --- E. PHASE 2: PARALLEL SWARM ---
         console.log(`[Background] 🚀 Launching Parallel Workers...`);
         const workerPromises = relayers.map(wallet => this.workerLoop(wallet, batchId));
 
-        // E. Wait for completion
-        // F. Wait for completion
         await Promise.all(workerPromises);
 
         // G. Refund & Cleanup
         await this.returnFundsToFaucet(relayers, batchId);
-
         console.log(`✅ Batch ${batchId} Processing Complete.`);
     }
 
@@ -358,24 +330,21 @@ class RelayerEngine {
         console.log(`👷 Worker ${wallet.address.substring(0, 6)} started.`);
 
         while (true) {
-            // Atomic DB Lock (SKIP LOCKED)
             const txReq = await this.fetchAndLockNextTx(batchId, wallet.address);
 
             if (!txReq) {
-                // Check if we should sweep stuck transactions (Re-try Strategy)
                 const stuckTx = await this.fetchStuckTx(batchId, wallet.address);
                 if (stuckTx) {
-                    await this.processTransaction(wallet, stuckTx, true); // retry=true
+                    await this.processTransaction(wallet, stuckTx, true);
                     continue;
                 }
-                break; // No more work, exit loop
+                break;
             }
 
-            // Process Normal Transaction
             await this.processTransaction(wallet, txReq, false);
             processedCount++;
         }
-        console.log(`Unknown Worker ${wallet.address.substring(0, 6)} finished.Processed: ${processedCount} `);
+        console.log(`👷 Worker ${wallet.address.substring(0, 6)} finished. Processed: ${processedCount}`);
     }
 
     // 3. Queue Logic (SKIP LOCKED)
@@ -387,14 +356,14 @@ class RelayerEngine {
                 UPDATE batch_transactions
                 SET status = 'SENDING_RPC', relayer_address = $1, updated_at = NOW()
                 WHERE id = (
-    SELECT id FROM batch_transactions
+                    SELECT id FROM batch_transactions
                     WHERE batch_id = $2 AND status = 'PENDING'
                     ORDER BY id ASC
                     FOR UPDATE SKIP LOCKED
                     LIMIT 1
                 )
-RETURNING *
-    `, [relayerAddr, batchId]);
+                RETURNING *
+            `, [relayerAddr, batchId]);
             await client.query('COMMIT');
             return res.rows[0];
         } catch (e) {
@@ -406,33 +375,25 @@ RETURNING *
         }
     }
 
-    /**
-     * Fetches Merkle proof for a specific transaction in a batch using position indices.
-     */
     async getMerkleProof(batchId, transactionId) {
-        // 1. Get the starting leaf position
         const startRes = await this.pool.query(
             `SELECT position_index, hash FROM merkle_nodes WHERE batch_id = $1 AND level = 0 AND transaction_id = $2`,
             [batchId, transactionId]
         );
         if (startRes.rows.length === 0) return [];
 
-        // 2. Determine the maximum level (Root level)
         const maxLevelRes = await this.pool.query(
             `SELECT MAX(level) as max_level FROM merkle_nodes WHERE batch_id = $1`,
             [batchId]
         );
         const maxLevel = maxLevelRes.rows[0].max_level;
-        if (!maxLevel || maxLevel === 0) return [];
+        if (maxLevel === undefined || maxLevel === null) return [];
 
         let currentIndex = startRes.rows[0].position_index;
         const proof = [];
 
-        // 3. Traverse up the tree level by level to gather siblings
         for (let level = 0; level < maxLevel; level++) {
-            // Sibling index is calculated by XORing with 1 (0<->1, 2<->3, etc.)
             const siblingIndex = currentIndex ^ 1;
-
             const siblingRes = await this.pool.query(
                 `SELECT hash FROM merkle_nodes WHERE batch_id = $1 AND level = $2 AND position_index = $3`,
                 [batchId, level, siblingIndex]
@@ -441,8 +402,6 @@ RETURNING *
             if (siblingRes.rows.length > 0) {
                 proof.push(siblingRes.rows[0].hash);
             } else {
-                // Sibling not found in DB (odd number of nodes at this level)
-                // In our Merkle implementation, the last node is duplicated as its own sibling
                 const currentRes = await this.pool.query(
                     `SELECT hash FROM merkle_nodes WHERE batch_id = $1 AND level = $2 AND position_index = $3`,
                     [batchId, level, currentIndex]
@@ -451,14 +410,11 @@ RETURNING *
                     proof.push(currentRes.rows[0].hash);
                 }
             }
-
-            // Parent index is always half of current index (0,1 -> 0; 2,3 -> 1, etc.)
             currentIndex = currentIndex >> 1;
         }
         return proof;
     }
 
-    // 4. Process Logic (Sign & Send)
     async processTransaction(wallet, txDB, isRetry) {
         try {
             const contract = new ethers.Contract(this.contractAddress, this.contractABI, wallet);
@@ -469,69 +425,38 @@ RETURNING *
             }
             const chainId = this.cachedChainId;
 
-            // FETCH REAL PROOF from DB
             const proof = await this.getMerkleProof(txDB.batch_id, txDB.id);
-            if (proof.length === 0) {
-                console.warn(`[Engine] No proof found for tx ${txDB.id} in batch ${txDB.batch_id}. This will likely revert.`);
-            }
+            const amountVal = ethers.parseUnits(txDB.amount_usdc.toString(), 6);
 
-            const txRes = await this.pool.query('SELECT amount_usdc, wallet_address_to, batch_id FROM batch_transactions WHERE id = $1', [txDB.id]);
-            const batchTx = txRes.rows[0];
-            const amountVal = ethers.parseUnits(batchTx.amount_usdc.toString(), 6);
+            const batchRes = await this.pool.query('SELECT funder_address FROM batches WHERE id = $1', [txDB.batch_id]);
+            const funder = batchRes.rows[0].funder_address;
 
-            // Double check leaf local generation for audit
-            const abiCoder = ethers.AbiCoder.defaultAbiCoder();
-            const funderRes = await this.pool.query('SELECT funder_address FROM batches WHERE id = $1', [txDB.batch_id]);
-            const funder = funderRes.rows[0].funder_address;
-
-            const encodedData = abiCoder.encode(
-                ["uint256", "address", "uint256", "uint256", "address", "address", "uint256"],
-                [chainId, this.contractAddress, BigInt(txDB.batch_id), BigInt(txDB.id), funder, txDB.wallet_address_to, amountVal]
-            );
-            const leaf = ethers.keccak256(encodedData);
-            console.log(`[Engine] Worker ${wallet.address.substring(0, 6)} | Processing Leaf: ${leaf} | Proof Len: ${proof.length} `);
-
-            // PER-BATCH PERMIT: Get shared signature for this batch
             const permit = this.activePermits[txDB.batch_id];
-
             let txResponse;
 
             if (permit) {
-                console.log(`[Engine] Executing with Permit for Batch ${txDB.batch_id}(TX #${txDB.id})`);
-                // Estimate Gas for executeWithPermit
+                console.log(`[Engine] Executing with Permit for Batch ${txDB.batch_id} (TX #${txDB.id})`);
                 const gasLimit = await contract.executeWithPermit.estimateGas(
-                    txDB.batch_id, txDB.id, funder, batchTx.wallet_address_to, amountVal, proof,
+                    txDB.batch_id, txDB.id, funder, txDB.wallet_address_to, amountVal, proof,
                     permit.deadline, permit.v, permit.r, permit.s
                 );
-
                 txResponse = await contract.executeWithPermit(
-                    txDB.batch_id,
-                    txDB.id,
-                    funder,
-                    batchTx.wallet_address_to,
-                    amountVal,
-                    proof,
-                    permit.deadline,
-                    permit.v,
-                    permit.r,
-                    permit.s,
-                    { gasLimit: gasLimit * 120n / 100n } // 20% buffer
+                    txDB.batch_id, txDB.id, funder, txDB.wallet_address_to, amountVal, proof,
+                    permit.deadline, permit.v, permit.r, permit.s,
+                    { gasLimit: gasLimit * 125n / 100n }
                 );
             } else {
-                console.log(`[Engine] Executing Standard for Batch ${txDB.batch_id}(TX #${txDB.id})`);
-                // Fallback to standard execution (requires manual allowance)
+                console.log(`[Engine] Executing Standard for Batch ${txDB.batch_id} (TX #${txDB.id})`);
                 const gasLimit = await contract.executeTransaction.estimateGas(
                     txDB.batch_id, txDB.id, funder, txDB.wallet_address_to, amountVal, proof
                 );
-
                 txResponse = await contract.executeTransaction(
                     txDB.batch_id, txDB.id, funder, txDB.wallet_address_to, amountVal, proof,
-                    { gasLimit: gasLimit * 120n / 100n }
+                    { gasLimit: gasLimit * 125n / 100n }
                 );
             }
 
-            const gasPriceVal = txResponse.gasPrice || txResponse.maxFeePerGas || 0n;
-            console.log(`[Blockchain][Tx] SENT: ${txResponse.hash} | TxID: ${txDB.id} | From: ${wallet.address} | To: ${txDB.wallet_address_to} | Amount: ${txDB.amount_usdc} USDC | Nonce: ${txResponse.nonce} | GasPrice: ${ethers.formatUnits(gasPriceVal, 'gwei')} gwei`);
+            console.log(`[Blockchain][Tx] SENT: ${txResponse.hash} | TxID: ${txDB.id} | From: ${wallet.address}`);
             await txResponse.wait();
             console.log(`[Blockchain][Tx] CONFIRMED: ${txResponse.hash} | Batch: ${txDB.batch_id} | TxID: ${txDB.id}`);
 
@@ -539,276 +464,143 @@ RETURNING *
                 `UPDATE batch_transactions SET status = 'SENT', tx_hash = $1, updated_at = NOW() WHERE id = $2`,
                 [txResponse.hash, txDB.id]
             );
-
-            // Update Relayer Last Activity & Balance (PROACTIVE)
             await this.syncRelayerBalance(wallet.address);
-
-            return { success: true, txHash: txResponse.hash, nonce: txResponse.nonce };
+            return { success: true, txHash: txResponse.hash };
         } catch (e) {
             if (e.message && e.message.includes("Tx already executed")) {
-                console.log(`⚠️ Tx ${txDB.id} already on - chain.Recovered.`);
+                console.log(`⚠️ Tx ${txDB.id} already on-chain. Recovered.`);
                 await this.pool.query(`UPDATE batch_transactions SET status = 'COMPLETED', tx_hash = 'RECOVERED', updated_at = NOW() WHERE id = $1`, [txDB.id]);
-                return;
+                return { success: true, txHash: 'RECOVERED' };
             }
-            console.error(`Tx Failed: ${txDB.id} `, e);
+            console.error(`Tx Failed: ${txDB.id}`, e.message);
             await this.pool.query(`UPDATE batch_transactions SET status = 'FAILED', updated_at = NOW() WHERE id = $1`, [txDB.id]);
+            return { success: false, error: e.message };
         }
     }
 
-    // 8. Estimate total gas for a batch using statistical sampling (FAST)
     async estimateBatchGas(batchId) {
-        const startTime = Date.now();
-        console.log(`[Estimate] Starting optimization for batch ${batchId}`);
-
-        // Fetch all pending transactions for the batch
         const txRes = await this.pool.query('SELECT id, amount_usdc, wallet_address_to FROM batch_transactions WHERE batch_id = $1 AND status = $2', [batchId, 'PENDING']);
         const txs = txRes.rows;
-        const totalCount = txs.length;
-
-        console.log(`[Estimate] Found ${totalCount} transactions in batch ${batchId} `);
-        if (totalCount === 0) return { totalGas: 0n, totalCostWei: 0n };
+        if (txs.length === 0) return { totalCostWei: 0n };
 
         const batchRes = await this.pool.query('SELECT funder_address FROM batches WHERE id = $1', [batchId]);
         const funder = batchRes.rows[0]?.funder_address || ethers.ZeroAddress;
-        const contract = new ethers.Contract(this.contractAddress, this.contractABI, this.provider);
 
-        // Sampling Strategy: Estimate first 5 transactions to get an average
-        const sampleSize = Math.min(5, totalCount);
+        const sampleSize = Math.min(3, txs.length);
         const sampleTxs = txs.slice(0, sampleSize);
+        let totalSampleGas = 0n;
 
-        console.log(`[Estimate] Estimating sample of ${sampleSize} transactions SEQUENTIALLY...`);
-
-        const sampleEstimates = [];
+        const contract = new ethers.Contract(this.contractAddress, this.contractABI, this.provider);
         for (const tx of sampleTxs) {
-            const amountVal = ethers.parseUnits(tx.amount_usdc.toString(), 6);
-            const proof = [ethers.ZeroHash]; // Placeholder proof for estimation
             try {
                 const gas = await contract.executeTransaction.estimateGas(
-                    batchId, tx.id, funder, tx.wallet_address_to, amountVal, proof
+                    batchId, tx.id, funder, tx.wallet_address_to, ethers.parseUnits(tx.amount_usdc.toString(), 6), [ethers.ZeroHash]
                 );
-                sampleEstimates.push(gas);
-                // Tiny delay to breathe between calls if rate limited
-                await new Promise(r => setTimeout(r, 100));
+                totalSampleGas += gas;
             } catch (e) {
-                // Return a safe conservative estimate for USDC transfers + logic overhead
-                sampleEstimates.push(150000n);
+                totalSampleGas += 150000n;
             }
         }
 
-        const totalSampleGas = sampleEstimates.reduce((acc, val) => acc + val, 0n);
         const averageGas = totalSampleGas / BigInt(sampleSize);
-        const extrapolatedTotalGas = averageGas * BigInt(totalCount);
-
-        // Add 20% buffer for safety (reduced from 50% to avoid extreme overfunding)
-        const bufferedGas = extrapolatedTotalGas * 120n / 100n;
-
+        const bufferedGas = (averageGas * BigInt(txs.length)) * 130n / 100n;
         const feeData = await this.provider.getFeeData();
-        const gasPrice = feeData.gasPrice || 50000000000n; // fallback to 50 gwei (standard for Polygon)
-        const totalCostWei = bufferedGas * gasPrice;
+        const gasPrice = feeData.gasPrice || 50000000000n;
 
-        const duration = (Date.now() - startTime) / 1000;
-        console.log(`[Estimate] COMPLETED in ${duration} s.Total extrapolated gas: ${extrapolatedTotalGas}.Buffered: ${bufferedGas}.Total: ${ethers.formatEther(totalCostWei)} MATIC`);
-
-        return { totalGas: bufferedGas, totalCostWei };
+        return { totalCostWei: bufferedGas * gasPrice };
     }
 
-    // 9. Distribute buffered gas cost equally among relayers
     async distributeGasToRelayers(batchId, relayers) {
-        console.log(`[Background] distributeGasToRelayers | Batch:${batchId} | Relayers:${relayers.length} `);
         const { totalCostWei } = await this.estimateBatchGas(batchId);
-        if (relayers.length === 0) {
-            console.warn(`[Background] ⚠️ distributeGasToRelayers: No relayers provided!`);
-            return;
-        }
+        if (relayers.length === 0 || totalCostWei === 0n) return;
+
         const perRelayerWei = totalCostWei / BigInt(relayers.length);
-        console.log(`🪙[Background] Total Estimated: ${ethers.formatEther(totalCostWei)} MATIC -> ${ethers.formatEther(perRelayerWei)} per relayer`);
+        console.log(`🪙 [Background] Funding: ${ethers.formatEther(totalCostWei)} MATIC total (${ethers.formatEther(perRelayerWei)} per relayer)`);
         await this.fundRelayers(batchId, relayers, perRelayerWei);
     }
 
-    // Optimized funding logic using Single Transaction Batch (distributeMatic)
     async fundRelayers(batchId, relayers, amountWei) {
-        if (!amountWei || amountWei === 0n) {
-            console.log(`[Fund] Funding skipped: amount is zero or undefined.`);
-            return;
-        }
-        // ... (existing faucet balance check logic remains)
-        const faucetAddr = this.faucetWallet.address;
-        const faucetBal = await this.provider.getBalance(faucetAddr);
-        const count = BigInt(relayers.length);
-        const _amountWei = BigInt(amountWei);
-        const totalValueToSend = _amountWei * count;
+        if (!amountWei || amountWei === 0n) return;
 
         try {
-            console.log(`[Fund] Sending Atomic Distribution via Smart Contract: ${this.contractAddress}...`);
             const contract = new ethers.Contract(this.contractAddress, this.contractABI, this.faucetWallet);
+            const totalValueToSend = amountWei * BigInt(relayers.length);
 
-            // Fetch current fee data
-            const feeData = await this.provider.getFeeData();
-            const overrides = {
-                value: totalValueToSend,
-                gasLimit: 80000n * count + 100000n
-            };
+            const tx = await contract.distributeMatic(relayers.map(r => r.address), amountWei, { value: totalValueToSend });
+            console.log(`[Blockchain][Fund] Atomic Batch SENT: ${tx.hash}`);
+            await tx.wait();
 
-            if (feeData.maxFeePerGas != null) {
-                const maxFee = BigInt(feeData.maxFeePerGas);
-                const maxPriority = BigInt(feeData.maxPriorityFeePerGas || 0n);
-                overrides.maxFeePerGas = maxFee * 120n / 100n;
-                overrides.maxPriorityFeePerGas = maxPriority * 120n / 100n;
-                if (overrides.maxPriorityFeePerGas > overrides.maxFeePerGas) overrides.maxPriorityFeePerGas = overrides.maxFeePerGas;
-            } else {
-                const gasP = (feeData.gasPrice != null) ? BigInt(feeData.gasPrice) : 50000000000n;
-                overrides.gasPrice = gasP * 120n / 100n;
-            }
-
-            const tx = await contract.distributeMatic(relayers.map(r => r.address), _amountWei, overrides);
-
-            const gasPriceVal = tx.gasPrice || tx.maxFeePerGas || 0n;
-            console.log(`[Blockchain][Fund] Atomic Batch Tx SENT: ${tx.hash} | Faucet: ${this.faucetWallet.address} | Count: ${relayers.length} | AmountPerRelayer: ${ethers.formatUnits(_amountWei, 18)} MATIC | Nonce: ${tx.nonce} | GasPrice: ${ethers.formatUnits(gasPriceVal, 'gwei')} gwei`);
-            const receipt = await tx.wait();
-
-            const effGasPrice = receipt.effectiveGasPrice || receipt.gasPrice || 0n;
-            const cost = BigInt(receipt.gasUsed || 0n) * BigInt(effGasPrice);
-            console.log(`[Blockchain][Fund] Atomic Batch CONFIRMED | Hash: ${tx.hash} | Cost: ${ethers.formatEther(cost)} MATIC`);
-
-            // Store transaction hash
-            console.log(`[Fund] Updating relayers for Batch ${batchId} with TX: ${tx.hash}`);
-            await Promise.all(relayers.map(r => this.pool.query(
-                `UPDATE relayers SET transactionhash_deposit = $1 WHERE address = $2 AND batch_id = $3`,
-                [tx.hash, r.address, batchId]
-            )));
-
-            // Sync
+            await Promise.all(relayers.map(r =>
+                this.pool.query(`UPDATE relayers SET transactionhash_deposit = $1 WHERE address = $2 AND batch_id = $3`, [tx.hash, r.address, batchId])
+            ));
             await Promise.all(relayers.map(r => this.syncRelayerBalance(r.address)));
-
-            console.log(`[Fund] Atomic Funding Cycle Completed Successfully for Batch ${batchId}.`);
-
         } catch (err) {
-            console.error(`❌ Atomic batch funding failed: `, err.message);
-            console.log(`⚠️ Entering Sequential Fallback...`);
-            // ... (rest of fallback logic remains, but now we have batchId)
-
-            // Fallback to manual sequential
+            console.error(`❌ Atomic funding failed, falling back to sequential:`, err.message);
             let nonce = await this.faucetWallet.getNonce();
             for (const r of relayers) {
                 try {
-                    // Check if relayer already has enough balance to skip
-                    const relBal = await this.provider.getBalance(r.address);
-                    if (relBal >= amountWei) {
-                        console.log(`   ⏭️ Skipping ${r.address.substring(0, 8)} (already has ${ethers.formatEther(relBal)} MATIC)`);
-                        continue;
-                    }
-
                     const tx = await this.faucetWallet.sendTransaction({
                         to: r.address,
                         value: amountWei,
                         nonce: nonce++,
                         gasLimit: 21000n
                     });
-                    console.log(`   🚀 [Blockchain][Fallback] Fund SENT to ${r.address}: ${tx.hash} | Amount: ${ethers.formatEther(amountWei)} MATIC | Faucet: ${this.faucetWallet.address}`);
                     await tx.wait();
-                    console.log(`   ✅ [Blockchain][Fallback] Fund CONFIRMED for ${r.address}: ${tx.hash}`);
-                    // Store hash for this relayer
-                    await this.pool.query(`UPDATE relayers SET transactionhash_deposit = $1 WHERE address = $2 AND batch_id = $3`, [tx.hash, r.address, r.batch_id]);
-                    this.trackFallbackTx(tx, r.address);
+                    await this.pool.query(`UPDATE relayers SET transactionhash_deposit = $1 WHERE address = $2 AND batch_id = $3`, [tx.hash, r.address, batchId]);
+                    await this.syncRelayerBalance(r.address);
                 } catch (ser) {
-                    console.error(`   ❌ Fallback failed for ${r.address}: `, ser.message);
+                    console.error(`   ❌ Fallback failed for ${r.address}:`, ser.message);
                 }
             }
         }
     }
 
-    // Helper for non-blocking tracking
-    async trackFallbackTx(tx, address) {
-        try {
-            await tx.wait();
-            await this.syncRelayerBalance(address);
-        } catch (e) {
-            console.warn(`[Fund] Fallback tracking failed for ${address}`);
-        }
-    }
-
-    // 6. Persistence
     async persistRelayers(batchId, relayers) {
-        console.log(`Persisting ${relayers.length} relayers for batch ${batchId}...`);
-        try {
-            for (const r of relayers) {
-                await this.pool.query(
-                    `INSERT INTO relayers(batch_id, address, private_key, status) VALUES($1, $2, $3, 'active')`,
-                    [batchId, r.address, r.privateKey]
-                );
-            }
-            console.log("✅ Relayers persisted to DB.");
-        } catch (err) {
-            console.error("❌ Failed to persist relayers:", err);
-            throw err; // Re-throw to stop process if persistence fails
+        for (const r of relayers) {
+            await this.pool.query(
+                `INSERT INTO relayers(batch_id, address, private_key, status) VALUES($1, $2, $3, 'active')`,
+                [batchId, r.address, r.privateKey]
+            );
         }
     }
 
-    // 7. Refund Logic: Parallel Sweep back to Faucet
     async returnFundsToFaucet(relayers, batchId) {
-        console.log(`[Refund] Starting sweep for ${relayers.length} relayers in Batch ${batchId}...`);
-
         const faucetAddress = this.faucetWallet.address;
         const feeData = await this.provider.getFeeData();
-        const gasPrice = feeData.gasPrice || 35000000000n; // 35 gwei fallback
-        const gasLimit = 21000n; // Standard transfer
-        const costWei = gasLimit * gasPrice;
+        const gasPrice = feeData.gasPrice || 40000000000n;
+        const costWei = 21000n * gasPrice;
 
-        const refundPromises = relayers.map(async (r) => {
+        const promises = relayers.map(async (r) => {
             try {
                 const wallet = new ethers.Wallet(r.privateKey, this.provider);
-                const balance = await this.provider.getBalance(wallet.address);
-
-                // Dust Protection: Only refund if balance > cost + 0.01 MATIC buffer
-                const buffer = ethers.parseEther("0.01");
-                if (balance > (costWei + buffer)) {
-                    const amountToReturn = balance - costWei;
-                    console.log(`[Refund] Sweeping ${ethers.formatEther(amountToReturn)} MATIC from ${wallet.address.substring(0, 6)}...`);
-
-                    const tx = await wallet.sendTransaction({
-                        to: faucetAddress,
-                        value: amountToReturn,
-                        gasLimit: gasLimit,
-                        gasPrice: gasPrice
-                    });
-
-                    console.log(`[Blockchain][Refund] Tx SENT: ${tx.hash} | From: ${wallet.address} | To (Faucet): ${faucetAddress} | Amount: ${ethers.formatEther(amountToReturn)} MATIC`);
-                    // We don't await individually here to speed up, but we log the hash
-                    tx.wait().then(() => console.log(`[Blockchain][Refund] Tx CONFIRMED: ${tx.hash} | Relayer: ${wallet.address}`));
-
+                const bal = await this.provider.getBalance(wallet.address);
+                if (bal > (costWei + ethers.parseEther("0.01"))) {
+                    const amount = bal - costWei;
+                    const tx = await wallet.sendTransaction({ to: faucetAddress, value: amount, gasLimit: 21000n, gasPrice });
+                    await tx.wait();
                     return tx.hash;
-                } else {
-                    console.log(`[Refund] Skipping ${wallet.address.substring(0, 6)}: Balance too low(${ethers.formatEther(balance)} MATIC)`);
-                    return null;
                 }
             } catch (err) {
-                console.warn(`[Refund] Failed for relayer ${r.address.substring(0, 6)}: `, err.message);
-                return null;
+                console.warn(`[Refund] Failed for ${r.address.substring(0, 6)}:`, err.message);
             }
+            return null;
         });
 
-        const hashes = await Promise.all(refundPromises);
-        const successful = hashes.filter(h => h !== null).length;
-
-        console.log(`[Refund] Sweep complete for Batch ${batchId}.${successful}/${relayers.length} relayers returned funds.`);
-
-        // Update DB status
+        await Promise.all(promises);
         await this.pool.query(`UPDATE relayers SET status = 'drained', last_activity = NOW() WHERE batch_id = $1`, [batchId]);
     }
 
-    // Sweep Logic: Detect Zombies
     async fetchStuckTx(batchId, relayerAddr) {
         const client = await this.pool.connect();
         try {
             await client.query('BEGIN');
-            // Select stuck transaction (older than 2 mins)
             const res = await client.query(`
                 UPDATE batch_transactions
                 SET status = 'SENDING_RPC', relayer_address = $1, updated_at = NOW()
                 WHERE id = (
                     SELECT id FROM batch_transactions
                     WHERE batch_id = $2 
-                      AND status IN ('SENDING_RPC', 'FAILED')
+                      AND (status = 'SENDING_RPC' OR status = 'FAILED')
                       AND updated_at < NOW() - INTERVAL '2 MINUTES'
                     ORDER BY id ASC
                     FOR UPDATE SKIP LOCKED
@@ -817,13 +609,10 @@ RETURNING *
                 RETURNING *
             `, [relayerAddr, batchId]);
             await client.query('COMMIT');
-            if (res.rows.length > 0) {
-                console.log(`🧹 ZOMBIE DETECTED! Rescuing Tx ${res.rows[0].id}`);
-            }
+            if (res.rows.length > 0) console.log(`🧹 Rescuing stuck Tx ${res.rows[0].id}`);
             return res.rows[0];
         } catch (e) {
             await client.query('ROLLBACK');
-            console.error("Sweep Lock Error", e);
             return null;
         } finally {
             client.release();

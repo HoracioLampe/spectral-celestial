@@ -171,7 +171,7 @@ const txStatus = document.getElementById('txStatus');
 // --- Web3 Constants ---
 const POLYGON_CHAIN_ID = '0x89'; // 137
 const USDC_ADDRESS = '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359';
-const BATCH_DISTRIBUTOR_ADDRESS = "0x78318c7A0d4E7e403A5008F9DA066A489B65cBad";
+const BATCH_DISTRIBUTOR_ADDRESS = "0x3D8A8ae7Bb507104C7928B6e856c348104bD7406";
 const USDC_ABI = ["function balanceOf(address owner) view returns (uint256)", "function decimals() view returns (uint8)"];
 const USCD_ABI = ["function balanceOf(address owner) view returns (uint256)", "function decimals() view returns (uint8)"];
 let provider, signer, userAddress;
@@ -291,6 +291,13 @@ async function connectWallet() {
         walletAddress.textContent = `${userAddress.substring(0, 6)}...${userAddress.substring(38)}`;
 
         fetchBalances();
+
+        // Auto-fill Funder Address if in Batch View
+        const funderInput = document.getElementById('batchFunderAddress');
+        if (funderInput && !funderInput.value) {
+            funderInput.value = userAddress;
+            checkFunderBalance();
+        }
 
         window.ethereum.on('accountsChanged', () => location.reload());
         window.ethereum.on('chainChanged', () => location.reload());
@@ -565,6 +572,13 @@ window.openBatchDetail = async function (id) {
             updateDetailView(data.batch, data.transactions);
             // Refresh relayer balances for this batch
             refreshRelayerBalances();
+
+            // Auto-fill Funder Address if wallet is connected
+            const funderInput = document.getElementById('batchFunderAddress');
+            if (funderInput && userAddress) {
+                funderInput.value = userAddress;
+                checkFunderBalance();
+            }
         }
     } catch (error) {
         console.error(error);
@@ -781,6 +795,18 @@ async function uploadBatchFile() {
 
 async function generateMerkleTree() {
     if (!currentBatchId) return;
+
+    // Check if wallet is connected
+    if (!userAddress || !signer) {
+        if (confirm("⚠️ Debes conectar tu Wallet Funder para generar el Merkle Tree. ¿Deseas conectarla ahora?")) {
+            await connectWallet();
+            // After connection, the input should be auto-filled, but let's be sure
+            if (!userAddress) return;
+        } else {
+            return;
+        }
+    }
+
     const funder = batchFunderAddress.value.trim();
 
     if (!funder || !ethers.utils.isAddress(funder)) {
@@ -819,7 +845,7 @@ async function generateMerkleTree() {
     }
 }
 
-async function checkFounderBalance() {
+async function checkFunderBalance() {
     const address = batchFunderAddress.value.trim();
     if (!address || !ethers.utils.isAddress(address)) {
         if (merkleFounderBalance) merkleFounderBalance.textContent = "---";
@@ -838,7 +864,7 @@ async function checkFounderBalance() {
         if (merkleFounderBalance) merkleFounderBalance.textContent = "Error";
     }
 }
-window.checkFounderBalance = checkFounderBalance;
+window.checkFunderBalance = checkFunderBalance;
 
 async function fetchUSDCBalance(address) {
     if (!address || !ethers.utils.isAddress(address)) return "---";
@@ -1085,7 +1111,11 @@ async function signBatchPermit(batchId) {
 async function signBatchRoot(batchId) {
     if (!signer || !userAddress) throw new Error("Wallet no conectada");
 
-    // 1. Get Merkle Root from UI (or fetch if needed)
+    // 1. Get Batch Info (Need tx count and total amount for explicit signing)
+    const res = await fetch(`/api/batches/${batchId}`);
+    const data = await res.json();
+    if (!data.batch) throw new Error("Lote no encontrado");
+
     const rootEl = document.getElementById('displayMerkleRoot');
     const merkleRoot = rootEl ? rootEl.textContent.trim() : null;
 
@@ -1093,50 +1123,58 @@ async function signBatchRoot(batchId) {
         throw new Error("No hay Merkle Root válido generado para firmar.");
     }
 
-    // 2. Fetch Nonce from Contract
-    let provider;
-    if (window.ethereum) provider = new ethers.providers.Web3Provider(window.ethereum);
-    else provider = new ethers.providers.JsonRpcProvider("https://polygon-rpc.com");
+    // Explicit Metadata for EIP-712
+    const totalTransactions = data.batch.total_transactions || 0;
+    const totalAmountBase = data.batch.total_usdc || "0";
+    const totalAmountHuman = (parseFloat(totalAmountBase) / 1000000).toFixed(2);
 
+    // 2. Fetch Nonce from Contract
     const minABI = ["function nonces(address owner) view returns (uint256)"];
     const contract = new ethers.Contract(BATCH_DISTRIBUTOR_ADDRESS, minABI, provider);
-    const nonce = await contract.nonces(userAddress); // BigNumber
+    const nonce = await contract.nonces(userAddress);
 
-    console.log(`[RootSign] Signing root ${merkleRoot} for batch ${batchId} with nonce ${nonce}`);
+    const network = await provider.getNetwork();
+    const chainId = network.chainId;
+
+    console.log(`[RootSign] EIP-712 signing root ${merkleRoot} | Txs: ${totalTransactions} | Amount: ${totalAmountHuman} USDC`);
 
     // 3. Construct EIP-712 Data
-    // Domain is same as Permit usually (Name, Version, Verifier Contract, ChainId)
-    // We assume same domain as USDC or BatchDistributor? 
-    // Wait, the contract uses `toEthSignedMessageHash`. 
-    // AND it uses `keccak256(abi.encode(TYPEHASH, ...))`.
-    // The contract implements EIP-712 style struct hashing but seemingly MANUALLY in `setBatchRootWithSignature`.
-    // It DOES NOT use `_hashTypedDataV4`. 
-    // It uses `recover(toEthSignedMessageHash(structHash), signature)`.
-    // `toEthSignedMessageHash` prepends "\x19Ethereum Signed Message:\n32".
-    // This is NOT standard EIP-712 Typed Data signing. This is "Sign Hash" (eth_sign / personal_sign of a hash).
-    // Or it's a mix.
-    // Let's look at `setBatchRootWithSignature`:
-    // `bytes32 structHash = keccak(abi.encode(TYPEHASH, params...))`
-    // `recover(toEthSignedMessageHash(structHash), signature)`
-    // This means we must calculate the StructHash on client, AND THEN sign it as a binary message (or hex string).
+    const domain = {
+        name: 'BatchDistributor',
+        version: '1',
+        chainId: chainId,
+        verifyingContract: BATCH_DISTRIBUTOR_ADDRESS
+    };
 
-    const TYPEHASH = ethers.utils.keccak256(ethers.utils.toUtf8Bytes("SetBatchRoot(address funder,uint256 batchId,bytes32 merkleRoot,uint256 nonce)"));
+    const types = {
+        SetBatchRoot: [
+            { name: 'funder', type: 'address' },
+            { name: 'batchId', type: 'uint256' },
+            { name: 'merkleRoot', type: 'bytes32' },
+            { name: 'totalTransactions', type: 'uint256' },
+            { name: 'totalAmount', type: 'uint256' },
+            { name: 'nonce', type: 'uint256' }
+        ]
+    };
 
-    const abiCoder = ethers.utils.defaultAbiCoder;
-    const structHash = ethers.utils.keccak256(abiCoder.encode(
-        ['bytes32', 'address', 'uint256', 'bytes32', 'uint256'],
-        [TYPEHASH, userAddress, batchId, merkleRoot, nonce]
-    ));
+    const message = {
+        funder: userAddress,
+        batchId: batchId,
+        merkleRoot: merkleRoot,
+        totalTransactions: totalTransactions,
+        totalAmount: totalAmountBase,
+        nonce: nonce.toString()
+    };
 
-    // Sign the HASH using personal_sign (to match toEthSignedMessageHash)
-    // Note: in Ethers v5, signer.signMessage(binaryData) prepends the prefix.
-    // So we just pass the structHash bytes.
-    const signature = await signer.signMessage(ethers.utils.arrayify(structHash));
+    // This will trigger a Metamask prompt with clear fields
+    const signature = await signer._signTypedData(domain, types, message);
 
     return {
         merkleRoot,
         signature,
-        funder: userAddress
+        funder: userAddress,
+        totalTransactions,
+        totalAmount: totalAmountBase
     };
 }
 
