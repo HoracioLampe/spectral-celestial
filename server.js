@@ -26,6 +26,29 @@ const upload = multer({ dest: 'uploads/' });
 
 // --- API Endpoints ---
 
+// Get Public Transactions History (Home)
+app.get('/api/transactions', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM transactions ORDER BY timestamp DESC LIMIT 50');
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/transactions', async (req, res) => {
+    try {
+        const { tx_hash, from_address, to_address, amount, gas_used } = req.body;
+        const result = await pool.query(
+            'INSERT INTO transactions (tx_hash, from_address, to_address, amount, gas_used) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+            [tx_hash, from_address, to_address, amount, gas_used]
+        );
+        res.json(result.rows[0]);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // Get all batches
 app.get('/api/batches', async (req, res) => {
     try {
@@ -219,7 +242,7 @@ app.post('/api/batches/:id/merkle', async (req, res) => {
         const root = currentLevelNodes[0].hash;
 
         // 3. Finalize Batch
-        await client.query('UPDATE batches SET merkle_root = $1, funder_address = $2, updated_at = NOW() WHERE id = $3', [root, funder_address, batchId]);
+        await client.query('UPDATE batches SET merkle_root = $1, funder_address = $2 WHERE id = $3', [root, funder_address, batchId]);
 
         await client.query('COMMIT');
         res.json({ root });
@@ -322,12 +345,28 @@ app.get('*', (req, res) => {
 app.get('/api/setup', async (req, res) => {
     const client = await pool.connect();
     try {
-        console.log("Running DB Setup...");
+        console.log("Running DB Setup v2.2.15...");
+
+        // 1. Ensure updated_at exists
         await client.query(`
             ALTER TABLE batches 
             ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();
         `);
-        res.json({ message: "Database setup completed successfully. Column 'updated_at' ensured." });
+
+        // 2. Diagnostics: List columns
+        const colRes = await client.query(`
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'batches'
+        `);
+        const columns = colRes.rows.map(r => r.column_name);
+
+        res.json({
+            version: "2.2.15",
+            message: "Database setup diagnostic completed.",
+            columns_found: columns,
+            success: columns.includes('updated_at')
+        });
     } catch (err) {
         console.error("Setup Error:", err);
         res.status(500).json({ error: err.message });
@@ -336,10 +375,10 @@ app.get('/api/setup', async (req, res) => {
     }
 });
 
-const VERSION = "2.2.14";
+const VERSION = "2.2.16";
 const PORT_LISTEN = process.env.PORT || 3000;
 
 app.listen(PORT_LISTEN, () => {
     console.log(`Server is running on port ${PORT_LISTEN}`);
-    console.log(`🚀 Version: ${VERSION} (DB Setup Engine)`);
+    console.log(`🚀 Version: ${VERSION} (History & Merkle Fix)`);
 });
