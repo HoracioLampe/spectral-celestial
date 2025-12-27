@@ -200,12 +200,11 @@ class RelayerEngine {
 
                 if (rootSignatureData) {
                     try {
-                        console.log(`[Engine] ✍️ Executing setBatchRoot with signature...`);
-                        const writerContract = new ethers.Contract(this.contractAddress, this.contractABI, this.faucetWallet);
-
-                        // Verify nonce (optional but good debugging)
-                        // const nonce = await writerContract.nonces(funderAddress);
-                        // console.log(`[Engine] Funder Nonce on-chain: ${nonce}`);
+                        console.log(`[Engine][Root] 📝 PREPARING MERKLE ROOT REGISTRATION:`);
+                        console.log(`   > Batch ID:    ${batchId}`);
+                        console.log(`   > Funder:      ${rootSignatureData.funder}`);
+                        console.log(`   > Merkle Root: ${rootSignatureData.merkleRoot}`);
+                        console.log(`   > Executor:    ${this.faucetWallet.address} (Faucet)`);
 
                         const tx = await writerContract.setBatchRootWithSignature(
                             rootSignatureData.funder,
@@ -213,9 +212,10 @@ class RelayerEngine {
                             rootSignatureData.merkleRoot,
                             rootSignatureData.signature
                         );
-                        console.log(`[Blockchain][Root] SetBatchRoot TX Sent: ${tx.hash}`);
-                        await tx.wait();
-                        console.log(`[Blockchain][Root] SetBatchRoot Confirmed.`);
+                        console.log(`[Blockchain][Root] 🚀 Registration TX Sent: ${tx.hash}`);
+
+                        const receipt = await tx.wait();
+                        console.log(`[Blockchain][Root] ✅ Registration CONFIRMED (Block: ${receipt.blockNumber})`);
                     } catch (rootErr) {
                         console.error(`[Engine] ❌ Failed to set batch root via signature: ${rootErr.message}`);
                         // If we fail to set root, we MUST ABORT because execution will fail invalid Merkle Proof
@@ -292,13 +292,13 @@ class RelayerEngine {
                     if (result && result.success) {
                         const permitVal = this.activePermits[batchId]?.amount;
                         const permitValStr = permitVal ? ethers.formatUnits(permitVal, 6) : "UNKNOWN";
-                        console.log(`[PermitBarrier] ✅ Primary Transaction CONFIRMED.`);
-                        console.log(`[PermitBarrier] 📝 PERMIT DETAILS:`);
-                        console.log(`   > Total Permit Value: ${permitValStr} USDC`);
+                        console.log(`[Engine][Permit] ✅ PERMIT STEP COMPLETED:`);
+                        console.log(`   > Batch ID:           ${batchId}`);
+                        console.log(`   > Total Allowance:    ${permitValStr} USDC`);
                         console.log(`   > Executor (Faucet):  ${this.faucetWallet.address}`);
-                        console.log(`   > Transaction Hash:   ${result.txHash}`);
+                        console.log(`   > Milestone Hash:     ${result.txHash}`);
                     } else {
-                        console.warn(`[PermitBarrier] Primary Result was empty or failed?`);
+                        console.warn(`[Engine][Permit] ⚠️ Primary Permit Result was empty or failed?`);
                     }
 
                     // 3. Remove Permit
