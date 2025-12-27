@@ -125,11 +125,18 @@ app.post('/api/batches/:id/upload', upload.single('file'), async (req, res) => {
         let validTxs = 0;
         let loopIndex = 0;
 
-        for (const row of data) {
+        for (const rawRow of data) {
             loopIndex++;
-            const wallet = row['Wallet'] || row['address'] || row['wallet'];
-            const amount = row['Amount'] || row['amount'] || row['usdc'];
-            const ref = row['Reference'] || row['reference'] || '';
+
+            // Normalize keys to lowercase
+            const row = {};
+            Object.keys(rawRow).forEach(k => {
+                row[k.toLowerCase().trim()] = rawRow[k];
+            });
+
+            const wallet = row['wallet'] || row['address'] || row['recipient'] || row['to'];
+            const amount = row['amount'] || row['usdc'] || row['value'];
+            const ref = row['reference'] || row['ref'];
 
             if (loopIndex <= 3) {
                 console.log(`[UPLOAD] Processing Row ${loopIndex}: Wallet=${wallet}, Amount=${amount}`);
@@ -422,10 +429,10 @@ app.get('/api/setup', async (req, res) => {
     }
 });
 
-const VERSION = "2.2.18";
+const VERSION = "2.2.19";
 const PORT_LISTEN = process.env.PORT || 3000;
 
 app.listen(PORT_LISTEN, () => {
     console.log(`Server is running on port ${PORT_LISTEN}`);
-    console.log(`🚀 Version: ${VERSION} (Deep Debug Upload)`);
+    console.log(`🚀 Version: ${VERSION} (Robust Excel Fix)`);
 });
