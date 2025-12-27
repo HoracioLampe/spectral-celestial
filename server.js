@@ -384,6 +384,8 @@ app.get('/api/relayers/:batchId', async (req, res) => {
     }
 });
 
+const QUICKNODE_URL = "https://fluent-clean-orb.matic.quiknode.pro/d95e5af7a69e7b5f8c09a440a5985865d6f4ae93/";
+
 // Faucet Management API
 app.get('/api/faucet', async (req, res) => {
     try {
@@ -392,8 +394,8 @@ app.get('/api/faucet', async (req, res) => {
 
         if (result.rows.length > 0) {
             const row = result.rows[0];
-            // Use fallback if env is missing
-            const rpcUrl = process.env.RPC_URL || "https://polygon-rpc.com";
+            // Use QuickNode fallback if env is missing
+            const rpcUrl = process.env.RPC_URL || QUICKNODE_URL;
             const provider = new ethers.JsonRpcProvider(rpcUrl);
             const balance = await provider.getBalance(row.address);
             res.json({
@@ -425,6 +427,13 @@ app.post('/api/faucet/generate', async (req, res) => {
 
 app.get('/api/logs', async (req, res) => {
     res.json({ message: "Logs are available in the console" });
+});
+
+app.get('/api/config', (req, res) => {
+    res.json({
+        RPC_URL: process.env.RPC_URL || QUICKNODE_URL,
+        WS_RPC_URL: process.env.WS_RPC_URL || ""
+    });
 });
 
 // Fallback para SPA
