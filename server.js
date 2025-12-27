@@ -318,10 +318,28 @@ app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-const VERSION = "2.2.13";
+// Setup Endpoint for DB migrations
+app.get('/api/setup', async (req, res) => {
+    const client = await pool.connect();
+    try {
+        console.log("Running DB Setup...");
+        await client.query(`
+            ALTER TABLE batches 
+            ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();
+        `);
+        res.json({ message: "Database setup completed successfully. Column 'updated_at' ensured." });
+    } catch (err) {
+        console.error("Setup Error:", err);
+        res.status(500).json({ error: err.message });
+    } finally {
+        client.release();
+    }
+});
+
+const VERSION = "2.2.14";
 const PORT_LISTEN = process.env.PORT || 3000;
 
 app.listen(PORT_LISTEN, () => {
     console.log(`Server is running on port ${PORT_LISTEN}`);
-    console.log(`🚀 Version: ${VERSION} (NPM CI Fix)`);
+    console.log(`🚀 Version: ${VERSION} (DB Setup Engine)`);
 });
