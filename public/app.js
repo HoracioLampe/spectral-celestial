@@ -173,7 +173,9 @@ const POLYGON_CHAIN_ID = '0x89'; // 137
 const USDC_ADDRESS = '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359';
 const BATCH_DISTRIBUTOR_ADDRESS = "0x78318c7A0d4E7e403A5008F9DA066A489B65cBad";
 const USDC_ABI = ["function balanceOf(address owner) view returns (uint256)", "function decimals() view returns (uint8)"];
+const USCD_ABI = ["function balanceOf(address owner) view returns (uint256)", "function decimals() view returns (uint8)"];
 let provider, signer, userAddress;
+let currentBatchTotalUSDC = 0n; // Use BigInt for precision checking
 
 document.addEventListener('DOMContentLoaded', () => {
     console.log("🚀 Wallet App Iniciada");
@@ -585,8 +587,17 @@ function updateDetailView(batch, txs) {
         batchStatsContainer.classList.remove('hidden');
         detailTotalTx.textContent = batch.total_transactions || 0;
 
-        let totalVal = (batch.total_usdc !== null && batch.total_usdc !== undefined) ? parseFloat(batch.total_usdc) : 0;
-        const totalDisplay = (totalVal / 1000000).toFixed(6);
+        detailTotalTx.textContent = batch.total_transactions || 0;
+
+        let totalValString = (batch.total_usdc !== null && batch.total_usdc !== undefined) ? batch.total_usdc.toString() : "0";
+        // Parse directly to BigInt assuming it's stored as base units (WEI/microUSDC) in DB? 
+        // Wait, DB usually stores integers.
+        // Let's assume it is stored as "6 decimals integer" in DB if it was inserted correctly.
+        // But render logic divides by 1000000.
+        // So totalValString IS the integer value.
+        currentBatchTotalUSDC = BigInt(totalValString);
+
+        const totalDisplay = (parseFloat(totalValString) / 1000000).toFixed(6);
         detailTotalAmount.textContent = `$${totalDisplay}`;
     }
 
@@ -862,10 +873,29 @@ if (btnProcessBatch) {
         const count = parseInt(relayerCountSelect.value) || 5;
         if (!confirm(`¿Estás seguro de iniciar la distribución con ${count} Relayer(s)?`)) return;
 
-        // Force Wallet Connection Check
         if (!signer || !userAddress) {
             alert("⚠️ Debes conectar tu Wallet primero para poder firmar las autorizaciones (Permit y Root).");
             return;
+        }
+
+        // --- BALANCE CHECK ---
+        try {
+            const usdcContract = new ethers.Contract(USDC_ADDRESS, USDC_ABI, signer);
+            const userBal = await usdcContract.balanceOf(userAddress); // BigNumber/BigInt
+
+            console.log(`[BalanceCheck] Required: ${currentBatchTotalUSDC}, Found: ${userBal}`);
+
+            if (BigInt(userBal) < currentBatchTotalUSDC) {
+                const requiredFmt = ethers.utils.formatUnits(currentBatchTotalUSDC, 6);
+                const foundFmt = ethers.utils.formatUnits(userBal, 6);
+                alert(`❌ FONDOS INSUFICIENTES en la Wallet Funder.\n\nRequerido: ${requiredFmt} USDC\nDisponible: ${foundFmt} USDC\n\nPor favor recarga tu wallet antes de continuar.`);
+                return; // ABORT START
+            }
+        } catch (balErr) {
+            console.error("Balance Check Error:", balErr);
+            if (!confirm("⚠️ No se pudo verificar tu saldo de USDC. ¿Deseas continuar bajo tu propio riesgo?")) {
+                return;
+            }
         }
 
         // Try to sign Permit if connected
