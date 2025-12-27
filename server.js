@@ -522,10 +522,15 @@ app.post('/api/batches/:id/merkle', async (req, res) => {
                 const left = currentNodes[i];
                 const right = (i + 1 < currentNodes.length) ? currentNodes[i + 1] : left; // Duplicate last if odd
 
-                // Hash Parent = Keccak256(Left + Right)
+                // FIX: Sort siblings for compatibility with the OpenZeppelin-style/Standard Merkle verification
+                // The smart contract uses: if (computedHash <= proofElement) ...
+                const [h1, h2] = [left.hash, right.hash];
+                const [first, second] = BigInt(h1) < BigInt(h2) ? [h1, h2] : [h2, h1];
+
+                // Hash Parent = Keccak256(First + Second)
                 const parentHash = ethers.solidityPackedKeccak256(
                     ['bytes32', 'bytes32'],
-                    [left.hash, right.hash]
+                    [first, second]
                 );
 
                 const nextIndex = nextLevelNodes.length;
@@ -691,5 +696,5 @@ app.get('*', (req, res) => {
 
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
-    console.log("🚀 Version: 2.2.5 (Verbose Logging Enabled)");
+    console.log("🚀 Version: 2.2.6 (Merkle Sorting Fix)");
 });
