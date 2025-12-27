@@ -23,8 +23,10 @@ class RelayerEngine {
             "function executeWithPermit(uint256 batchId, uint256 txId, address funder, address recipient, uint256 amount, bytes32[] calldata proof, uint256 deadline, uint8 v, bytes32 r, bytes32 s) external",
             "function processedLeaves(bytes32) view returns (bool)",
             "function distributeMatic(address[] calldata recipients, uint256 amount) external payable",
+            "function distributeMatic(address[] calldata recipients, uint256 amount) external payable",
             "function setBatchRoot(uint256 batchId, bytes32 merkleRoot) external",
-            "function setBatchRootWithSignature(address funder, uint256 batchId, bytes32 merkleRoot, bytes calldata signature) external"
+            "function setBatchRootWithSignature(address funder, uint256 batchId, bytes32 merkleRoot, bytes calldata signature) external",
+            "function batchRoots(address funder, uint256 batchId) view returns (bytes32)"
         ];
     }
 
@@ -182,24 +184,61 @@ class RelayerEngine {
         const batchRes = await this.pool.query('SELECT funder_address FROM batches WHERE id = $1', [batchId]);
         const funderAddress = batchRes.rows[0]?.funder_address;
 
-        // 1.5 Set Batch Root via Signature (if provided)
-        if (rootSignatureData && funderAddress) {
-            try {
-                console.log(`[Engine] ✍️ Executing setBatchRoot with signature...`);
-                const contract = new ethers.Contract(this.contractAddress, this.contractABI, this.faucetWallet);
-                // setBatchRootWithSignature(address funder, uint256 batchId, bytes32 merkleRoot, bytes calldata signature)
-                const tx = await contract.setBatchRootWithSignature(
-                    rootSignatureData.funder,
-                    BigInt(batchId),
-                    rootSignatureData.merkleRoot,
-                    rootSignatureData.signature
-                );
-                console.log(`[Blockchain][Root] SetBatchRoot TX Sent: ${tx.hash}`);
-                await tx.wait();
-                console.log(`[Blockchain][Root] SetBatchRoot Confirmed.`);
-            } catch (rootErr) {
-                console.error(`[Engine] ❌ Failed to set batch root via signature: ${rootErr.message}`);
-                // Proceeding might fail if root not set, but we continue in case it was already set.
+        if (funderAddress) {
+            // --- 1.2 VERIFY ON-CHAIN ROOT ---
+            const contract = new ethers.Contract(this.contractAddress, this.contractABI, this.provider);
+            const onChainRoot = await contract.batchRoots(funderAddress, batchId);
+
+            // Get Backend Root
+            const dbBatchRes = await this.pool.query('SELECT merkle_root FROM batches WHERE id = $1', [batchId]);
+            const dbRoot = dbBatchRes.rows[0]?.merkle_root;
+
+            console.log(`[Engine] 🔍 P-Check Root: Chain=${onChainRoot} vs DB=${dbRoot}`);
+
+            if (onChainRoot === ethers.ZeroHash) {
+                console.log(`[Engine] ⚠️ Root NOT set on-chain.`);
+
+                if (rootSignatureData) {
+                    try {
+                        console.log(`[Engine] ✍️ Executing setBatchRoot with signature...`);
+                        const writerContract = new ethers.Contract(this.contractAddress, this.contractABI, this.faucetWallet);
+
+                        // Verify nonce (optional but good debugging)
+                        // const nonce = await writerContract.nonces(funderAddress);
+                        // console.log(`[Engine] Funder Nonce on-chain: ${nonce}`);
+
+                        const tx = await writerContract.setBatchRootWithSignature(
+                            rootSignatureData.funder,
+                            BigInt(batchId),
+                            rootSignatureData.merkleRoot,
+                            rootSignatureData.signature
+                        );
+                        console.log(`[Blockchain][Root] SetBatchRoot TX Sent: ${tx.hash}`);
+                        await tx.wait();
+                        console.log(`[Blockchain][Root] SetBatchRoot Confirmed.`);
+                    } catch (rootErr) {
+                        console.error(`[Engine] ❌ Failed to set batch root via signature: ${rootErr.message}`);
+                        // If we fail to set root, we MUST ABORT because execution will fail invalid Merkle Proof
+                        throw new Error(`Failed to set Batch Root: ${rootErr.message}`);
+                    }
+                } else {
+                    console.error(`[Engine] ⛔ CRITICAL: Root not set and no signature provided.`);
+                    // If we are strictly resuming, maybe it's fine if the root was set previously? 
+                    // But we just checked onChainRoot is ZeroHash. So it is NOT fine.
+                    throw new Error("Batch Root not registered on-chain. Please sign the root in the UI.");
+                }
+            } else {
+                // Root is set. Verify match.
+                if (dbRoot && onChainRoot !== dbRoot) {
+                    console.error(`[Engine] ⛔ CRITICAL: Root Mismatch!`);
+                    console.error(`   DB:    ${dbRoot}`);
+                    console.error(`   Chain: ${onChainRoot}`);
+                    // If mismatch, proofs generating from DB will fail on chain.
+                    // But maybe the user updated the batch? 
+                    // We should probably abort.
+                    throw new Error(`Merkle Root Mismatch. Contact Support.`);
+                }
+                console.log(`[Engine] ✅ Root verified on-chain.`);
             }
         }
 
