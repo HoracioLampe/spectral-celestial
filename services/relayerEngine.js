@@ -220,7 +220,7 @@ class RelayerEngine {
                             rootSignatureData.merkleRoot,
                             rootSignatureData.signature
                         );
-                        console.log(`[Blockchain][Root] 🚀 Registration TX Sent: ${tx.hash}`);
+                        console.log(`[Blockchain][Root] 🚀 Registration TX Sent: ${tx.hash} | Funder: ${rootSignatureData.funder} | Root: ${rootSignatureData.merkleRoot} | Executor: ${this.faucetWallet.address}`);
 
                         const receipt = await tx.wait();
                         console.log(`[Blockchain][Root] ✅ Registration CONFIRMED (Block: ${receipt.blockNumber})`);
@@ -524,9 +524,9 @@ RETURNING *
             }
 
             const gasPriceVal = txResponse.gasPrice || txResponse.maxFeePerGas || 0n;
-            console.log(`[Blockchain][Tx] SENT: ${txResponse.hash} | TxID: ${txDB.id} | Relayer: ${wallet.address.substring(0, 6)} | Nonce: ${txResponse.nonce} | GasPrice: ${ethers.formatUnits(gasPriceVal, 'gwei')} gwei`);
+            console.log(`[Blockchain][Tx] SENT: ${txResponse.hash} | TxID: ${txDB.id} | From: ${wallet.address} | To: ${txDB.wallet_address_to} | Amount: ${txDB.amount_usdc} USDC | Nonce: ${txResponse.nonce} | GasPrice: ${ethers.formatUnits(gasPriceVal, 'gwei')} gwei`);
             await txResponse.wait();
-            console.log(`[Blockchain][Tx] CONFIRMED: ${txResponse.hash} `);
+            console.log(`[Blockchain][Tx] CONFIRMED: ${txResponse.hash} | Batch: ${txDB.batch_id} | TxID: ${txDB.id}`);
 
             await this.pool.query(
                 `UPDATE batch_transactions SET status = 'SENT', tx_hash = $1, updated_at = NOW() WHERE id = $2`,
@@ -656,12 +656,12 @@ RETURNING *
             const tx = await contract.distributeMatic(relayers.map(r => r.address), _amountWei, overrides);
 
             const gasPriceVal = tx.gasPrice || tx.maxFeePerGas || 0n;
-            console.log(`[Blockchain][Fund] Atomic Batch Tx SENT: ${tx.hash} | Nonce: ${tx.nonce} | GasPrice: ${ethers.formatUnits(gasPriceVal, 'gwei')} gwei`);
+            console.log(`[Blockchain][Fund] Atomic Batch Tx SENT: ${tx.hash} | Faucet: ${this.faucetWallet.address} | Count: ${relayers.length} | AmountPerRelayer: ${ethers.formatUnits(_amountWei, 18)} MATIC | Nonce: ${tx.nonce} | GasPrice: ${ethers.formatUnits(gasPriceVal, 'gwei')} gwei`);
             const receipt = await tx.wait();
 
             const effGasPrice = receipt.effectiveGasPrice || receipt.gasPrice || 0n;
             const cost = BigInt(receipt.gasUsed || 0n) * BigInt(effGasPrice);
-            console.log(`[Blockchain][Fund] Atomic Batch CONFIRMED | Cost: ${ethers.formatEther(cost)} MATIC`);
+            console.log(`[Blockchain][Fund] Atomic Batch CONFIRMED | Hash: ${tx.hash} | Cost: ${ethers.formatEther(cost)} MATIC`);
 
             // Store transaction hash
             console.log(`[Fund] Updating relayers for Batch ${batchId} with TX: ${tx.hash}`);
@@ -697,8 +697,9 @@ RETURNING *
                         nonce: nonce++,
                         gasLimit: 21000n
                     });
+                    console.log(`   🚀 [Blockchain][Fallback] Fund SENT to ${r.address}: ${tx.hash} | Amount: ${ethers.formatEther(amountWei)} MATIC | Faucet: ${this.faucetWallet.address}`);
                     await tx.wait();
-                    console.log(`   ✅ [Blockchain][Fallback] Fund Sent to ${r.address.substring(0, 8)}: ${tx.hash} | ${ethers.formatEther(amountWei)} MATIC`);
+                    console.log(`   ✅ [Blockchain][Fallback] Fund CONFIRMED for ${r.address}: ${tx.hash}`);
                     // Store hash for this relayer
                     await this.pool.query(`UPDATE relayers SET transactionhash_deposit = $1 WHERE address = $2 AND batch_id = $3`, [tx.hash, r.address, r.batch_id]);
                     this.trackFallbackTx(tx, r.address);
@@ -764,9 +765,9 @@ RETURNING *
                         gasPrice: gasPrice
                     });
 
-                    console.log(`[Blockchain][Refund] Tx SENT: ${tx.hash} | From: ${wallet.address.substring(0, 6)} | Amount: ${ethers.formatEther(amountToReturn)} MATIC`);
+                    console.log(`[Blockchain][Refund] Tx SENT: ${tx.hash} | From: ${wallet.address} | To (Faucet): ${faucetAddress} | Amount: ${ethers.formatEther(amountToReturn)} MATIC`);
                     // We don't await individually here to speed up, but we log the hash
-                    tx.wait().then(() => console.log(`[Blockchain][Refund] Tx CONFIRMED: ${tx.hash}`));
+                    tx.wait().then(() => console.log(`[Blockchain][Refund] Tx CONFIRMED: ${tx.hash} | Relayer: ${wallet.address}`));
 
                     return tx.hash;
                 } else {
