@@ -21,8 +21,10 @@ const pool = new Pool({
     ssl: { rejectUnauthorized: false }
 });
 
-// Multer for Excel Uploads
-const upload = multer({ dest: 'uploads/' });
+const os = require('os');
+
+// Multer for Excel Uploads - Use system temp dir for Railway compatibility
+const upload = multer({ dest: os.tmpdir() });
 
 // --- API Endpoints ---
 
@@ -178,6 +180,11 @@ app.post('/api/batches/:id/upload', upload.single('file'), async (req, res) => {
         }
 
         console.log(`[UPLOAD] Finished Loop. ValidTxs: ${validTxs}`);
+
+        if (validTxs === 0) {
+            const foundKeys = data.length > 0 ? Object.keys(data[0]).join(', ') : "Ninguna (Archivo vacío)";
+            throw new Error(`No se encontraron transacciones válidas. Columnas detectadas: [${foundKeys}]. Se busca: 'Wallet' y 'Amount'.`);
+        }
 
         // Update Batch Totals
         const updateRes = await client.query(
@@ -429,10 +436,10 @@ app.get('/api/setup', async (req, res) => {
     }
 });
 
-const VERSION = "2.2.19";
+const VERSION = "2.2.20";
 const PORT_LISTEN = process.env.PORT || 3000;
 
 app.listen(PORT_LISTEN, () => {
     console.log(`Server is running on port ${PORT_LISTEN}`);
-    console.log(`🚀 Version: ${VERSION} (Robust Excel Fix)`);
+    console.log(`🚀 Version: ${VERSION} (Feedback UI)`);
 });
