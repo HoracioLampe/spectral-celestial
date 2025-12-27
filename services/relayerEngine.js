@@ -517,7 +517,8 @@ RETURNING *
                 );
             }
 
-            console.log(`[Blockchain][Tx] SENT: ${txResponse.hash} | TxID: ${txDB.id} | Relayer: ${wallet.address.substring(0, 6)} | Nonce: ${txResponse.nonce} | GasPrice: ${ethers.formatUnits(txResponse.gasPrice || 0n, 'gwei')} gwei`);
+            const gasPriceVal = txResponse.gasPrice || txResponse.maxFeePerGas || 0n;
+            console.log(`[Blockchain][Tx] SENT: ${txResponse.hash} | TxID: ${txDB.id} | Relayer: ${wallet.address.substring(0, 6)} | Nonce: ${txResponse.nonce} | GasPrice: ${ethers.formatUnits(gasPriceVal, 'gwei')} gwei`);
             await txResponse.wait();
             console.log(`[Blockchain][Tx] CONFIRMED: ${txResponse.hash} `);
 
@@ -670,10 +671,12 @@ RETURNING *
 
             const tx = await contract.distributeMatic(addresses, _amountWei, overrides);
 
-            console.log(`[Blockchain][Fund] Atomic Batch Tx SENT: ${tx.hash} | Nonce: ${tx.nonce} | GasPrice: ${ethers.formatUnits(tx.gasPrice || 0n, 'gwei')} gwei`);
+            const gasPriceVal = tx.gasPrice || tx.maxFeePerGas || 0n;
+            console.log(`[Blockchain][Fund] Atomic Batch Tx SENT: ${tx.hash} | Nonce: ${tx.nonce} | GasPrice: ${ethers.formatUnits(gasPriceVal, 'gwei')} gwei`);
             const receipt = await tx.wait();
             // receipt.gasUsed and effectiveGasPrice are BigInt in v6
-            const cost = BigInt(receipt.gasUsed) * BigInt(receipt.effectiveGasPrice);
+            const effGasPrice = receipt.effectiveGasPrice || receipt.gasPrice || 0n;
+            const cost = BigInt(receipt.gasUsed || 0n) * BigInt(effGasPrice);
             console.log(`[Blockchain][Fund] Atomic Batch CONFIRMED in block ${receipt.blockNumber} | Cost: ${ethers.formatEther(cost)} MATIC`);
 
             // Store transaction hash for each relayer
