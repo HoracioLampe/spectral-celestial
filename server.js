@@ -691,5 +691,5 @@ app.get('*', (req, res) => {
 
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
-    console.log("🚀 Version: 2.2.3 (Fix: BigInt crash resolved)");
+    console.log("🚀 Version: 2.2.4 (Fix: Funding logic refined)");
 });

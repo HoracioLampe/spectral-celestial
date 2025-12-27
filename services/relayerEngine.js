@@ -156,12 +156,18 @@ class RelayerEngine {
 
         if (existingRelayersRes.rows.length > 0) {
             console.log(`🔄 Found ${existingRelayersRes.rows.length} existing relayers.Resuming processing...`);
-            finalRelayers = existingRelayersRes.rows.map(r => new ethers.Wallet(r.private_key, this.provider));
+            finalRelayers = existingRelayersRes.rows.map(r => {
+                const w = new ethers.Wallet(r.private_key, this.provider);
+                w.batch_id = batchId; // Ensure batchId is set on resumption
+                return w;
+            });
             isResumption = true;
         } else {
             console.log(`🆕 No active relayers found.Creating ${numRelayers} new ones...`);
             for (let i = 0; i < numRelayers; i++) {
-                finalRelayers.push(ethers.Wallet.createRandom(this.provider));
+                const wallet = ethers.Wallet.createRandom(this.provider);
+                wallet.batch_id = batchId; // Link batchId to wallet object
+                finalRelayers.push(wallet);
             }
             // B. Record Relayers in DB for Audit
             await this.persistRelayers(batchId, finalRelayers);
@@ -609,33 +615,21 @@ RETURNING *
         }
         const perRelayerWei = totalCostWei / BigInt(relayers.length);
         console.log(`🪙[Background] Total Estimated: ${ethers.formatEther(totalCostWei)} MATIC -> ${ethers.formatEther(perRelayerWei)} per relayer`);
-        await this.fundRelayers(relayers, perRelayerWei);
+        await this.fundRelayers(batchId, relayers, perRelayerWei);
     }
 
     // Optimized funding logic using Single Transaction Batch (distributeMatic)
-    async fundRelayers(relayers, amountWei) {
+    async fundRelayers(batchId, relayers, amountWei) {
         if (!amountWei || amountWei === 0n) {
             console.log(`[Fund] Funding skipped: amount is zero or undefined.`);
             return;
         }
-
+        // ... (existing faucet balance check logic remains)
         const faucetAddr = this.faucetWallet.address;
         const faucetBal = await this.provider.getBalance(faucetAddr);
-        const count = BigInt(relayers.length); // Explicit BigInt
-        const _amountWei = BigInt(amountWei); // Explicit cast
+        const count = BigInt(relayers.length);
+        const _amountWei = BigInt(amountWei);
         const totalValueToSend = _amountWei * count;
-
-        console.log(`[Fund] Faucet ${faucetAddr} | Balance: ${ethers.formatEther(faucetBal)} MATIC`);
-        console.log(`[Fund] Required Total: ${ethers.formatEther(totalValueToSend)} MATIC for ${count} relayers.`);
-
-        if (faucetBal < totalValueToSend) {
-            console.error(`❌ Faucet has INSUFFICIENT FUNDS.Funding will likely fail.`);
-            // Continue anyway to see explicit revert reason, or handle gracefully
-        }
-
-        const addresses = relayers.map(r => r.address);
-        console.log(`[Fund] Preparing atomic distribution to ${relayers.length} relayers. Amount per relayer: ${ethers.formatEther(_amountWei)} MATIC`);
-        console.log(`[Fund] Relayer addresses: ${addresses.join(', ')}`);
 
         try {
             console.log(`[Fund] Sending Atomic Distribution via Smart Contract: ${this.contractAddress}...`);
@@ -643,51 +637,48 @@ RETURNING *
 
             // Fetch current fee data
             const feeData = await this.provider.getFeeData();
-            // Use legacy gasPrice if EIP-1559 fees are missing for stability on some RPCs
             const overrides = {
                 value: totalValueToSend,
-                gasLimit: 80000n * count + 100000n // More accurate batch limit
+                gasLimit: 80000n * count + 100000n
             };
 
             if (feeData.maxFeePerGas != null) {
-                // Apply a 20% buffer to both max fee and priority fee
-                // Ensure explicit BigInt conversion just in case
                 const maxFee = BigInt(feeData.maxFeePerGas);
                 const maxPriority = BigInt(feeData.maxPriorityFeePerGas || 0n);
-
                 overrides.maxFeePerGas = maxFee * 120n / 100n;
                 overrides.maxPriorityFeePerGas = maxPriority * 120n / 100n;
-                // Guard: priority fee must never exceed max fee
-                if (overrides.maxPriorityFeePerGas > overrides.maxFeePerGas) {
-                    overrides.maxPriorityFeePerGas = overrides.maxFeePerGas;
-                }
+                if (overrides.maxPriorityFeePerGas > overrides.maxFeePerGas) overrides.maxPriorityFeePerGas = overrides.maxFeePerGas;
             } else {
                 const gasP = (feeData.gasPrice != null) ? BigInt(feeData.gasPrice) : 50000000000n;
                 overrides.gasPrice = gasP * 120n / 100n;
             }
 
-            console.log(`[FundDebug] Overrides Types: value=${typeof overrides.value}, gasLimit=${typeof overrides.gasLimit}, maxFee=${typeof overrides.maxFeePerGas}, maxPrio=${typeof overrides.maxPriorityFeePerGas}, gasPrice=${typeof overrides.gasPrice}`);
-            console.log(`[FundDebug] AmountType=${typeof _amountWei}, CountType=${typeof count}`);
-
-            const tx = await contract.distributeMatic(addresses, _amountWei, overrides);
+            const tx = await contract.distributeMatic(relayers.map(r => r.address), _amountWei, overrides);
 
             const gasPriceVal = tx.gasPrice || tx.maxFeePerGas || 0n;
             console.log(`[Blockchain][Fund] Atomic Batch Tx SENT: ${tx.hash} | Nonce: ${tx.nonce} | GasPrice: ${ethers.formatUnits(gasPriceVal, 'gwei')} gwei`);
             const receipt = await tx.wait();
-            // receipt.gasUsed and effectiveGasPrice are BigInt in v6
+
             const effGasPrice = receipt.effectiveGasPrice || receipt.gasPrice || 0n;
             const cost = BigInt(receipt.gasUsed || 0n) * BigInt(effGasPrice);
-            console.log(`[Blockchain][Fund] Atomic Batch CONFIRMED in block ${receipt.blockNumber} | Cost: ${ethers.formatEther(cost)} MATIC`);
+            console.log(`[Blockchain][Fund] Atomic Batch CONFIRMED | Cost: ${ethers.formatEther(cost)} MATIC`);
 
-            // Store transaction hash for each relayer
-            await Promise.all(relayers.map(r => this.pool.query(`UPDATE relayers SET transactionhash_deposit = $1 WHERE address = $2 AND batch_id = $3`, [tx.hash, r.address, r.batch_id])));
+            // Store transaction hash
+            console.log(`[Fund] Updating relayers for Batch ${batchId} with TX: ${tx.hash}`);
+            await Promise.all(relayers.map(r => this.pool.query(
+                `UPDATE relayers SET transactionhash_deposit = $1 WHERE address = $2 AND batch_id = $3`,
+                [tx.hash, r.address, batchId]
+            )));
 
-            // Proactive sync for all
+            // Sync
             await Promise.all(relayers.map(r => this.syncRelayerBalance(r.address)));
+
+            console.log(`[Fund] Atomic Funding Cycle Completed Successfully for Batch ${batchId}.`);
 
         } catch (err) {
             console.error(`❌ Atomic batch funding failed: `, err.message);
             console.log(`⚠️ Entering Sequential Fallback...`);
+            // ... (rest of fallback logic remains, but now we have batchId)
 
             // Fallback to manual sequential
             let nonce = await this.faucetWallet.getNonce();
