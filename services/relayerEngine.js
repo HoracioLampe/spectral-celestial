@@ -265,8 +265,19 @@ class RelayerEngine {
             if (primaryTx) {
                 try {
                     // 2. Process it (This will use executeWithPermit because activePermits is set)
-                    await this.processTransaction(primaryRelayer, primaryTx, false);
-                    console.log(`[PermitBarrier] ✅ Primary Transaction CONFIRMED. Allowance established.`);
+                    const result = await this.processTransaction(primaryRelayer, primaryTx, false);
+
+                    if (result && result.success) {
+                        const permitVal = this.activePermits[batchId]?.amount;
+                        const permitValStr = permitVal ? ethers.formatUnits(permitVal, 6) : "UNKNOWN";
+                        console.log(`[PermitBarrier] ✅ Primary Transaction CONFIRMED.`);
+                        console.log(`[PermitBarrier] 📝 PERMIT DETAILS:`);
+                        console.log(`   > Total Permit Value: ${permitValStr} USDC`);
+                        console.log(`   > Executor Relayer:   ${primaryRelayer.address}`);
+                        console.log(`   > Transaction Hash:   ${result.txHash}`);
+                    } else {
+                        console.warn(`[PermitBarrier] Primary Result was empty or failed?`);
+                    }
 
                     // 3. IMPORTANT: Remove the permit from active state
                     // Subsequent transactions must use standard 'executeTransaction' (transferFrom)
@@ -482,6 +493,8 @@ RETURNING *
 
             // Update Relayer Last Activity & Balance (PROACTIVE)
             await this.syncRelayerBalance(wallet.address);
+
+            return { success: true, txHash: txResponse.hash, nonce: txResponse.nonce };
         } catch (e) {
             if (e.message && e.message.includes("Tx already executed")) {
                 console.log(`⚠️ Tx ${txDB.id} already on - chain.Recovered.`);
