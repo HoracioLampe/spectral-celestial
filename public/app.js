@@ -1601,7 +1601,12 @@ function startTimer() {
 function stopTimer() {
     if (window.processTimerInterval) clearInterval(window.processTimerInterval);
     const timerEl = document.getElementById('processTimer');
-    if (timerEl) timerEl.style.color = '#ef4444';
+    if (timerEl) {
+        timerEl.style.color = '#10b981'; // Green
+        timerEl.textContent = `⏱️ Finalizado en: ${timerEl.textContent}`;
+        // Prevent re-starting or flickering
+        window.processTimerInterval = null;
+    }
 }
 
 window.openFaucetModal = () => {
