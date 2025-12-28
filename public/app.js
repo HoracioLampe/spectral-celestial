@@ -622,7 +622,8 @@ window.openBatchDetail = async function (id) {
 
 // Pagination State
 let currentTxPage = 1;
-const txPerPage = 20;
+const txPerPage = 5; // Temporarily lowered for testing
+console.log("[UI] Version 2.2: Pagination Limit = 5");
 let allBatchTransactions = []; // Store full list
 
 function updateDetailView(batch, txs) {
@@ -1613,6 +1614,7 @@ async function pollBatchProgress(batchId) {
         if (batch) {
             // Update Transactions Table
             if (data.transactions) {
+                console.log(`[UI] Refreshing Grid: ${data.transactions.length} txs received.`);
                 allBatchTransactions = data.transactions;
                 renderBatchTransactions();
             }
