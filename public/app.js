@@ -650,6 +650,7 @@ function updateDetailView(batch, txs) {
                 // Already generated
                 merkleInputZone.classList.add('hidden');
                 merkleResultZone.classList.remove('hidden');
+                document.getElementById('merkleVerifyZone')?.classList.remove('hidden');
                 displayMerkleRoot.textContent = batch.merkle_root;
 
                 if (batch.funder_address) {
@@ -667,6 +668,7 @@ function updateDetailView(batch, txs) {
                 // Not generated yet
                 merkleInputZone.classList.remove('hidden');
                 merkleResultZone.classList.add('hidden');
+                document.getElementById('merkleVerifyZone')?.classList.add('hidden');
                 batchFunderAddress.value = ''; // Reset or keep empty
                 if (merkleFounderBalance) merkleFounderBalance.textContent = '---';
             }
@@ -836,6 +838,7 @@ async function generateMerkleTree() {
             // Update UI directly to avoid full reload flicker, or just reload logic
             merkleInputZone.classList.add('hidden');
             merkleResultZone.classList.remove('hidden');
+            document.getElementById('merkleVerifyZone')?.classList.remove('hidden');
             displayMerkleRoot.textContent = data.root;
 
             // Update Funder Display immediately so Test works
