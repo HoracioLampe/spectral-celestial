@@ -391,7 +391,7 @@ class RelayerEngine {
             const gasLimit = await contract.executeTransaction.estimateGas(
                 txDB.batch_id, txDB.id, funder, txDB.wallet_address_to, amountVal, proof
             );
-            txResponse = await contract.executeTransaction(
+            const txResponse = await contract.executeTransaction(
                 txDB.batch_id, txDB.id, funder, txDB.wallet_address_to, amountVal, proof,
                 { gasLimit: gasLimit * 125n / 100n }
             );
