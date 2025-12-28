@@ -699,7 +699,7 @@ function renderBatchTransactions() {
     const pageItems = allBatchTransactions.slice(start, end);
 
     if (totalItems === 0) {
-        batchTableBody.innerHTML = '<tr><td colspan="5" style="text-align:center;">No hay registros</td></tr>';
+        batchTableBody.innerHTML = '<tr><td colspan="6" style="text-align:center;">No hay registros</td></tr>';
         renderPaginationControls(0);
         return;
     }
@@ -713,9 +713,11 @@ function renderBatchTransactions() {
 
         // USDC Formatting (Integer / 1,000,000)
         let usdcVal = parseFloat(tx.amount_usdc);
-        // User said it's an integer in DB, need to divide. assuming standard 6 decimals for USDC.
-        // If DB has 1000000 for 1 USDC:
         const usdcDisplay = (usdcVal / 1000000).toFixed(6);
+
+        // Real Transferred amount
+        let realVal = tx.amount_transferred ? parseFloat(tx.amount_transferred) : 0;
+        const realDisplay = realVal > 0 ? (realVal / 1000000).toFixed(6) : '-';
 
         tr.innerHTML = `
             <td style="opacity: 0.7;">${tx.transaction_reference || '-'}</td>
@@ -728,6 +730,7 @@ function renderBatchTransactions() {
                 </button>
             </td>
             <td style="color: #4ade80; font-weight: bold;">$${usdcDisplay}</td>
+            <td style="color: #fbbf24; font-weight: bold;">${realDisplay !== '-' ? '$' + realDisplay : '-'}</td>
             <td style="font-size: 0.85rem; opacity: 0.7;" title="${tx.tx_hash || ''}">
                 ${tx.tx_hash ? `<a href="https://polygonscan.com/tx/${tx.tx_hash}" target="_blank" class="hash-link">${tx.tx_hash.substring(0, 10)}...</a>` : '-'}
             </td>
