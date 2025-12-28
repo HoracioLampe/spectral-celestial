@@ -374,7 +374,7 @@ class RelayerEngine {
             await client.query('BEGIN');
             const res = await client.query(`
                 UPDATE batch_transactions
-                SET status = 'SENDING_RPC', relayer_address = $1, updated_at = NOW()
+                SET status = 'ENVIANDO', relayer_address = $1, updated_at = NOW()
                 WHERE id = (
                     SELECT id FROM batch_transactions
                     WHERE batch_id = $2 AND status = 'PENDING'
@@ -481,8 +481,8 @@ class RelayerEngine {
             console.log(`[Blockchain][Tx] CONFIRMED: ${txResponse.hash} | Batch: ${txDB.batch_id} | TxID: ${txDB.id}`);
 
             await this.pool.query(
-                `UPDATE batch_transactions SET status = 'SENT', tx_hash = $1, updated_at = NOW() WHERE id = $2`,
-                [txResponse.hash, txDB.id]
+                `UPDATE batch_transactions SET status = 'COMPLETADO', tx_hash = $1, amount_transferred = $2, updated_at = NOW() WHERE id = $3`,
+                [txResponse.hash, txDB.amount_usdc.toString(), txDB.id]
             );
             await this.syncRelayerBalance(wallet.address);
             return { success: true, txHash: txResponse.hash };
