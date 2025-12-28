@@ -11,7 +11,7 @@ class RelayerEngine {
         this.cachedChainId = null;
 
         // Configuration
-        this.contractAddress = process.env.CONTRACT_ADDRESS || "0x3D8A8ae7Bb507104C7928B6e856c348104bD7406";
+        this.contractAddress = process.env.CONTRACT_ADDRESS || "0x7B25Ce9800CCE4309E92e2834E09bD89453d90c5";
         this.usdcAddress = "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359";
 
         // Cache for shared Permit signatures (Per Batch logic)

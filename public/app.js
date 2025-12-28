@@ -171,7 +171,7 @@ const txStatus = document.getElementById('txStatus');
 // --- Web3 Constants ---
 const POLYGON_CHAIN_ID = '0x89'; // 137
 const USDC_ADDRESS = '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359';
-const BATCH_DISTRIBUTOR_ADDRESS = "0x3D8A8ae7Bb507104C7928B6e856c348104bD7406";
+const CONTRACT_ADDRESS = "0x7B25Ce9800CCE4309E92e2834E09bD89453d90c5";
 const USDC_ABI = ["function balanceOf(address owner) view returns (uint256)", "function decimals() view returns (uint8)"];
 const USCD_ABI = ["function balanceOf(address owner) view returns (uint256)", "function decimals() view returns (uint8)"];
 let provider, signer, userAddress;
@@ -452,6 +452,10 @@ if (btnOpenBatchModal) btnOpenBatchModal.onclick = () => batchModal.classList.ad
 if (btnSaveBatch) btnSaveBatch.onclick = createBatch;
 if (btnUploadBatch) btnUploadBatch.onclick = uploadBatchFile;
 if (btnGenerateMerkle) btnGenerateMerkle.onclick = generateMerkleTree;
+
+// Merkle Test Listener
+const btnTestMerkle = document.getElementById('btnTestMerkle');
+if (btnTestMerkle) btnTestMerkle.onclick = runMerkleTest;
 
 // Global functions for HTML access
 window.closeBatchModal = () => batchModal.classList.remove('active');
@@ -845,6 +849,149 @@ async function generateMerkleTree() {
     }
 }
 
+
+
+// --- Merkle Verification Test (Client Side) ---
+async function runMerkleTest() {
+    if (!currentBatchId) return;
+
+    const rootEl = document.getElementById('displayMerkleRoot');
+    const merkleRoot = rootEl ? rootEl.textContent.trim() : null;
+
+    if (!merkleRoot || !merkleRoot.startsWith("0x")) {
+        alert("⚠️ Genera el Merkle Tree primero");
+        return;
+    }
+
+    if (!allBatchTransactions || allBatchTransactions.length === 0) {
+        alert("⚠️ No hay transacciones para probar");
+        return;
+    }
+
+    // Parameters
+    const SAMPLE_PERCENT = 0.10; // 10%
+    const MAX_CONCURRENT = 50;
+
+    // 1. Select Sample
+    const sampleSize = Math.max(1, Math.ceil(allBatchTransactions.length * SAMPLE_PERCENT));
+    const shuffled = [...allBatchTransactions].sort(() => 0.5 - Math.random());
+    const selectedTxs = shuffled.slice(0, sampleSize);
+
+    // UI Setup
+    const btn = document.getElementById('btnTestMerkle');
+    const status = document.getElementById('merkleTestStatus');
+    const funderText = document.getElementById('merkleResultFunder').textContent.trim();
+
+    // Determine Funder Address
+    let funder = funderText;
+    if (!funder || funder === '---' || !ethers.utils.isAddress(funder)) {
+        // Fallback to value input if just generated
+        funder = batchFunderAddress.value.trim();
+    }
+    if (!ethers.utils.isAddress(funder)) {
+        alert("❌ No se encontró address de Funder válida.");
+        return;
+    }
+
+    if (btn) btn.disabled = true;
+    if (status) {
+        status.textContent = `⏳ Inicializando test: ${sampleSize} transacciones (${MAX_CONCURRENT} hilos)...`;
+        status.style.color = "#fbbf24";
+    }
+
+    try {
+        // Setup Provider (Read-Only is fine)
+        let testProvider = provider;
+        if (!testProvider) {
+            const configRes = await fetch('/api/config');
+            const config = await configRes.json();
+            testProvider = new ethers.providers.JsonRpcProvider(config.RPC_URL || "https://polygon-rpc.com");
+        }
+
+        const abi = ["function validateMerkleProofDetails(uint256, uint256, address, address, uint256, bytes32, bytes32[]) external view returns (bool)"];
+        const contract = new ethers.Contract(CONTRACT_ADDRESS, abi, testProvider);
+
+        let completed = 0;
+        let failed = 0;
+
+        // Task Function per Transaction
+        const runVerificationTask = async (tx) => {
+            try {
+                // Fetch Proof from Backend
+                const proofRes = await fetch(`/api/batches/${currentBatchId}/transactions/${tx.id}/proof`);
+                if (!proofRes.ok) throw new Error("API Error fetching proof");
+                const proofData = await proofRes.json();
+
+                if (!proofData.proof) throw new Error("No Proof Data");
+
+                const amountVal = ethers.BigNumber.from(tx.amount_usdc);
+
+                // Verify On-Chain (View Call)
+                const isValid = await contract.validateMerkleProofDetails(
+                    ethers.BigNumber.from(currentBatchId),
+                    ethers.BigNumber.from(tx.id),
+                    funder,
+                    tx.wallet_address_to,
+                    amountVal,
+                    merkleRoot,
+                    proofData.proof
+                );
+
+                if (!isValid) throw new Error("❌ Invalid On-Chain Result");
+
+            } catch (err) {
+                console.error(`Verification Failed [TxID: ${tx.id}]`, err);
+                failed++;
+            } finally {
+                completed++;
+                if (status) status.textContent = `⏳ Progreso: ${completed}/${sampleSize} verificados (Fallos: ${failed})`;
+            }
+        };
+
+        // Execution Queue (Worker Pool Pattern)
+        const queue = [...selectedTxs];
+        const workers = [];
+
+        const worker = async () => {
+            while (queue.length > 0) {
+                const tx = queue.shift();
+                await runVerificationTask(tx);
+            }
+        };
+
+        // Start Workers
+        const workerCount = Math.min(MAX_CONCURRENT, sampleSize);
+        for (let i = 0; i < workerCount; i++) {
+            workers.push(worker());
+        }
+
+        // Wait for all
+        await Promise.all(workers);
+
+        // Final Report
+        if (failed === 0) {
+            if (status) {
+                status.textContent = `✅ Test Exitoso: ${sampleSize}/${sampleSize} transacciones verificadas en Blockchain.`;
+                status.style.color = "#4ade80";
+            }
+        } else {
+            if (status) {
+                status.textContent = `❌ Test Fallido: ${failed} errores encontrados. Revisa la consola y tu configuración.`;
+                status.style.color = "#ef4444";
+            }
+        }
+
+    } catch (globalErr) {
+        console.error(globalErr);
+        if (status) {
+            status.textContent = "❌ Error Crítico: " + globalErr.message;
+            status.style.color = "#ef4444";
+        }
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
 async function checkFunderBalance() {
     const address = batchFunderAddress.value.trim();
     if (!address || !ethers.utils.isAddress(address)) {
@@ -1048,7 +1195,7 @@ async function signBatchPermit(batchId) {
     const usdcContract = new ethers.Contract(USDC_ADDRESS, usdcAbi, signer); // signer is global
 
     const nonce = await usdcContract.nonces(userAddress);
-    const allowance = await usdcContract.allowance(userAddress, BATCH_DISTRIBUTOR_ADDRESS);
+    const allowance = await usdcContract.allowance(userAddress, CONTRACT_ADDRESS);
 
     // Additive Permit Logic (Current Allowance + New Batch)
     const value = allowance.add(totalUSDC);
@@ -1088,7 +1235,7 @@ async function signBatchPermit(batchId) {
 
     const message = {
         owner: userAddress,
-        spender: BATCH_DISTRIBUTOR_ADDRESS,
+        spender: CONTRACT_ADDRESS,
         value: value.toString(), // Ethers v5 signTypedData handles string/BN
         nonce: nonce.toString(),
         deadline: deadline
@@ -1104,7 +1251,7 @@ async function signBatchPermit(batchId) {
         signature,
         // Optional: Include owner/spender for verification
         owner: userAddress,
-        spender: BATCH_DISTRIBUTOR_ADDRESS
+        spender: CONTRACT_ADDRESS
     };
 }
 
@@ -1130,7 +1277,7 @@ async function signBatchRoot(batchId) {
 
     // 2. Fetch Nonce from Contract
     const minABI = ["function nonces(address owner) view returns (uint256)"];
-    const contract = new ethers.Contract(BATCH_DISTRIBUTOR_ADDRESS, minABI, provider);
+    const contract = new ethers.Contract(CONTRACT_ADDRESS, minABI, provider);
     const nonce = await contract.nonces(userAddress);
 
     const network = await provider.getNetwork();
@@ -1143,7 +1290,7 @@ async function signBatchRoot(batchId) {
         name: 'BatchDistributor',
         version: '1',
         chainId: chainId,
-        verifyingContract: BATCH_DISTRIBUTOR_ADDRESS
+        verifyingContract: CONTRACT_ADDRESS
     };
 
     const types = {

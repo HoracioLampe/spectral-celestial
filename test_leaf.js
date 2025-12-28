@@ -2,7 +2,7 @@ const ethers = require('ethers');
 
 async function testLeaf() {
     const chainId = 137;
-    const contractAddress = "0x3D8A8ae7Bb507104C7928B6e856c348104bD7406";
+    const contractAddress = "0x7B25Ce9800CCE4309E92e2834E09bD89453d90c5";
     const batchId = 75;
     const txId = 24213;
     const funder = "0x09c31e3a14404ebe473b369c94acde5ab0ebe0d0";

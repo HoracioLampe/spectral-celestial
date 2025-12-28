@@ -36,9 +36,20 @@ async function rescueFunds() {
         console.log(`🏦 Target Faucet Address: ${faucetAddress}`);
 
         const targetAddress = process.argv[2]; // Optional: specific address to rescue
+        const batchArgIndex = process.argv.indexOf('--batch');
+        let batchId = null;
+        if (batchArgIndex !== -1 && process.argv[batchArgIndex + 1]) {
+            batchId = process.argv[batchArgIndex + 1];
+        }
+
         let relayers = [];
 
-        if (targetAddress) {
+        if (batchId) {
+            console.log(`🎯 Targeting BATCH ID: ${batchId}`);
+            // Fetch ALL relayers for this batch, ignore last_balance check to ensure we check on-chain
+            const res = await pool.query("SELECT address, private_key, last_balance FROM relayers WHERE batch_id = $1", [batchId]);
+            relayers = res.rows;
+        } else if (targetAddress && targetAddress.startsWith('0x')) {
             console.log(`🎯 Targeting specific relayer: ${targetAddress}`);
             const res = await pool.query("SELECT address, private_key FROM relayers WHERE address = $1", [targetAddress]);
             relayers = res.rows;
@@ -89,14 +100,29 @@ async function rescueFunds() {
                     totalRescued += amountToReturn;
                     successCount++;
                     console.log(`   ✅ Success! Tx: ${tx.hash}`);
+
+
+                    // Small sleep to avoid hitting rate limits (15 req/sec)
+
+
                 } else {
                     console.log(`⏭️ Skipping (low balance: ${ethers.formatEther(balance)} MATIC)`);
+
+                    // SYNC DB: If discrepancy is found
+                    const dbBal = parseFloat(r.last_balance || '0');
+                    const chainBal = parseFloat(ethers.formatEther(balance));
+
+                    if (dbBal > 0.001) {
+                        // Only update if DB has something significantly different to avoid spamming writes for Dust differences
+                        if (Math.abs(dbBal - chainBal) > 0.001) {
+                            console.log(`   🔸 Syncing DB (Stale: ${dbBal} -> Real: ${chainBal})`);
+                            await pool.query('UPDATE relayers SET last_balance = $1, last_activity = NOW() WHERE address = $2', [ethers.formatEther(balance), r.address]);
+                        }
+                    }
                 }
 
                 // Small sleep to avoid hitting rate limits (15 req/sec)
-                if (i % 5 === 0) {
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                }
+                await new Promise(resolve => setTimeout(resolve, 200));
 
             } catch (err) {
                 console.log(`\n⚠️ Failed for ${r.address}: ${err.message}`);

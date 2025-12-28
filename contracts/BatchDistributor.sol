@@ -156,6 +156,31 @@ contract BatchDistributor {
         return computedHash == root;
     }
 
+    /**
+     * @notice Helper para validar pruebas off-chain sin gastar gas (llamada readonly).
+     */
+    function validateMerkleProof(bytes32[] calldata proof, bytes32 root, bytes32 leaf) external pure returns (bool) {
+        return verifyMerkle(proof, root, leaf);
+    }
+
+    /**
+     * @notice Validación COMPLETA incluyendo la generación del Leaf on-chain.
+     * Replica exactamente la logica de _execute para garantizar compatibilidad total.
+     */
+    function validateMerkleProofDetails(
+        uint256 batchId,
+        uint256 txId,
+        address funder,
+        address recipient,
+        uint256 amount,
+        bytes32 root,
+        bytes32[] calldata proof
+    ) external view returns (bool) {
+        // Replicamos la generacion de la hoja EXACTAMENTE como en _execute
+        bytes32 leaf = keccak256(abi.encode(block.chainid, address(this), batchId, txId, funder, recipient, amount));
+        return verifyMerkle(proof, root, leaf);
+    }
+
     function recover(bytes32 hash, bytes memory signature) internal pure returns (address) {
         if (signature.length != 65) return address(0);
         bytes32 r; bytes32 s; uint8 v;

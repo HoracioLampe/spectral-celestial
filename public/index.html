@@ -217,113 +217,120 @@
                             <span id="displayMerkleRoot">Not Generated</span>
                         </div>
                         <div style="display: flex; gap: 2rem; margin-top: 1rem; font-size: 0.9rem; opacity: 0.9;">
+                            <span id="merkleResultFunder" style="color: #cbd5e1; font-family: monospace;">---</span>
+                        </div>
+                    </div>
+
+                    <!-- Merkle Verification Tool -->
+                    <div
+                        style="margin-top: 1rem; padding: 1rem; border: 1px dashed rgba(167, 139, 250, 0.3); border-radius: 8px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <label style="font-size: 0.9rem; color: #a78bfa;">🔬 Verificación On-Chain (Muestreo
+                                10%)</label>
+                            <button id="btnTestMerkle" class="btn-glass"
+                                style="font-size: 0.8rem; border: 1px solid #a78bfa; color: #a78bfa;">
+                                Ejecutar Test
+                            </button>
+                        </div>
+                        <p id="merkleTestStatus"
+                            style="font-size: 0.8rem; margin-top: 0.5rem; color: #94a3b8; min-height: 1.2em;"></p>
+                    </div>
+
+                    <!-- Relayer Controls (New) -->
+                    <div style="margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid rgba(255,255,255,0.1);">
+                        <label style="color: #fcd34d;">🚀 Ejecución (Relayer System)</label>
+                        <div style="display: flex; gap: 1rem; align-items: flex-end; margin-top: 0.5rem;">
                             <div>
-                                <span style="color: #94a3b8;">Balance USDC Funder:</span>
-                                <span id="merkleResultBalance"
-                                    style="color: #f472b6; font-weight: bold;">Cargando...</span>
+                                <span style="font-size: 0.8rem; color: #94a3b8;">Potencia (Relayers):</span>
+                                <select id="relayerCount" class="input-glass" style="width: 100px;">
+                                    <option value="1">1 (Safe)</option>
+                                    <option value="5" selected>5 (Default)</option>
+                                    <option value="10">10 (Fast)</option>
+                                    <option value="20">20 (Turbo)</option>
+                                    <option value="50">50 (Max)</option>
+                                </select>
                             </div>
-                            <div>
-                                <span style="color: #94a3b8;">Funder:</span>
-                                <span id="merkleResultFunder" style="color: #cbd5e1; font-family: monospace;">---</span>
+                            <button id="btnProcessBatch" class="btn btn-primary"
+                                style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);">
+                                Iniciar Distribución 🔥
+                            </button>
+                            <button onclick="openFaucetModal()" class="btn-glass"
+                                style="margin-top: 0.5rem; width: 100%; border: 1px solid rgba(255,255,255,0.1);">⚙️
+                                Gestionar Faucet</button>
+                        </div>
+                        <!-- Faucet Info Summary (Visible on Main Page) -->
+                        <div id="mainFaucetInfo" class="glass"
+                            style="margin-top: 0.75rem; padding: 0.5rem 1rem; border-radius: 8px; font-size: 0.85rem; display: flex; justify-content: space-between; align-items: center; border: 1px solid rgba(255,255,255,0.05);">
+                            <div style="display: flex; gap: 0.75rem; align-items: center;">
+                                <span style="color: #94a3b8;">Faucet:</span>
+                                <a id="mainFaucetLink" href="#" target="_blank" class="hash-link"
+                                    style="color: #60a5fa; font-family: monospace;">Cargando...</a>
+                                <button onclick="copyFaucetAddress()" class="btn-icon"
+                                    title="Copiar Dirección">📋</button>
+                            </div>
+                            <div style="display: flex; gap: 0.75rem;">
+                                <span style="color: #94a3b8;">Balance:</span>
+                                <span id="mainFaucetBalance" style="color: #4ade80; font-weight: bold;">---</span>
                             </div>
                         </div>
-
-                        <!-- Relayer Controls (New) -->
                         <div
-                            style="margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid rgba(255,255,255,0.1);">
-                            <label style="color: #fcd34d;">🚀 Ejecución (Relayer System)</label>
-                            <div style="display: flex; gap: 1rem; align-items: flex-end; margin-top: 0.5rem;">
-                                <div>
-                                    <span style="font-size: 0.8rem; color: #94a3b8;">Potencia (Relayers):</span>
-                                    <select id="relayerCount" class="input-glass" style="width: 100px;">
-                                        <option value="1">1 (Safe)</option>
-                                        <option value="5" selected>5 (Default)</option>
-                                        <option value="10">10 (Fast)</option>
-                                        <option value="20">20 (Turbo)</option>
-                                        <option value="50">50 (Max)</option>
-                                    </select>
-                                </div>
-                                <button id="btnProcessBatch" class="btn btn-primary"
-                                    style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);">
-                                    Iniciar Distribución 🔥
-                                </button>
-                                <button onclick="openFaucetModal()" class="btn-glass"
-                                    style="margin-top: 0.5rem; width: 100%; border: 1px solid rgba(255,255,255,0.1);">⚙️
-                                    Gestionar Faucet</button>
-                            </div>
-                            <!-- Faucet Info Summary (Visible on Main Page) -->
-                            <div id="mainFaucetInfo" class="glass"
-                                style="margin-top: 0.75rem; padding: 0.5rem 1rem; border-radius: 8px; font-size: 0.85rem; display: flex; justify-content: space-between; align-items: center; border: 1px solid rgba(255,255,255,0.05);">
-                                <div style="display: flex; gap: 0.75rem; align-items: center;">
-                                    <span style="color: #94a3b8;">Faucet:</span>
-                                    <a id="mainFaucetLink" href="#" target="_blank" class="hash-link"
-                                        style="color: #60a5fa; font-family: monospace;">Cargando...</a>
-                                    <button onclick="copyFaucetAddress()" class="btn-icon"
-                                        title="Copiar Dirección">📋</button>
-                                </div>
-                                <div style="display: flex; gap: 0.75rem;">
-                                    <span style="color: #94a3b8;">Balance:</span>
-                                    <span id="mainFaucetBalance" style="color: #4ade80; font-weight: bold;">---</span>
-                                </div>
-                            </div>
-                            <div
-                                style="display: flex; align-items: center; justify-content: space-between; margin-top: 0.5rem;">
-                                <p id="processStatus" style="font-size: 0.85rem; color: #cbd5e1; margin: 0;"></p>
-                                <span id="processTimer"
-                                    style="font-family: monospace; font-size: 0.9rem; color: #f59e0b; font-weight: bold; background: rgba(0,0,0,0.2); padding: 2px 6px; border-radius: 4px; display: none;">00:00:00</span>
-                            </div>
+                            style="display: flex; align-items: center; justify-content: space-between; margin-top: 0.5rem;">
+                            <p id="processStatus" style="font-size: 0.85rem; color: #cbd5e1; margin: 0;"></p>
+                            <span id="processTimer"
+                                style="font-family: monospace; font-size: 0.9rem; color: #f59e0b; font-weight: bold; background: rgba(0,0,0,0.2); padding: 2px 6px; border-radius: 4px; display: none;">00:00:00</span>
                         </div>
                     </div>
-                    <p id="merkleStatus" class="status-text"></p>
                 </div>
-                <!-- Grilla Detalle -->
-                <div class="top-bar" style="margin-top: 2rem;">
-                    <h3>📋 Detalle de Transacciones</h3>
-                </div>
-                <div class="table-container">
-                    <table id="batchTable">
-                        <thead>
-                            <tr>
-                                <th>ID Ref</th>
-                                <th>Wallet</th>
-                                <th>USDC</th>
-                                <th>Hash (Ref)</th>
-                                <th>Estado</th>
-                            </tr>
-                        </thead>
-                        <tbody id="batchTableBody">
-                            <tr>
-                                <td colspan="5" style="text-align: center;">Carga un Excel para ver el detalle</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
+                <p id="merkleStatus" class="status-text"></p>
+            </div>
+            <!-- Grilla Detalle -->
+            <div class="top-bar" style="margin-top: 2rem;">
+                <h3>📋 Detalle de Transacciones</h3>
+            </div>
+            <div class="table-container">
+                <table id="batchTable">
+                    <thead>
+                        <tr>
+                            <th>ID Ref</th>
+                            <th>Wallet</th>
+                            <th>USDC</th>
+                            <th>Hash (Ref)</th>
+                            <th>Estado</th>
+                        </tr>
+                    </thead>
+                    <tbody id="batchTableBody">
+                        <tr>
+                            <td colspan="5" style="text-align: center;">Carga un Excel para ver el detalle</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
 
-                <!-- Relayer Balances Table (Integrated) -->
-                <div style="margin-top: 2.5rem; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 1.5rem;">
-                    <div class="top-bar">
-                        <h3>⚡ Balances de Relayers</h3>
-                    </div>
-                    <table id="relayerBalancesTable" class="glass-panel"
-                        style="width:100%; border-collapse: collapse; background: rgba(0,0,0,0.2);">
-                        <thead>
-                            <tr style="border-bottom: 1px solid rgba(255,255,255,0.1);">
-                                <th style="text-align:left; padding:0.75rem; width: 50px;">ID</th>
-                                <th style="text-align:left; padding:0.75rem;">Dirección Relayer</th>
-                                <th style="text-align:left; padding:0.75rem;">Balance MATIC</th>
-                                <th style="text-align:left; padding:0.75rem;">Última Actividad</th>
-                                <th style="text-align:left; padding:0.75rem;">Tx Gas</th>
-                            </tr>
-                        </thead>
-                        <tbody id="relayerBalancesTableBody">
-                            <tr>
-                                <td colspan="4" style="text-align:center; padding:1.5rem; opacity: 0.6;">Cargando
-                                    balances...</td>
-                            </tr>
-                        </tbody>
-                    </table>
+            <!-- Relayer Balances Table (Integrated) -->
+            <div style="margin-top: 2.5rem; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 1.5rem;">
+                <div class="top-bar">
+                    <h3>⚡ Balances de Relayers</h3>
                 </div>
-            </div> <!-- Fin de batchDetailView -->
+                <table id="relayerBalancesTable" class="glass-panel"
+                    style="width:100%; border-collapse: collapse; background: rgba(0,0,0,0.2);">
+                    <thead>
+                        <tr style="border-bottom: 1px solid rgba(255,255,255,0.1);">
+                            <th style="text-align:left; padding:0.75rem; width: 50px;">ID</th>
+                            <th style="text-align:left; padding:0.75rem;">Dirección Relayer</th>
+                            <th style="text-align:left; padding:0.75rem;">Balance MATIC</th>
+                            <th style="text-align:left; padding:0.75rem;">Última Actividad</th>
+                            <th style="text-align:left; padding:0.75rem;">Tx Gas</th>
+                        </tr>
+                    </thead>
+                    <tbody id="relayerBalancesTableBody">
+                        <tr>
+                            <td colspan="4" style="text-align:center; padding:1.5rem; opacity: 0.6;">Cargando
+                                balances...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div> <!-- Fin de batchDetailView -->
         </div>
 
     </main>

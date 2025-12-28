@@ -240,7 +240,7 @@ app.post('/api/batches/:id/merkle', async (req, res) => {
         const providerUrl = process.env.PROVIDER_URL || "https://dawn-palpable-telescope.matic.quiknode.pro/e7d140234fbac5b00d93bfedf2e1c555fa2fdb65/";
         const provider = new ethers.JsonRpcProvider(providerUrl);
         const { chainId } = await provider.getNetwork();
-        const contractAddress = process.env.CONTRACT_ADDRESS || "0x3D8A8ae7Bb507104C7928B6e856c348104bD7406";
+        const contractAddress = process.env.CONTRACT_ADDRESS || "0x7B25Ce9800CCE4309E92e2834E09bD89453d90c5";
 
         // 1. Generate Leaves
         const abiCoder = ethers.AbiCoder.defaultAbiCoder();
@@ -475,10 +475,68 @@ app.get('/api/setup', async (req, res) => {
     }
 });
 
-const VERSION = "2.2.24";
+const VERSION = "2.2.25";
 const PORT_LISTEN = process.env.PORT || 3000;
 
 app.listen(PORT_LISTEN, () => {
     console.log(`Server is running on port ${PORT_LISTEN}`);
-    console.log(`🚀 Version: ${VERSION} (Faucet Table Fix)`);
+    console.log(`🚀 Version: ${VERSION} (Merkle Proof API Added)`);
 });
+
+// --- Helper for Merkle Proof ---
+async function getMerkleProof(client, batchId, transactionId) {
+    const startRes = await client.query(
+        `SELECT position_index, hash FROM merkle_nodes WHERE batch_id = $1 AND level = 0 AND transaction_id = $2`,
+        [batchId, transactionId]
+    );
+    if (startRes.rows.length === 0) throw new Error("Transaction leaf not found");
+
+    const maxLevelRes = await client.query(
+        `SELECT MAX(level) as max_level FROM merkle_nodes WHERE batch_id = $1`,
+        [batchId]
+    );
+    const maxLevel = maxLevelRes.rows[0].max_level;
+
+    let currentIndex = startRes.rows[0].position_index;
+    const proof = [];
+
+    for (let level = 0; level < maxLevel; level++) {
+        const siblingIndex = currentIndex ^ 1;
+        const siblingRes = await client.query(
+            `SELECT hash FROM merkle_nodes WHERE batch_id = $1 AND level = $2 AND position_index = $3`,
+            [batchId, level, siblingIndex]
+        );
+
+        if (siblingRes.rows.length > 0) {
+            proof.push(siblingRes.rows[0].hash);
+        } else {
+            // Self-pairing handling
+            const currentRes = await client.query(
+                `SELECT hash FROM merkle_nodes WHERE batch_id = $1 AND level = $2 AND position_index = $3`,
+                [batchId, level, currentIndex]
+            );
+            if (currentRes.rows.length > 0) {
+                proof.push(currentRes.rows[0].hash);
+            }
+        }
+        currentIndex = currentIndex >> 1;
+    }
+    return proof;
+}
+
+// Get Merkle Proof for a Transaction
+app.get('/api/batches/:batchId/transactions/:txId/proof', async (req, res) => {
+    const client = await pool.connect();
+    try {
+        const batchId = req.params.batchId;
+        const txId = req.params.txId;
+        const proof = await getMerkleProof(client, batchId, txId);
+        res.json({ proof });
+    } catch (err) {
+        console.error("Proof Error:", err);
+        res.status(500).json({ error: err.message });
+    } finally {
+        client.release();
+    }
+});
+
