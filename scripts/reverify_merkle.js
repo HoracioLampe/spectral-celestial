@@ -77,7 +77,8 @@ async function run() {
         const batchRes = await client.query('SELECT id, merkle_root, funder_address FROM batches WHERE id = 102');
         const batch = batchRes.rows[0];
         console.log(`Testing Batch ID: ${batch.id}`);
-        console.log(`Funder stored in DB: ${batch.funder_address}`);
+        console.log(`Funder stored in DB (RAW): '${batch.funder_address}'`);
+        console.log(`Is Lowercase? ${batch.funder_address === batch.funder_address.toLowerCase()}`);
         console.log(`Expected Root: ${batch.merkle_root}`);
 
         const txRes = await client.query('SELECT id FROM batch_transactions WHERE batch_id = $1 LIMIT 1', [batch.id]);
