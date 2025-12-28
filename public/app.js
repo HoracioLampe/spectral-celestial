@@ -811,7 +811,7 @@ async function generateMerkleTree() {
         }
     }
 
-    const funder = batchFunderAddress.value.trim();
+    const funder = batchFunderAddress.value.trim().toLowerCase();
 
     if (!funder || !ethers.utils.isAddress(funder)) {
         return alert("Ingresa una dirección de Funder válida");
@@ -892,6 +892,9 @@ async function runMerkleTest() {
         // Fallback to value input if just generated
         funder = batchFunderAddress.value.trim();
     }
+
+    // Normalize for consistency
+    if (funder) funder = funder.toLowerCase();
     if (!ethers.utils.isAddress(funder)) {
         alert("❌ No se encontró address de Funder válida.");
         return;

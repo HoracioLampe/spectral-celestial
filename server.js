@@ -149,7 +149,7 @@ app.post('/api/batches/:id/upload', upload.single('file'), async (req, res) => {
 
             if (wallet && amount) {
                 // Remove spaces and validate address
-                const cleanWallet = wallet.toString().trim();
+                const cleanWallet = wallet.toString().trim().toLowerCase();
                 let cleanAmount = amount;
 
                 // Handle comma decimals if present
@@ -231,6 +231,7 @@ app.post('/api/batches/:id/merkle', async (req, res) => {
         const { funder_address } = req.body;
 
         if (!ethers.isAddress(funder_address)) throw new Error("Invalid Funder Address");
+        const normalizedFunder = funder_address.toLowerCase();
 
         const txRes = await client.query('SELECT id, wallet_address_to, amount_usdc FROM batch_transactions WHERE batch_id = $1 ORDER BY id ASC', [batchId]);
         const txs = txRes.rows;
@@ -248,7 +249,7 @@ app.post('/api/batches/:id/merkle', async (req, res) => {
             const amountVal = BigInt(tx.amount_usdc);
             const encoded = abiCoder.encode(
                 ["uint256", "address", "uint256", "uint256", "address", "address", "uint256"],
-                [chainId, contractAddress, BigInt(batchId), BigInt(tx.id), funder_address, tx.wallet_address_to, amountVal]
+                [chainId, contractAddress, BigInt(batchId), BigInt(tx.id), normalizedFunder, tx.wallet_address_to, amountVal]
             );
             return {
                 id: tx.id,
@@ -325,7 +326,7 @@ app.post('/api/batches/:id/merkle', async (req, res) => {
         const root = currentLevelNodes[0].hash;
 
         // 3. Finalize Batch
-        await client.query('UPDATE batches SET merkle_root = $1, funder_address = $2 WHERE id = $3', [root, funder_address, batchId]);
+        await client.query('UPDATE batches SET merkle_root = $1, funder_address = $2 WHERE id = $3', [root, normalizedFunder, batchId]);
 
         await client.query('COMMIT');
         res.json({ root });
