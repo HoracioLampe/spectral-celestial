@@ -557,6 +557,11 @@ class RelayerEngine {
         const feeData = await this.provider.getFeeData();
         const gasPrice = feeData.gasPrice || 40000000000n;
         const costWei = 21000n * gasPrice;
+        const safetyBuffer = ethers.parseEther("0.002"); // Leave 0.002 MATIC for safety
+
+        // Wait for RPC convergence after mass transactions
+        console.log("⏳ Waiting 5s for RPC balance convergence...");
+        await new Promise(r => setTimeout(r, 5000));
 
         const promises = relayers.map(async (r, idx) => {
             try {
@@ -572,8 +577,8 @@ class RelayerEngine {
                     [ethers.formatEther(bal), r.address, batchId]
                 );
 
-                if (bal > costWei) {
-                    const amount = bal - costWei;
+                if (bal > (costWei + safetyBuffer)) {
+                    const amount = bal - costWei - safetyBuffer;
                     const tx = await wallet.sendTransaction({ to: faucetAddress, value: amount, gasLimit: 21000n, gasPrice });
                     await tx.wait();
                     console.log(`[Refund] Successfully returned ${ethers.formatEther(amount)} from ${r.address.substring(0, 6)}`);
