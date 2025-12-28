@@ -74,9 +74,10 @@ function verifyMerkle(proof, root, leaf) {
 async function run() {
     const client = await pool.connect();
     try {
-        const batchRes = await client.query('SELECT id, merkle_root, funder_address FROM batches ORDER BY id DESC LIMIT 1');
+        const batchRes = await client.query('SELECT id, merkle_root, funder_address FROM batches WHERE id = 102');
         const batch = batchRes.rows[0];
         console.log(`Testing Batch ID: ${batch.id}`);
+        console.log(`Funder stored in DB: ${batch.funder_address}`);
         console.log(`Expected Root: ${batch.merkle_root}`);
 
         const txRes = await client.query('SELECT id FROM batch_transactions WHERE batch_id = $1 LIMIT 1', [batch.id]);

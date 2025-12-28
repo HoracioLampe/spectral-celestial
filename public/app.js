@@ -936,6 +936,10 @@ async function runMerkleTest() {
                 const amountVal = ethers.BigNumber.from(tx.amount_usdc);
 
                 // Verify On-Chain (View Call)
+                console.log(`[Verify] Testing Tx ${tx.id} | Funder: ${funder} | Amount: ${amountVal.toString()}`);
+                console.log(`[Verify] Root: ${merkleRoot}`);
+                console.log(`[Verify] Proof Elements: ${proofData.proof.length}`);
+
                 const isValid = await contract.validateMerkleProofDetails(
                     ethers.BigNumber.from(currentBatchId),
                     ethers.BigNumber.from(tx.id),
@@ -945,6 +949,8 @@ async function runMerkleTest() {
                     merkleRoot,
                     proofData.proof
                 );
+
+                console.log(`[Verify] Result for Tx ${tx.id}: ${isValid}`);
 
                 if (!isValid) throw new Error("❌ Invalid On-Chain Result");
 
