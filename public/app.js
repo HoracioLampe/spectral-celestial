@@ -638,6 +638,8 @@ function updateDetailView(batch, txs) {
             let totalVal = (batch.total_usdc !== null && batch.total_usdc !== undefined) ? parseFloat(batch.total_usdc) : 0;
             const totalDisplay = `$${(totalVal / 1000000).toFixed(6)}`;
             if (merkleTotalAmount) merkleTotalAmount.textContent = totalDisplay;
+            const totalRequiredEl = document.getElementById('merkleResultTotalRequired');
+            if (totalRequiredEl) totalRequiredEl.textContent = `$${(totalVal / 1000000).toFixed(6)} USDC`;
 
             // Update Verification Label with fixed 100 cap or actual count
             const verifyLabel = document.getElementById('merkleVerifyLabel');
@@ -843,6 +845,13 @@ async function generateMerkleTree() {
 
             // Update Funder Display immediately so Test works
             if (merkleResultFunder) merkleResultFunder.textContent = funder;
+
+            // Update Balance in Summary
+            const balanceEl = document.getElementById('merkleResultBalance');
+            if (balanceEl) {
+                balanceEl.textContent = "Cargando...";
+                fetchUSDCBalance(funder).then(bal => { balanceEl.textContent = bal; });
+            }
 
             merkleStatus.textContent = "✅ Árbol Generado y Guardado.";
         } else {
