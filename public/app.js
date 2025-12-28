@@ -1611,6 +1611,12 @@ async function pollBatchProgress(batchId) {
         const batch = data.batch;
 
         if (batch) {
+            // Update Transactions Table
+            if (data.transactions) {
+                allBatchTransactions = data.transactions;
+                renderBatchTransactions();
+            }
+
             const completed = parseInt(batch.completed_count || 0);
             const total = parseInt(batch.total_transactions || 1);
 
