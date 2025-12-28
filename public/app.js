@@ -928,62 +928,77 @@ async function runMerkleTest() {
 
         // Task Function per Transaction
         const runVerificationTask = async (tx) => {
-            try {
-                // Fetch Proof from Backend
-                const proofRes = await fetch(`/api/batches/${currentBatchId}/transactions/${tx.id}/proof`);
-                if (!proofRes.ok) throw new Error("API Error fetching proof");
-                const proofData = await proofRes.json();
+            let attempts = 0;
+            const maxAttempts = 3;
 
-                if (!proofData.proof) throw new Error("No Proof Data");
-
-                const amountVal = ethers.BigNumber.from(tx.amount_usdc);
-
-                // Verify On-Chain (View Call)
-                console.log(`[Verify] Testing Tx ${tx.id} | Funder: ${funder} | Amount: ${amountVal.toString()}`);
-                console.log(`[Verify] Root: ${merkleRoot}`);
-                console.log(`[Verify] Proof Elements: ${proofData.proof.length}`);
-
-                // Debug: Calculate Leaf locally for comparison (Ethers v5)
+            while (attempts < maxAttempts) {
                 try {
-                    const encodedLeaf = ethers.utils.defaultAbiCoder.encode(
-                        ["uint256", "address", "uint256", "uint256", "address", "address", "uint256"],
-                        [
-                            (await provider.getNetwork()).chainId,
-                            APP_CONFIG.CONTRACT_ADDRESS,
-                            ethers.BigNumber.from(currentBatchId),
-                            ethers.BigNumber.from(tx.id),
-                            funder,
-                            tx.wallet_address_to,
-                            amountVal
-                        ]
+                    // Fetch Proof from Backend
+                    const proofRes = await fetch(`/api/batches/${currentBatchId}/transactions/${tx.id}/proof`);
+                    if (!proofRes.ok) throw new Error("API Error fetching proof");
+                    const proofData = await proofRes.json();
+
+                    if (!proofData.proof) throw new Error("No Proof Data");
+
+                    const amountVal = ethers.BigNumber.from(tx.amount_usdc);
+
+                    // Verify On-Chain (View Call)
+                    console.log(`[Verify] Testing Tx ${tx.id} | Funder: ${funder} | Amount: ${amountVal.toString()}`);
+
+                    // Debug: Calculate Leaf locally for comparison (Ethers v5)
+                    try {
+                        const encodedLeaf = ethers.utils.defaultAbiCoder.encode(
+                            ["uint256", "address", "uint256", "uint256", "address", "address", "uint256"],
+                            [
+                                (await provider.getNetwork()).chainId,
+                                APP_CONFIG.CONTRACT_ADDRESS,
+                                ethers.BigNumber.from(currentBatchId),
+                                ethers.BigNumber.from(tx.id),
+                                funder,
+                                tx.wallet_address_to,
+                                amountVal
+                            ]
+                        );
+                        const leafHash = ethers.utils.keccak256(encodedLeaf);
+                        console.log(`[Verify] CLIENT COMPUTED LEAF: ${leafHash}`);
+                    } catch (errLeaf) {
+                        console.error("[Verify] Error computing leaf:", errLeaf);
+                    }
+
+                    const isValid = await contract.validateMerkleProofDetails(
+                        ethers.BigNumber.from(currentBatchId),
+                        ethers.BigNumber.from(tx.id),
+                        funder,
+                        tx.wallet_address_to,
+                        amountVal,
+                        merkleRoot,
+                        proofData.proof
                     );
-                    const leafHash = ethers.utils.keccak256(encodedLeaf);
-                    console.log(`[Verify] CLIENT COMPUTED LEAF: ${leafHash}`);
-                } catch (errLeaf) {
-                    console.error("[Verify] Error computing leaf:", errLeaf);
+
+                    console.log(`[Verify] Result for Tx ${tx.id}: ${isValid}`);
+
+                    if (!isValid) throw new Error("❌ Invalid On-Chain Result");
+
+                    // Success! Break loop
+                    return;
+
+                } catch (err) {
+                    attempts++;
+                    console.warn(`Verification Attempt ${attempts}/${maxAttempts} failed for Tx ${tx.id}:`, err.message);
+
+                    if (attempts >= maxAttempts) {
+                        console.error(`Verification Failed [TxID: ${tx.id}] after retries`, err);
+                        failed++;
+                    } else {
+                        // Exponential backoff: 1s, 2s, 4s
+                        const delay = 1000 * Math.pow(2, attempts - 1);
+                        await new Promise(r => setTimeout(r, delay));
+                    }
                 }
-
-                const isValid = await contract.validateMerkleProofDetails(
-                    ethers.BigNumber.from(currentBatchId),
-                    ethers.BigNumber.from(tx.id),
-                    funder,
-                    tx.wallet_address_to,
-                    amountVal,
-                    merkleRoot,
-                    proofData.proof
-                );
-
-                console.log(`[Verify] Result for Tx ${tx.id}: ${isValid}`);
-
-                if (!isValid) throw new Error("❌ Invalid On-Chain Result");
-
-            } catch (err) {
-                console.error(`Verification Failed [TxID: ${tx.id}]`, err);
-                failed++;
-            } finally {
-                completed++;
-                if (status) status.textContent = `⏳ Progreso: ${completed}/${sampleSize} verificados (Fallos: ${failed})`;
             }
+            // Finally block handled outside the loop effectively by incrementing counts
+            completed++;
+            if (status) status.textContent = `⏳ Progreso: ${completed}/${sampleSize} verificados (Fallos: ${failed})`;
         };
 
         // Execution Queue (Worker Pool Pattern)
