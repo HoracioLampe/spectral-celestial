@@ -193,8 +193,9 @@
                     <div id="merkleInputZone">
                         <label>Funder Wallet (Quien enviará el lote)</label>
                         <div style="display: flex; gap: 1rem; margin-top: 0.5rem; align-items: center;">
-                            <input type="text" id="batchFunderAddress" class="input-glass" placeholder="0x..."
-                                onchange="checkFounderBalance()">
+                            <input type="text" id="batchFunderAddress" class="input-glass"
+                                placeholder="Conectar Wallet..." readonly onclick="if(!userAddress) connectWallet()"
+                                style="cursor: pointer;">
                             <button id="btnGenerateMerkle" class="btn btn-primary" style="white-space: nowrap;">Generar
                                 Merkle Tree ⚙️</button>
                         </div>
@@ -225,8 +226,9 @@
                     <div
                         style="margin-top: 1rem; padding: 1rem; border: 1px dashed rgba(167, 139, 250, 0.3); border-radius: 8px;">
                         <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <label style="font-size: 0.9rem; color: #a78bfa;">🔬 Verificación On-Chain (Muestreo
-                                10%)</label>
+                            <label id="merkleVerifyLabel" style="font-size: 0.9rem; color: #a78bfa;">🔬 Verificación
+                                On-Chain (Muestreo
+                                ---)</label>
                             <button id="btnTestMerkle" class="btn-glass"
                                 style="font-size: 0.8rem; border: 1px solid #a78bfa; color: #a78bfa;">
                                 Ejecutar Test

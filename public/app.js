@@ -294,7 +294,7 @@ async function connectWallet() {
 
         // Auto-fill Funder Address if in Batch View
         const funderInput = document.getElementById('batchFunderAddress');
-        if (funderInput && !funderInput.value) {
+        if (funderInput) {
             funderInput.value = userAddress;
             checkFunderBalance();
         }
@@ -639,6 +639,13 @@ function updateDetailView(batch, txs) {
             const totalDisplay = `$${(totalVal / 1000000).toFixed(6)}`;
             if (merkleTotalAmount) merkleTotalAmount.textContent = totalDisplay;
 
+            // Update Verification Label with fixed 100 cap or actual count
+            const verifyLabel = document.getElementById('merkleVerifyLabel');
+            if (verifyLabel) {
+                const count = Math.min(100, (txs || []).length);
+                verifyLabel.textContent = `🔬 Verificación On-Chain (Muestreo ${count} ${count === 1 ? 'tx' : 'txs'})`;
+            }
+
             if (batch.merkle_root) {
                 // Already generated
                 merkleInputZone.classList.add('hidden');
@@ -802,13 +809,9 @@ async function generateMerkleTree() {
 
     // Check if wallet is connected
     if (!userAddress || !signer) {
-        if (confirm("⚠️ Debes conectar tu Wallet Funder para generar el Merkle Tree. ¿Deseas conectarla ahora?")) {
-            await connectWallet();
-            // After connection, the input should be auto-filled, but let's be sure
-            if (!userAddress) return;
-        } else {
-            return;
-        }
+        alert("⚠️ Debes conectar tu Wallet Funder primero.");
+        await connectWallet();
+        if (!userAddress) return;
     }
 
     const funder = batchFunderAddress.value.trim().toLowerCase();
@@ -872,18 +875,23 @@ async function runMerkleTest() {
         return;
     }
 
-    // Parameters
-    const SAMPLE_PERCENT = 1.0; // 100%
+    // Parameters: Max 100 samples
+    const MAX_SAMPLES = 100;
     const MAX_CONCURRENT = 30; // Updated to 30 TPS as per user request
 
-    // 1. Select All (100%)
-    const sampleSize = allBatchTransactions.length;
+    // 1. Select Sample (Max 100)
+    const sampleSize = Math.min(MAX_SAMPLES, allBatchTransactions.length);
     const shuffled = [...allBatchTransactions].sort(() => 0.5 - Math.random());
     const selectedTxs = shuffled.slice(0, sampleSize);
 
     // UI Setup
     const btn = document.getElementById('btnTestMerkle');
     const status = document.getElementById('merkleTestStatus');
+    const verifyLabel = document.getElementById('merkleVerifyLabel');
+
+    if (verifyLabel) {
+        verifyLabel.textContent = `🔬 Verificación On-Chain (Muestreo ${sampleSize} ${sampleSize === 1 ? 'tx' : 'txs'})`;
+    }
     const funderText = document.getElementById('merkleResultFunder').textContent.trim();
 
     // Determine Funder Address
