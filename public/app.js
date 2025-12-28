@@ -943,6 +943,26 @@ async function runMerkleTest() {
                 console.log(`[Verify] Root: ${merkleRoot}`);
                 console.log(`[Verify] Proof Elements: ${proofData.proof.length}`);
 
+                // Debug: Calculate Leaf locally for comparison (Ethers v5)
+                try {
+                    const encodedLeaf = ethers.utils.defaultAbiCoder.encode(
+                        ["uint256", "address", "uint256", "uint256", "address", "address", "uint256"],
+                        [
+                            (await provider.getNetwork()).chainId,
+                            APP_CONFIG.CONTRACT_ADDRESS,
+                            ethers.BigNumber.from(currentBatchId),
+                            ethers.BigNumber.from(tx.id),
+                            funder,
+                            tx.wallet_address_to,
+                            amountVal
+                        ]
+                    );
+                    const leafHash = ethers.utils.keccak256(encodedLeaf);
+                    console.log(`[Verify] CLIENT COMPUTED LEAF: ${leafHash}`);
+                } catch (errLeaf) {
+                    console.error("[Verify] Error computing leaf:", errLeaf);
+                }
+
                 const isValid = await contract.validateMerkleProofDetails(
                     ethers.BigNumber.from(currentBatchId),
                     ethers.BigNumber.from(tx.id),
