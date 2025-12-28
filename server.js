@@ -303,6 +303,20 @@ app.post('/api/batches/:id/merkle', async (req, res) => {
                     'INSERT INTO merkle_nodes (batch_id, level, position_index, hash) VALUES ($1, $2, $3, $4)',
                     [parentNode.batch_id, parentNode.level, parentNode.position_index, parentNode.hash]
                 );
+
+                // LINK CHILDREN TO PARENT
+                await client.query(
+                    'UPDATE merkle_nodes SET parent_hash = $1 WHERE batch_id = $2 AND hash = $3',
+                    [parentNode.hash, batchId, left.hash]
+                );
+
+                if (right.hash !== left.hash) { // Avoid double update if self-paired (rare in this logic but possible)
+                    await client.query(
+                        'UPDATE merkle_nodes SET parent_hash = $1 WHERE batch_id = $2 AND hash = $3',
+                        [parentNode.hash, batchId, right.hash]
+                    );
+                }
+
                 nextLevelNodes.push(parentNode);
             }
             currentLevelNodes = nextLevelNodes;
