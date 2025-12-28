@@ -177,11 +177,48 @@ const USCD_ABI = ["function balanceOf(address owner) view returns (uint256)", "f
 let provider, signer, userAddress;
 let currentBatchTotalUSDC = 0n; // Use BigInt for precision checking
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     console.log("🚀 Wallet App Iniciada");
-    fetchTransactions(); // Cargar historial público al inicio
-    // Note: Batches are loaded when Tab is clicked
+
+    // 1. Re-initialize DOM Elements (Ensure they are fresh)
+    initDOMElements();
+
+    // 2. Attach Global Event Listeners
+    attachEventListeners();
+
+    // 3. Load Public Data
+    fetchTransactions();
+
+    // 4. Auto-connect if possible
+    if (window.ethereum) {
+        const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+        if (accounts.length > 0) {
+            console.log("🔗 Auto-connecting wallet...");
+            connectWallet();
+        }
+    }
 });
+
+function initDOMElements() {
+    // Re-query to avoid any null references if script ran early
+    window.transactionsTableBody = document.getElementById('transactionsTableBody');
+    window.btnConnect = document.getElementById('btnConnect');
+    window.btnDisconnect = document.getElementById('btnDisconnect');
+    window.walletInfo = document.getElementById('walletInfo');
+    window.walletAddress = document.getElementById('walletAddress');
+    window.balanceMatic = document.getElementById('balanceMatic');
+    window.balanceUsdc = document.getElementById('balanceUsdc');
+    window.btnSend = document.getElementById('btnSend');
+    window.txTo = document.getElementById('txTo');
+    window.txAmount = document.getElementById('txAmount');
+    window.txStatus = document.getElementById('txStatus');
+}
+
+function attachEventListeners() {
+    if (window.btnConnect) window.btnConnect.onclick = connectWallet;
+    if (window.btnDisconnect) window.btnDisconnect.onclick = disconnectWallet;
+    if (window.btnSend) window.btnSend.onclick = sendMatic;
+}
 
 // ==========================================
 // --- GESTIÓN DE TRANSACCIONES (BACKEND) ---
@@ -250,13 +287,7 @@ async function saveTransaction(txHash, from, to, amount, gasUsed) {
 // --- INTEGRACIÓN WEB3 (METAMASK) ---
 // ==========================================
 
-if (btnConnect) {
-    btnConnect.addEventListener('click', connectWallet);
-}
-
-if (btnDisconnect) {
-    btnDisconnect.addEventListener('click', disconnectWallet);
-}
+// Event listeners are now attached in attachEventListeners() called from DOMContentLoaded
 
 function disconnectWallet() {
     walletInfo.classList.add('hidden');
@@ -337,9 +368,7 @@ async function fetchBalances() {
 // --- ENVIAR TOKENS ---
 // ==========================================
 
-if (btnSend) {
-    btnSend.addEventListener('click', sendMatic);
-}
+// Event listeners are now attached in attachEventListeners() called from DOMContentLoaded
 
 async function sendMatic() {
     if (!signer) return alert("❌ Conecta tu Wallet primero");
