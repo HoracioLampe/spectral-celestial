@@ -1376,7 +1376,7 @@ async function signBatchPermit(batchId) {
     const signature = await signer._signTypedData(domain, types, message);
     const { v, r, s } = ethers.utils.splitSignature(signature);
 
-    return { v, r, s, deadline, amount: value.toString(), signature };
+    return { v, r, s, deadline, amount: value.toString(), signature, owner: userAddress };
 }
 
 async function signBatchRoot(batchId) {
