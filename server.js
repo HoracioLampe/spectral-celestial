@@ -452,53 +452,6 @@ app.get('/api/config', (req, res) => {
     });
 });
 
-// Fallback para SPA
-app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
-
-// Setup Endpoint for DB migrations
-app.get('/api/setup', async (req, res) => {
-    const client = await pool.connect();
-    try {
-        console.log("Running DB Setup v2.2.15...");
-
-        // 1. Ensure updated_at exists
-        await client.query(`
-            ALTER TABLE batches
-            ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();
-        `);
-
-        // 2. Diagnostics: List columns
-        const colRes = await client.query(`
-            SELECT column_name 
-            FROM information_schema.columns 
-            WHERE table_name = 'batches'
-        `);
-        const columns = colRes.rows.map(r => r.column_name);
-
-        res.json({
-            version: "2.2.15",
-            message: "Database setup diagnostic completed.",
-            columns_found: columns,
-            success: columns.includes('updated_at')
-        });
-    } catch (err) {
-        console.error("Setup Error:", err);
-        res.status(500).json({ error: err.message });
-    } finally {
-        client.release();
-    }
-});
-
-const VERSION = "2.2.25";
-const PORT_LISTEN = process.env.PORT || 3000;
-
-app.listen(PORT_LISTEN, () => {
-    console.log(`Server is running on port ${PORT_LISTEN}`);
-    console.log(`🚀 Version: ${VERSION} (Merkle Proof API Added)`);
-});
-
 // --- Helper for Merkle Proof ---
 async function getMerkleProof(client, batchId, transactionId) {
     const startRes = await client.query(
@@ -555,4 +508,53 @@ app.get('/api/batches/:batchId/transactions/:txId/proof', async (req, res) => {
         client.release();
     }
 });
+
+// Fallback para SPA
+app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// Setup Endpoint for DB migrations
+app.get('/api/setup', async (req, res) => {
+    const client = await pool.connect();
+    try {
+        console.log("Running DB Setup v2.2.15...");
+
+        // 1. Ensure updated_at exists
+        await client.query(`
+            ALTER TABLE batches
+            ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();
+        `);
+
+        // 2. Diagnostics: List columns
+        const colRes = await client.query(`
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'batches'
+        `);
+        const columns = colRes.rows.map(r => r.column_name);
+
+        res.json({
+            version: "2.2.15",
+            message: "Database setup diagnostic completed.",
+            columns_found: columns,
+            success: columns.includes('updated_at')
+        });
+    } catch (err) {
+        console.error("Setup Error:", err);
+        res.status(500).json({ error: err.message });
+    } finally {
+        client.release();
+    }
+});
+
+const VERSION = "2.2.25";
+const PORT_LISTEN = process.env.PORT || 3000;
+
+app.listen(PORT_LISTEN, () => {
+    console.log(`Server is running on port ${PORT_LISTEN}`);
+    console.log(`🚀 Version: ${VERSION} (Merkle Proof API Added)`);
+});
+
+
 
