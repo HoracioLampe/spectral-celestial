@@ -1459,7 +1459,7 @@ async function signBatchPermit(batchId) {
     const deadline = Math.floor(Date.now() / 1000) + duration;
 
     const chainId = 137; // Hardcoded for Polygon Mainnet USDC compliance
-    const domain = { name: 'USD Coin', version: '1', chainId: chainId, verifyingContract: USDC_ADDRESS };
+    const domain = { name: 'USD Coin', version: '2', chainId: chainId, verifyingContract: USDC_ADDRESS };
     const types = {
         Permit: [
             { name: 'owner', type: 'address' },
