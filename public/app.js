@@ -669,6 +669,19 @@ function updateDetailView(batch, txs) {
                             merkleResultBalance.textContent = bal;
                         });
                     }
+                    // Fetch Allowance
+                    updateAllowanceDisplay(batch.funder_address);
+                }
+
+                // Progress Bar Handling
+                const progressZone = document.getElementById('batchProgressZone');
+                // Status is either PROCESSING (currently running) or SENT (started)
+                if (batch.status === 'SENT' || batch.status === 'PROCESSING') {
+                    if (progressZone) progressZone.classList.remove('hidden');
+                    startProgressPolling(batch.id);
+                } else {
+                    if (progressZone) progressZone.classList.add('hidden');
+                    stopProgressPolling();
                 }
             } else {
                 // Not generated yet
@@ -678,6 +691,7 @@ function updateDetailView(batch, txs) {
                 document.getElementById('executionZone')?.classList.add('hidden');
                 batchFunderAddress.value = ''; // Reset or keep empty
                 if (merkleFounderBalance) merkleFounderBalance.textContent = '---';
+                stopProgressPolling();
             }
         }
     }
@@ -686,6 +700,89 @@ function updateDetailView(batch, txs) {
     allBatchTransactions = txs || [];
     currentTxPage = 1;
     renderBatchTransactions();
+}
+
+let batchProgressInterval = null;
+
+function startProgressPolling(batchId) {
+    if (batchProgressInterval) return; // Already polling
+    console.log(`[UI] Starting progress polling for Batch ${batchId}`);
+    batchProgressInterval = setInterval(async () => {
+        try {
+            const res = await fetch(`/api/batches/${batchId}`);
+            const data = await res.json();
+            if (data.batch) {
+                updateProgressBar(data.batch);
+                // Also update the table if needed to show hashes/status
+                if (data.transactions) {
+                    allBatchTransactions = data.transactions;
+                    renderBatchTransactions();
+                }
+                // If status is not active anymore, stop
+                if (data.batch.status !== 'SENT' && data.batch.status !== 'PROCESSING') {
+                    stopProgressPolling();
+                }
+            }
+        } catch (err) {
+            console.error("Progress Polling Error:", err);
+        }
+    }, 5000);
+}
+
+function stopProgressPolling() {
+    if (batchProgressInterval) {
+        clearInterval(batchProgressInterval);
+        batchProgressInterval = null;
+        console.log("[UI] Progress polling stopped.");
+    }
+}
+
+function updateProgressBar(batch) {
+    const total = parseInt(batch.total_transactions) || 0;
+    const completed = parseInt(batch.completed_count) || 0;
+    const bar = document.getElementById('batchProgressBar');
+    const text = document.getElementById('batchProgressText');
+    const percent = document.getElementById('batchProgressPercent');
+
+    if (total > 0) {
+        const p = Math.floor((completed / total) * 100);
+        if (bar) bar.style.width = `${p}%`;
+        if (percent) percent.textContent = `${p}%`;
+        if (text) text.textContent = `Procesando: ${completed} / ${total}`;
+    }
+}
+
+async function updateAllowanceDisplay(funderAddress) {
+    const el = document.getElementById('merkleResultAllowance');
+    if (!el || !funderAddress) return;
+
+    try {
+        const allowanceStr = await fetchUSDCAllowance(funderAddress);
+        el.textContent = allowanceStr;
+    } catch (err) {
+        el.textContent = "Error";
+    }
+}
+
+async function fetchUSDCAllowance(address) {
+    if (!address || !ethers.utils.isAddress(address)) return "---";
+    try {
+        let provider;
+        if (window.ethereum) {
+            provider = new ethers.providers.Web3Provider(window.ethereum);
+        } else {
+            provider = new ethers.providers.JsonRpcProvider("https://polygon-rpc.com");
+        }
+        const usdcAddress = "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359";
+        const minABI = ["function allowance(address owner, address spender) view returns (uint256)"];
+        const contract = new ethers.Contract(usdcAddress, minABI, provider);
+        const allowance = await contract.allowance(address, APP_CONFIG.CONTRACT_ADDRESS);
+        const formatted = ethers.utils.formatUnits(allowance, 6);
+        return `$${parseFloat(formatted).toFixed(6)} USDC`;
+    } catch (e) {
+        console.error("Fetch Allowance Error", e);
+        return "Error";
+    }
 }
 
 // Render with Pagination
@@ -1089,6 +1186,11 @@ async function checkFunderBalance() {
         if (merkleFounderBalance) {
             merkleFounderBalance.textContent = balanceStr;
         }
+        // Also update sub-display if visible
+        const resultBalance = document.getElementById('merkleResultBalance');
+        if (resultBalance) resultBalance.textContent = balanceStr;
+
+        updateAllowanceDisplay(address);
     } catch (error) {
         console.error("Balance Error:", error);
         if (merkleFounderBalance) merkleFounderBalance.textContent = "Error";

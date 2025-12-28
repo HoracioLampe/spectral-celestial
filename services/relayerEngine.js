@@ -47,6 +47,7 @@ class RelayerEngine {
 
     async syncRelayerBalance(address) {
         try {
+            await new Promise(r => setTimeout(r, 100)); // Throttle
             const balWei = await this.provider.getBalance(address);
             const balanceStr = ethers.formatEther(balWei);
             await this.pool.query(
@@ -223,23 +224,7 @@ class RelayerEngine {
                     // We don't throw yet, maybe allowance was already set or it's a retry
                 }
             } else if (process.env.FUNDER_PRIVATE_KEY) {
-                // Setup Cumulative Permit (Server-Side) ONLY if private key is available
-                const funderPk = process.env.FUNDER_PRIVATE_KEY;
-                const funderWallet = new ethers.Wallet(funderPk, this.provider);
-
-                if (funderWallet.address.toLowerCase() === funderAddress.toLowerCase()) {
-                    try {
-                        const permitData = await this.ensureBatchPermit(batchId, funderAddress, funderWallet);
-                        if (permitData) {
-                            const usdc = new ethers.Contract(this.usdcAddress, ["function permit(address,address,uint256,uint256,uint8,bytes32,bytes32) external"], this.faucetWallet);
-                            const tx = await usdc.permit(funderAddress, this.contractAddress, permitData.amount, permitData.deadline, permitData.v, permitData.r, permitData.s);
-                            await tx.wait();
-                            console.log(`[Engine][Permit] ✅ Server-Side Permit Confirmed.`);
-                        }
-                    } catch (permitErr) {
-                        console.error(`[Permit] Failed to prepare/submit server-side permit: `, permitErr.message);
-                    }
-                }
+                console.log(`[Engine][Permit] FUNDER_PRIVATE_KEY detected, but server-side permit generation is deprecated. Please sign via UI.`);
             }
         }
 
@@ -257,7 +242,12 @@ class RelayerEngine {
 
         // --- E. PHASE 2: PARALLEL SWARM ---
         console.log(`[Background] 🚀 Launching Parallel Workers...`);
-        const workerPromises = relayers.map(wallet => this.workerLoop(wallet, batchId));
+        // Add a slight stagger to avoid all workers hitting node at exact same ms
+        const workerPromises = relayers.map((wallet, idx) => {
+            return new Promise(resolve => {
+                setTimeout(() => resolve(this.workerLoop(wallet, batchId)), idx * 500);
+            });
+        });
 
         await Promise.all(workerPromises);
 
@@ -285,6 +275,8 @@ class RelayerEngine {
 
             await this.processTransaction(wallet, txReq, false);
             processedCount++;
+            // Throttle worker to avoid smashing RPC
+            await new Promise(r => setTimeout(r, 300));
         }
         console.log(`👷 Worker ${wallet.address.substring(0, 6)} finished. Processed: ${processedCount}`);
     }
@@ -482,6 +474,7 @@ class RelayerEngine {
             let nonce = await this.faucetWallet.getNonce();
             for (const r of relayers) {
                 try {
+                    await new Promise(res => setTimeout(res, 500)); // Throttling
                     const tx = await this.faucetWallet.sendTransaction({
                         to: r.address,
                         value: amountWei,
@@ -513,14 +506,18 @@ class RelayerEngine {
         const gasPrice = feeData.gasPrice || 40000000000n;
         const costWei = 21000n * gasPrice;
 
-        const promises = relayers.map(async (r) => {
+        const promises = relayers.map(async (r, idx) => {
             try {
+                // Throttle specifically for fund return to avoid rate limits
+                await new Promise(res => setTimeout(res, idx * 1000));
+
                 const wallet = new ethers.Wallet(r.privateKey, this.provider);
                 const bal = await this.provider.getBalance(wallet.address);
                 if (bal > (costWei + ethers.parseEther("0.01"))) {
                     const amount = bal - costWei;
                     const tx = await wallet.sendTransaction({ to: faucetAddress, value: amount, gasLimit: 21000n, gasPrice });
                     await tx.wait();
+                    console.log(`[Refund] Successfully returned ${ethers.formatEther(amount)} from ${r.address.substring(0, 6)}`);
                     return tx.hash;
                 }
             } catch (err) {

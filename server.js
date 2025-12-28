@@ -65,7 +65,12 @@ app.get('/api/batches', async (req, res) => {
 app.get('/api/batches/:id', async (req, res) => {
     try {
         const batchId = req.params.id;
-        const batchRes = await pool.query('SELECT * FROM batches WHERE id = $1', [batchId]);
+        const batchRes = await pool.query(`
+            SELECT b.*, 
+            (SELECT COUNT(*) FROM batch_transactions WHERE batch_id = b.id AND status = 'COMPLETADO') as completed_count
+            FROM batches b 
+            WHERE b.id = $1
+        `, [batchId]);
         const txRes = await pool.query('SELECT * FROM batch_transactions WHERE batch_id = $1 ORDER BY id ASC', [batchId]);
 
         if (batchRes.rows.length === 0) return res.status(404).json({ error: 'Batch not found' });
