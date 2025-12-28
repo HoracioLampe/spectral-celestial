@@ -171,7 +171,7 @@ const txStatus = document.getElementById('txStatus');
 // --- Web3 Constants ---
 const POLYGON_CHAIN_ID = '0x89'; // 137
 const USDC_ADDRESS = '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359';
-const CONTRACT_ADDRESS = "0x7B25Ce9800CCE4309E92e2834E09bD89453d90c5";
+// REMOVED HARDCODED CONTRACT_ADDRESS - Uses APP_CONFIG.CONTRACT_ADDRESS instead
 const USDC_ABI = ["function balanceOf(address owner) view returns (uint256)", "function decimals() view returns (uint8)"];
 const USCD_ABI = ["function balanceOf(address owner) view returns (uint256)", "function decimals() view returns (uint8)"];
 let provider, signer, userAddress;
@@ -909,7 +909,12 @@ async function runMerkleTest() {
         }
 
         const abi = ["function validateMerkleProofDetails(uint256, uint256, address, address, uint256, bytes32, bytes32[]) external view returns (bool)"];
-        const contract = new ethers.Contract(CONTRACT_ADDRESS, abi, testProvider);
+
+        // Use Configured Address
+        const targetContract = APP_CONFIG.CONTRACT_ADDRESS;
+        if (!targetContract) throw new Error("Contract Address not loaded in Config");
+
+        const contract = new ethers.Contract(targetContract, abi, testProvider);
 
         let completed = 0;
         let failed = 0;
@@ -1195,7 +1200,8 @@ async function signBatchPermit(batchId) {
     const usdcContract = new ethers.Contract(USDC_ADDRESS, usdcAbi, signer); // signer is global
 
     const nonce = await usdcContract.nonces(userAddress);
-    const allowance = await usdcContract.allowance(userAddress, CONTRACT_ADDRESS);
+    // Check Allowance
+    const allowance = await usdcContract.allowance(userAddress, APP_CONFIG.CONTRACT_ADDRESS);
 
     // Additive Permit Logic (Current Allowance + New Batch)
     const value = allowance.add(totalUSDC);
@@ -1235,7 +1241,9 @@ async function signBatchPermit(batchId) {
 
     const message = {
         owner: userAddress,
-        spender: CONTRACT_ADDRESS,
+        version: "2",
+        spender: APP_CONFIG.CONTRACT_ADDRESS,
+        value: value,
         value: value.toString(), // Ethers v5 signTypedData handles string/BN
         nonce: nonce.toString(),
         deadline: deadline
@@ -1251,7 +1259,9 @@ async function signBatchPermit(batchId) {
         signature,
         // Optional: Include owner/spender for verification
         owner: userAddress,
-        spender: CONTRACT_ADDRESS
+        owner: userAddress,
+        spender: APP_CONFIG.CONTRACT_ADDRESS,
+        value: value,
     };
 }
 
@@ -1277,7 +1287,17 @@ async function signBatchRoot(batchId) {
 
     // 2. Fetch Nonce from Contract
     const minABI = ["function nonces(address owner) view returns (uint256)"];
-    const contract = new ethers.Contract(CONTRACT_ADDRESS, minABI, provider);
+    // 4. Send Signature + Root to Backend to execute
+    // Note: We need the Relayer to submit this. For now we just store it or call a relay endpoint
+    // Actually, we use the RelayerEngine in backend. 
+    // We just need to ensure the backend receives this signature.
+
+    // For ATOMIC execution, we might want to call the contract directly IF we are not using relayers?
+    // But the requirement says "Gasless". So we must send to backend.
+
+    // ... (Existing logic continues) ...
+    // Verify Contract Connection for display purposes
+    const contract = new ethers.Contract(APP_CONFIG.CONTRACT_ADDRESS, minABI, provider);
     const nonce = await contract.nonces(userAddress);
 
     const network = await provider.getNetwork();
@@ -1290,7 +1310,7 @@ async function signBatchRoot(batchId) {
         name: 'BatchDistributor',
         version: '1',
         chainId: chainId,
-        verifyingContract: CONTRACT_ADDRESS
+        verifyingContract: APP_CONFIG.CONTRACT_ADDRESS
     };
 
     const types = {

@@ -432,7 +432,8 @@ app.get('/api/logs', async (req, res) => {
 app.get('/api/config', (req, res) => {
     res.json({
         RPC_URL: process.env.RPC_URL || QUICKNODE_URL,
-        WS_RPC_URL: process.env.WS_RPC_URL || ""
+        WS_RPC_URL: process.env.WS_RPC_URL || "",
+        CONTRACT_ADDRESS: process.env.CONTRACT_ADDRESS || "0x7B25Ce9800CCE4309E92e2834E09bD89453d90c5"
     });
 });
 
