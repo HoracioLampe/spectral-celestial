@@ -874,7 +874,7 @@ async function runMerkleTest() {
 
     // Parameters
     const SAMPLE_PERCENT = 0.10; // 10%
-    const MAX_CONCURRENT = 5; // Reduced from 50 to avoid RPC 429 Rate Limits
+    const MAX_CONCURRENT = 30; // Updated to 30 TPS as per user request
 
     // 1. Select Sample
     const sampleSize = Math.max(1, Math.ceil(allBatchTransactions.length * SAMPLE_PERCENT));
@@ -1009,7 +1009,7 @@ async function runMerkleTest() {
             while (queue.length > 0) {
                 const tx = queue.shift();
                 await runVerificationTask(tx);
-                await new Promise(r => setTimeout(r, 500)); // Throttle requests
+                // await new Promise(r => setTimeout(r, 500)); // Delay removed for speed
             }
         };
 
