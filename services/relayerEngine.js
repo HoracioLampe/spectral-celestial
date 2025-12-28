@@ -94,8 +94,9 @@ class RelayerEngine {
         }
 
         // Trigger Atomic Funding
-        console.log(`[Engine] Funding relayers for Batch ${batchId}...`);
+        console.log(`[Engine] Funding ${relayers.length} relayers for Batch ${batchId}...`);
         await this.distributeGasToRelayers(batchId, relayers);
+        console.log(`[Engine] ✅ Relayer setup and funding COMPLETE for Batch ${batchId}.`);
 
         return { success: true, count: relayers.length };
     }
@@ -406,9 +407,13 @@ class RelayerEngine {
     }
 
     async estimateBatchGas(batchId) {
+        console.log(`[Engine] ⛽ Estimating gas for Batch ${batchId}...`);
         const txRes = await this.pool.query('SELECT id, amount_usdc, wallet_address_to FROM batch_transactions WHERE batch_id = $1 AND status = $2', [batchId, 'PENDING']);
         const txs = txRes.rows;
-        if (txs.length === 0) return { totalCostWei: 0n };
+        if (txs.length === 0) {
+            console.log(`[Engine]   > No pending transactions found for estimation.`);
+            return { totalCostWei: 0n };
+        }
 
         const batchRes = await this.pool.query('SELECT funder_address FROM batches WHERE id = $1', [batchId]);
         const funder = batchRes.rows[0]?.funder_address || ethers.ZeroAddress;
@@ -424,7 +429,9 @@ class RelayerEngine {
                     batchId, tx.id, funder, tx.wallet_address_to, BigInt(tx.amount_usdc), [ethers.ZeroHash]
                 );
                 totalSampleGas += gas;
+                console.log(`[Engine]   > Sample Tx ${tx.id} gas: ${gas.toString()}`);
             } catch (e) {
+                console.warn(`[Engine]   > Sample Tx ${tx.id} estimation failed, using fallback 150k. Error: ${e.message}`);
                 totalSampleGas += 150000n;
             }
         }
@@ -433,8 +440,10 @@ class RelayerEngine {
         const bufferedGas = (averageGas * BigInt(txs.length)) * 130n / 100n;
         const feeData = await this.provider.getFeeData();
         const gasPrice = feeData.gasPrice || 50000000000n;
+        const totalCost = bufferedGas * gasPrice;
 
-        return { totalCostWei: bufferedGas * gasPrice };
+        console.log(`[Engine]   > Total estimated cost: ${ethers.formatEther(totalCost)} MATIC`);
+        return { totalCostWei: totalCost };
     }
 
     async distributeGasToRelayers(batchId, relayers) {
@@ -452,6 +461,13 @@ class RelayerEngine {
         try {
             const contract = new ethers.Contract(this.contractAddress, this.contractABI, this.faucetWallet);
             const totalValueToSend = amountWei * BigInt(relayers.length);
+
+            // Check Faucet Balance
+            const faucetBalance = await this.provider.getBalance(this.faucetWallet.address);
+            console.log(`[Engine][Fund] Faucet Balance: ${ethers.formatEther(faucetBalance)} MATIC`);
+            if (faucetBalance < totalValueToSend) {
+                throw new Error(`Insufficient Faucet balance. Need ${ethers.formatEther(totalValueToSend)} MATIC, have ${ethers.formatEther(faucetBalance)}.`);
+            }
 
             console.log(`[Engine][Fund] 🚀 Atomic Distribution START: ${relayers.length} relayers.`);
             console.log(`[Engine][Fund] Target: ${ethers.formatEther(amountWei)} MATIC each | Total: ${ethers.formatEther(totalValueToSend)} MATIC`);
@@ -501,7 +517,9 @@ class RelayerEngine {
     }
 
     async persistRelayers(batchId, relayers) {
-        for (const r of relayers) {
+        console.log(`[Engine] 💾 Persisting ${relayers.length} relayers to database...`);
+        for (let i = 0; i < relayers.length; i++) {
+            const r = relayers[i];
             try {
                 await this.pool.query(
                     `INSERT INTO relayers(batch_id, address, private_key, status) 
@@ -509,10 +527,14 @@ class RelayerEngine {
                      ON CONFLICT (address) DO UPDATE SET batch_id = EXCLUDED.batch_id, status = 'active'`,
                     [batchId, r.address, r.privateKey]
                 );
+                if ((i + 1) % 10 === 0 || (i + 1) === relayers.length) {
+                    console.log(`[Engine]   > Saved ${i + 1}/${relayers.length} relayers.`);
+                }
             } catch (err) {
                 console.warn(`[Engine] Skip/Update existing relayer ${r.address}: ${err.message}`);
             }
         }
+        console.log(`[Engine] ✅ Persistence done.`);
     }
 
     async returnFundsToFaucet(relayers, batchId) {
