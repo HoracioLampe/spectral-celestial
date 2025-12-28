@@ -526,16 +526,33 @@ class RelayerEngine {
             const contract = new ethers.Contract(this.contractAddress, this.contractABI, this.faucetWallet);
             const totalValueToSend = amountWei * BigInt(relayers.length);
 
-            const tx = await contract.distributeMatic(relayers.map(r => r.address), amountWei, { value: totalValueToSend });
+            console.log(`[Engine][Fund] 🚀 Atomic Distribution START: ${relayers.length} relayers.`);
+            console.log(`[Engine][Fund] Target: ${ethers.formatEther(amountWei)} MATIC each | Total: ${ethers.formatEther(totalValueToSend)} MATIC`);
+
+            // Gas Calculation: Baseline (100k) + ~30k per recipient (typical for a loop of calls/transfers)
+            const safeGasLimit = 150000n + (BigInt(relayers.length) * 35000n);
+
+            const tx = await contract.distributeMatic(
+                relayers.map(r => r.address),
+                amountWei,
+                {
+                    value: totalValueToSend,
+                    gasLimit: safeGasLimit
+                }
+            );
+
             console.log(`[Blockchain][Fund] Atomic Batch SENT: ${tx.hash}`);
-            await tx.wait();
+            const receipt = await tx.wait();
+            console.log(`[Blockchain][Fund] Atomic Batch CONFIRMED (Block: ${receipt.blockNumber})`);
 
             await Promise.all(relayers.map(r =>
                 this.pool.query(`UPDATE relayers SET transactionhash_deposit = $1 WHERE address = $2 AND batch_id = $3`, [tx.hash, r.address, batchId])
             ));
             await Promise.all(relayers.map(r => this.syncRelayerBalance(r.address)));
         } catch (err) {
-            console.error(`❌ Atomic funding failed, falling back to sequential:`, err.message);
+            console.error(`❌ Atomic funding FAILED:`, err.message);
+            console.log(`⚠️ Falling back to sequential distribution due to: ${err.reason || err.code || 'Unknown Error'}`);
+
             let nonce = await this.faucetWallet.getNonce();
             for (const r of relayers) {
                 try {
