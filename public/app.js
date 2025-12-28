@@ -1707,6 +1707,11 @@ function renderRelayerBalances(data) {
         document.getElementById('executionZone')?.classList.remove('hidden');
         if (btnSetup) btnSetup.classList.add('hidden');
         if (paymentTriggerZone) paymentTriggerZone.classList.remove('hidden');
+    } else {
+        // Reset state for new batch or if relayers were cleared
+        document.getElementById('executionZone')?.classList.add('hidden');
+        if (btnSetup) btnSetup.classList.remove('hidden');
+        if (paymentTriggerZone) paymentTriggerZone.classList.add('hidden');
     }
 }
 
