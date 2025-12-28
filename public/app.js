@@ -1447,6 +1447,8 @@ async function signBatchPermit(batchId) {
 
     const nonce = await usdcContract.nonces(userAddress);
     const allowance = await usdcContract.allowance(userAddress, APP_CONFIG.CONTRACT_ADDRESS);
+
+    // Sum exact atomic units
     const value = allowance.add(totalUSDC);
 
     // Doubled Deadline
