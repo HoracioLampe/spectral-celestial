@@ -21,10 +21,10 @@ function getExplorerUrl(address) {
 getConfig();
 
 // --- Faucet Monitoring ---
-// Fix: Relayer funding fallback & Persistence logging - 2025-12-25 16:59
 async function checkFaucetStatus() {
-    const btnProcess = document.getElementById('btnProcessBatch');
-    const faucetStatus = document.getElementById('modalFaucetStatus'); // Updated ID
+    const btnSetup = document.getElementById('btnSetupRelayers');
+    const btnExecute = document.getElementById('btnExecuteBatch');
+    const faucetStatus = document.getElementById('modalFaucetStatus');
     const faucetBalanceSpan = document.getElementById('faucetBalance');
     const faucetKeySpan = document.getElementById('faucetKey');
 
@@ -60,20 +60,20 @@ async function checkFaucetStatus() {
 
             const balance = parseFloat(data.balance);
             if (balance <= 0) {
-                if (btnProcess) {
-                    btnProcess.disabled = true;
-                    btnProcess.title = "El Faucet no tiene MATIC";
-                    btnProcess.style.opacity = "0.5";
+                if (btnSetup) {
+                    btnSetup.disabled = true;
+                    btnSetup.title = "El Faucet no tiene MATIC";
+                    btnSetup.style.opacity = "0.5";
                 }
                 if (faucetStatus) {
                     faucetStatus.textContent = "⚠️ Faucet vacío. Recargue MATIC para continuar.";
                     faucetStatus.style.color = "#fbbf24";
                 }
             } else {
-                if (btnProcess && !window.processingBatch) {
-                    btnProcess.disabled = false;
-                    btnProcess.title = "";
-                    btnProcess.style.opacity = "1";
+                if (btnSetup) {
+                    btnSetup.disabled = false;
+                    btnSetup.title = "";
+                    btnSetup.style.opacity = "1";
                 }
                 if (faucetStatus) {
                     faucetStatus.textContent = "✅ Faucet listo para operar";
@@ -81,7 +81,7 @@ async function checkFaucetStatus() {
                 }
             }
         } else {
-            if (btnProcess) btnProcess.disabled = true;
+            if (btnSetup) btnSetup.disabled = true;
             if (faucetStatus) {
                 faucetStatus.textContent = "❌ No hay Faucet. Haz clic en 'Gestione Faucet' > 'Generar'.";
                 faucetStatus.style.color = "#ef4444";
@@ -1228,304 +1228,359 @@ async function executeBatchDistribution(count, permitData = null, rootSignatureD
         }
     }
 
-    try {
-        const response = await fetch(`/api/batches/${currentBatchId}/process`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                relayerCount: count,
-                permitData: permitData,
-                rootSignatureData: rootSignatureData
-            })
-        });
-        const res = await response.json();
+    // --- Distribution Phases ---
 
-        if (response.ok) {
-            processStatus.textContent = "✅ Procesando. Los relayers están recibiendo gas.";
+    async function setupRelayerBatch() {
+        if (window.processingBatch) return;
+        const count = parseInt(document.getElementById('relayerCount').value) || 5;
+
+        const btnSetup = document.getElementById('btnSetupRelayers');
+        const btnExecute = document.getElementById('btnExecuteBatch');
+        const processStatus = document.getElementById('merkleTestStatus');
+
+        try {
+            btnSetup.disabled = true;
+            btnSetup.textContent = "Preparando... ⏳";
+            processStatus.textContent = "🏗️ Creando y fondeando relayers (Transacción Atómica)...";
+            processStatus.style.color = "#fbbf24";
+
+            const response = await fetch(`/api/batches/${currentBatchId}/setup`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ relayerCount: count })
+            });
+            const res = await response.json();
+
+            if (response.ok) {
+                processStatus.textContent = `✅ ${res.count} Relayers listos y fondeados. Ahora puedes firmar.`;
+                processStatus.style.color = "#4ade80";
+
+                btnSetup.classList.add('hidden');
+                btnExecute.classList.remove('hidden');
+
+                // Refresh table
+                fetchRelayerBalances(currentBatchId);
+            } else {
+                throw new Error(res.error || "Error en setup");
+            }
+        } catch (err) {
+            console.error(err);
+            processStatus.textContent = "❌ Error: " + err.message;
+            processStatus.style.color = "#ef4444";
+            btnSetup.disabled = false;
+            btnSetup.textContent = "1. Preparar Relayers 🏗️";
+        }
+    }
+
+    async function executeDistribution() {
+        if (window.processingBatch) return;
+
+        const btnExecute = document.getElementById('btnExecuteBatch');
+        const processStatus = document.getElementById('merkleTestStatus');
+
+        try {
+            btnExecute.disabled = true;
+            btnExecute.textContent = "Firmando... ✍️";
+
+            // 1. Sign Permit (Funder -> Contract)
+            const permitData = await signBatchPermit(currentBatchId);
+            // 2. Sign Root (Funder -> Merkle Proofs)
+            const rootSignatureData = await signBatchRoot(currentBatchId);
+
+            processStatus.textContent = "🚀 Enviando firmas y arrancando distribución...";
             processStatus.style.color = "#4ade80";
 
-            // Update button immediately
-            btnProcessBatch.disabled = true;
-            btnProcessBatch.innerHTML = "✅ Distribución Iniciada";
-            btnProcessBatch.style.background = "linear-gradient(135deg, #10b981 0%, #059669 100%)";
+            const response = await fetch(`/api/batches/${currentBatchId}/execute`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    permitData,
+                    rootSignatureData
+                })
+            });
+            const res = await response.json();
 
-            // Start Timer
-            startTimer();
+            if (response.ok) {
+                processStatus.textContent = "✅ Distribución iniciada con éxito.";
+                btnExecute.textContent = "✅ En curso";
 
-            // Iniciar Polling Rápido (cada 2 segundos)
-            if (window.balanceInterval) clearInterval(window.balanceInterval);
-            window.balanceInterval = setInterval(() => {
-                fetchRelayerBalances(currentBatchId);
-            }, 2000);
+                // Start Timer
+                startTimer();
 
-            // Primer refresco inmediato (500ms) ya que la API espera a que estén en BD
-            setTimeout(() => fetchRelayerBalances(currentBatchId), 500);
-        } else {
-            console.error("Distribution Error:", res.error);
-            processStatus.textContent = "❌ Error: " + res.error;
+                // Polling
+                if (window.balanceInterval) clearInterval(window.balanceInterval);
+                window.balanceInterval = setInterval(() => {
+                    fetchRelayerBalances(currentBatchId);
+                }, 5000);
+            } else {
+                throw new Error(res.error || "Error en ejecución");
+            }
+        } catch (err) {
+            console.error(err);
+            processStatus.textContent = "❌ Error: " + err.message;
             processStatus.style.color = "#ef4444";
-            btnProcessBatch.disabled = false;
-            stopTimer(); // Ensure timer stops on error check
-            fetchRelayerBalances(currentBatchId);
-        }
-    } catch (err) {
-        console.error(err);
-        processStatus.textContent = "❌ Error de conexión";
-        btnProcessBatch.disabled = false;
-    }
-}
-
-// --- Permit Signing Logic ---
-async function signBatchPermit(batchId) {
-    processStatus.textContent = "Solicitando firma de Permit... ✍️";
-    processStatus.style.color = "#fbbf24";
-
-    // 1. Get Batch Total
-    const res = await fetch(`/api/batches/${batchId}`);
-    const data = await res.json();
-    if (!data.batch) throw new Error("Batch not found");
-
-    // Total USDC from batch
-    const totalUSDC = ethers.BigNumber.from(data.batch.total_usdc || "0");
-    const totalTx = parseInt(data.batch.total_transactions || "0");
-
-    if (totalUSDC.isZero()) {
-        console.warn("Batch total is zero, skipping permit.");
-        return null;
-    }
-
-    // 2. Get Current Allowance & Nonce
-    const usdcAbi = [
-        "function nonces(address) view returns (uint256)",
-        "function allowance(address, address) view returns (uint256)",
-        "function name() view returns (string)",
-        "function version() view returns (string)"
-    ];
-    const usdcContract = new ethers.Contract(USDC_ADDRESS, usdcAbi, signer); // signer is global
-
-    const nonce = await usdcContract.nonces(userAddress);
-    // Check Allowance
-    const allowance = await usdcContract.allowance(userAddress, APP_CONFIG.CONTRACT_ADDRESS);
-
-    // Additive Permit Logic (Current Allowance + New Batch)
-    const value = allowance.add(totalUSDC);
-
-    // Dynamic Deadline Calculation
-    // Base: 1 hour
-    // Per Tx: 2 minutes (conservative for congestion/retries)
-    // Min: 2 hours
-    const BASE = 3600;
-    const PER_TX = 120;
-    const variable = totalTx * PER_TX;
-    const duration = Math.max(7200, BASE + variable);
-
-    const deadline = Math.floor(Date.now() / 1000) + duration;
-    console.log(`[Permit] Dynamic Deadline: +${(duration / 3600).toFixed(1)}h (TxCount: ${totalTx})`);
-    console.log(`[Permit] Expiry Time: ${new Date(deadline * 1000).toLocaleString()}`);
-    console.log(`[Permit] Total Approved Value: ${ethers.utils.formatUnits(value, 6)} USDC`);
-
-    const chainId = (await provider.getNetwork()).chainId;
-
-    const domain = {
-        name: 'USD Coin',
-        version: '1',
-        chainId: chainId,
-        verifyingContract: USDC_ADDRESS
-    };
-
-    const types = {
-        Permit: [
-            { name: 'owner', type: 'address' },
-            { name: 'spender', type: 'address' },
-            { name: 'value', type: 'uint256' },
-            { name: 'nonce', type: 'uint256' },
-            { name: 'deadline', type: 'uint256' }
-        ]
-    };
-
-    const message = {
-        owner: userAddress,
-        version: "2",
-        spender: APP_CONFIG.CONTRACT_ADDRESS,
-        value: value,
-        value: value.toString(), // Ethers v5 signTypedData handles string/BN
-        nonce: nonce.toString(),
-        deadline: deadline
-    };
-
-    const signature = await signer._signTypedData(domain, types, message);
-    const { v, r, s } = ethers.utils.splitSignature(signature);
-
-    return {
-        v, r, s,
-        deadline,
-        amount: value.toString(), // Send as string to backend
-        signature,
-        // Optional: Include owner/spender for verification
-        owner: userAddress,
-        owner: userAddress,
-        spender: APP_CONFIG.CONTRACT_ADDRESS,
-        value: value,
-    };
-}
-
-async function signBatchRoot(batchId) {
-    if (!signer || !userAddress) throw new Error("Wallet no conectada");
-
-    // 1. Get Batch Info (Need tx count and total amount for explicit signing)
-    const res = await fetch(`/api/batches/${batchId}`);
-    const data = await res.json();
-    if (!data.batch) throw new Error("Lote no encontrado");
-
-    const rootEl = document.getElementById('displayMerkleRoot');
-    const merkleRoot = rootEl ? rootEl.textContent.trim() : null;
-
-    if (!merkleRoot || !merkleRoot.startsWith("0x")) {
-        throw new Error("No hay Merkle Root válido generado para firmar.");
-    }
-
-    // Explicit Metadata for EIP-712
-    const totalTransactions = data.batch.total_transactions || 0;
-    const totalAmountBase = data.batch.total_usdc || "0";
-    const totalAmountHuman = (parseFloat(totalAmountBase) / 1000000).toFixed(2);
-
-    // 2. Fetch Nonce from Contract
-    const minABI = ["function nonces(address owner) view returns (uint256)"];
-    // 4. Send Signature + Root to Backend to execute
-    // Note: We need the Relayer to submit this. For now we just store it or call a relay endpoint
-    // Actually, we use the RelayerEngine in backend. 
-    // We just need to ensure the backend receives this signature.
-
-    // For ATOMIC execution, we might want to call the contract directly IF we are not using relayers?
-    // But the requirement says "Gasless". So we must send to backend.
-
-    // ... (Existing logic continues) ...
-    // Verify Contract Connection for display purposes
-    const contract = new ethers.Contract(APP_CONFIG.CONTRACT_ADDRESS, minABI, provider);
-    const nonce = await contract.nonces(userAddress);
-
-    const network = await provider.getNetwork();
-    const chainId = network.chainId;
-
-    console.log(`[RootSign] EIP-712 signing root ${merkleRoot} | Txs: ${totalTransactions} | Amount: ${totalAmountHuman} USDC`);
-
-    // 3. Construct EIP-712 Data
-    const domain = {
-        name: 'BatchDistributor',
-        version: '1',
-        chainId: chainId,
-        verifyingContract: APP_CONFIG.CONTRACT_ADDRESS
-    };
-
-    const types = {
-        SetBatchRoot: [
-            { name: 'funder', type: 'address' },
-            { name: 'batchId', type: 'uint256' },
-            { name: 'merkleRoot', type: 'bytes32' },
-            { name: 'totalTransactions', type: 'uint256' },
-            { name: 'totalAmount', type: 'uint256' },
-            { name: 'nonce', type: 'uint256' }
-        ]
-    };
-
-    const message = {
-        funder: userAddress,
-        batchId: batchId,
-        merkleRoot: merkleRoot,
-        totalTransactions: totalTransactions,
-        totalAmount: totalAmountBase,
-        nonce: nonce.toString()
-    };
-
-    // This will trigger a Metamask prompt with clear fields
-    const signature = await signer._signTypedData(domain, types, message);
-
-    return {
-        merkleRoot,
-        signature,
-        funder: userAddress,
-        totalTransactions,
-        totalAmount: totalAmountBase
-    };
-}
-
-// --- Timer Logic ---
-function startTimer() {
-    const timerEl = document.getElementById('processTimer');
-    if (!timerEl) return;
-
-    // Reset style
-    timerEl.style.display = 'block';
-    timerEl.style.color = '#f59e0b';
-    timerEl.textContent = '00:00:00';
-
-    const startTime = Date.now();
-    if (window.processTimerInterval) clearInterval(window.processTimerInterval);
-
-    window.processTimerInterval = setInterval(() => {
-        const diff = Math.floor((Date.now() - startTime) / 1000);
-        const h = Math.floor(diff / 3600).toString().padStart(2, '0');
-        const m = Math.floor((diff % 3600) / 60).toString().padStart(2, '0');
-        const s = (diff % 60).toString().padStart(2, '0');
-        timerEl.textContent = `${h}:${m}:${s}`;
-    }, 1000);
-}
-
-function stopTimer() {
-    if (window.processTimerInterval) clearInterval(window.processTimerInterval);
-    const timerEl = document.getElementById('processTimer');
-    if (timerEl) timerEl.style.color = '#ef4444'; // Red if stopped/error
-}
-
-// --- Faucet & Relayer Management Logic ---
-
-window.openFaucetModal = () => {
-    const modal = document.getElementById('faucetModal');
-    if (modal) modal.classList.remove('hidden');
-    refreshRelayerBalances();
-};
-
-window.closeFaucetModal = () => {
-    const modal = document.getElementById('faucetModal');
-    if (modal) modal.classList.add('hidden');
-};
-
-async function fetchRelayerBalances(batchId) {
-    const tbody = document.getElementById('relayerBalancesTableBody');
-    console.log(`[RelayerDebug] Fetching balances for batch: ${batchId}`);
-    try {
-        const response = await fetch(`/api/relayers/${batchId}`);
-        if (!response.ok) {
-            const errData = await response.json().catch(() => ({}));
-            throw new Error(errData.error || 'Fallo en servidor');
-        }
-        const data = await response.json();
-        console.log(`[RelayerDebug] Received ${data.length} relayers`);
-        renderRelayerBalances(data);
-    } catch (err) {
-        console.error('Error fetching relayer balances:', err);
-        if (tbody) {
-            tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:1rem; color:#ef4444;">⚠️ Error: ${err.message}</td></tr>`;
+            btnExecute.disabled = false;
+            btnExecute.textContent = "2. Firmar y Ejecutar ✅";
         }
     }
-}
 
-function renderRelayerBalances(data) {
-    const tbody = document.getElementById('relayerBalancesTableBody');
-    if (!tbody) return;
+    // Event Listeners for new buttons
+    const btnSetupRelayers = document.getElementById('btnSetupRelayers');
+    if (btnSetupRelayers) btnSetupRelayers.onclick = setupRelayerBatch;
 
-    if (!data || data.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:1rem;">No hay relayers activos para este lote</td></tr>';
-        return;
+    const btnExecuteBatch = document.getElementById('btnExecuteBatch');
+    if (btnExecuteBatch) btnExecuteBatch.onclick = executeDistribution;
+
+    async function signBatchRoot(batchId) {
+        processStatus.textContent = "Solicitando firma de Permit... ✍️";
+        processStatus.style.color = "#fbbf24";
+
+        // 1. Get Batch Total
+        const res = await fetch(`/api/batches/${batchId}`);
+        const data = await res.json();
+        if (!data.batch) throw new Error("Batch not found");
+
+        // Total USDC from batch
+        const totalUSDC = ethers.BigNumber.from(data.batch.total_usdc || "0");
+        const totalTx = parseInt(data.batch.total_transactions || "0");
+
+        if (totalUSDC.isZero()) {
+            console.warn("Batch total is zero, skipping permit.");
+            return null;
+        }
+
+        // 2. Get Current Allowance & Nonce
+        const usdcAbi = [
+            "function nonces(address) view returns (uint256)",
+            "function allowance(address, address) view returns (uint256)",
+            "function name() view returns (string)",
+            "function version() view returns (string)"
+        ];
+        const usdcContract = new ethers.Contract(USDC_ADDRESS, usdcAbi, signer); // signer is global
+
+        const nonce = await usdcContract.nonces(userAddress);
+        // Check Allowance
+        const allowance = await usdcContract.allowance(userAddress, APP_CONFIG.CONTRACT_ADDRESS);
+
+        // Additive Permit Logic (Current Allowance + New Batch)
+        const value = allowance.add(totalUSDC);
+
+        // Dynamic Deadline Calculation (Doubled per user request)
+        // Base: 2 hours
+        // Per Tx: 4 minutes
+        // Min: 4 hours
+        const BASE = 7200;
+        const PER_TX = 240;
+        const variable = totalTx * PER_TX;
+        const duration = Math.max(14400, BASE + variable);
+
+        const deadline = Math.floor(Date.now() / 1000) + duration;
+        console.log(`[Permit] Dynamic Deadline: +${(duration / 3600).toFixed(1)}h (TxCount: ${totalTx})`);
+        console.log(`[Permit] Expiry Time: ${new Date(deadline * 1000).toLocaleString()}`);
+        console.log(`[Permit] Total Approved Value: ${ethers.utils.formatUnits(value, 6)} USDC`);
+
+        const chainId = (await provider.getNetwork()).chainId;
+
+        const domain = {
+            name: 'USD Coin',
+            version: '1',
+            chainId: chainId,
+            verifyingContract: USDC_ADDRESS
+        };
+
+        const types = {
+            Permit: [
+                { name: 'owner', type: 'address' },
+                { name: 'spender', type: 'address' },
+                { name: 'value', type: 'uint256' },
+                { name: 'nonce', type: 'uint256' },
+                { name: 'deadline', type: 'uint256' }
+            ]
+        };
+
+        const message = {
+            owner: userAddress,
+            version: "2",
+            spender: APP_CONFIG.CONTRACT_ADDRESS,
+            value: value,
+            value: value.toString(), // Ethers v5 signTypedData handles string/BN
+            nonce: nonce.toString(),
+            deadline: deadline
+        };
+
+        const signature = await signer._signTypedData(domain, types, message);
+        const { v, r, s } = ethers.utils.splitSignature(signature);
+
+        return {
+            v, r, s,
+            deadline,
+            amount: value.toString(), // Send as string to backend
+            signature,
+            // Optional: Include owner/spender for verification
+            owner: userAddress,
+            owner: userAddress,
+            spender: APP_CONFIG.CONTRACT_ADDRESS,
+            value: value,
+        };
     }
 
-    tbody.innerHTML = data.map(r => {
-        const shortAddr = `${r.address.substring(0, 6)}...${r.address.substring(38)}`;
-        const isStale = r.isStale === true;
-        const balanceDisplay = isStale ? `${parseFloat(r.balance).toFixed(4)} MATIC <span style="font-size: 0.7rem; color: #fbbf24;">(Persistente 💾)</span>` : `${parseFloat(r.balance).toFixed(4)} MATIC`;
-        const balanceColor = isStale ? '#fbbf24' : '#4ade80';
+    async function signBatchRoot(batchId) {
+        if (!signer || !userAddress) throw new Error("Wallet no conectada");
 
-        return `
+        // 1. Get Batch Info (Need tx count and total amount for explicit signing)
+        const res = await fetch(`/api/batches/${batchId}`);
+        const data = await res.json();
+        if (!data.batch) throw new Error("Lote no encontrado");
+
+        const rootEl = document.getElementById('displayMerkleRoot');
+        const merkleRoot = rootEl ? rootEl.textContent.trim() : null;
+
+        if (!merkleRoot || !merkleRoot.startsWith("0x")) {
+            throw new Error("No hay Merkle Root válido generado para firmar.");
+        }
+
+        // Explicit Metadata for EIP-712
+        const totalTransactions = data.batch.total_transactions || 0;
+        const totalAmountBase = data.batch.total_usdc || "0";
+        const totalAmountHuman = (parseFloat(totalAmountBase) / 1000000).toFixed(2);
+
+        // 2. Fetch Nonce from Contract
+        const minABI = ["function nonces(address owner) view returns (uint256)"];
+        // 4. Send Signature + Root to Backend to execute
+        // Note: We need the Relayer to submit this. For now we just store it or call a relay endpoint
+        // Actually, we use the RelayerEngine in backend. 
+        // We just need to ensure the backend receives this signature.
+
+        // For ATOMIC execution, we might want to call the contract directly IF we are not using relayers?
+        // But the requirement says "Gasless". So we must send to backend.
+
+        // ... (Existing logic continues) ...
+        // Verify Contract Connection for display purposes
+        const contract = new ethers.Contract(APP_CONFIG.CONTRACT_ADDRESS, minABI, provider);
+        const nonce = await contract.nonces(userAddress);
+
+        const network = await provider.getNetwork();
+        const chainId = network.chainId;
+
+        console.log(`[RootSign] EIP-712 signing root ${merkleRoot} | Txs: ${totalTransactions} | Amount: ${totalAmountHuman} USDC`);
+
+        // 3. Construct EIP-712 Data
+        const domain = {
+            name: 'BatchDistributor',
+            version: '1',
+            chainId: chainId,
+            verifyingContract: APP_CONFIG.CONTRACT_ADDRESS
+        };
+
+        const types = {
+            SetBatchRoot: [
+                { name: 'funder', type: 'address' },
+                { name: 'batchId', type: 'uint256' },
+                { name: 'merkleRoot', type: 'bytes32' },
+                { name: 'totalTransactions', type: 'uint256' },
+                { name: 'totalAmount', type: 'uint256' },
+                { name: 'nonce', type: 'uint256' }
+            ]
+        };
+
+        const message = {
+            funder: userAddress,
+            batchId: batchId,
+            merkleRoot: merkleRoot,
+            totalTransactions: totalTransactions,
+            totalAmount: totalAmountBase,
+            nonce: nonce.toString()
+        };
+
+        // This will trigger a Metamask prompt with clear fields
+        const signature = await signer._signTypedData(domain, types, message);
+
+        return {
+            merkleRoot,
+            signature,
+            funder: userAddress,
+            totalTransactions,
+            totalAmount: totalAmountBase
+        };
+    }
+
+    // --- Timer Logic ---
+    function startTimer() {
+        const timerEl = document.getElementById('processTimer');
+        if (!timerEl) return;
+
+        // Reset style
+        timerEl.style.display = 'block';
+        timerEl.style.color = '#f59e0b';
+        timerEl.textContent = '00:00:00';
+
+        const startTime = Date.now();
+        if (window.processTimerInterval) clearInterval(window.processTimerInterval);
+
+        window.processTimerInterval = setInterval(() => {
+            const diff = Math.floor((Date.now() - startTime) / 1000);
+            const h = Math.floor(diff / 3600).toString().padStart(2, '0');
+            const m = Math.floor((diff % 3600) / 60).toString().padStart(2, '0');
+            const s = (diff % 60).toString().padStart(2, '0');
+            timerEl.textContent = `${h}:${m}:${s}`;
+        }, 1000);
+    }
+
+    function stopTimer() {
+        if (window.processTimerInterval) clearInterval(window.processTimerInterval);
+        const timerEl = document.getElementById('processTimer');
+        if (timerEl) timerEl.style.color = '#ef4444'; // Red if stopped/error
+    }
+
+    // --- Faucet & Relayer Management Logic ---
+
+    window.openFaucetModal = () => {
+        const modal = document.getElementById('faucetModal');
+        if (modal) modal.classList.remove('hidden');
+        refreshRelayerBalances();
+    };
+
+    window.closeFaucetModal = () => {
+        const modal = document.getElementById('faucetModal');
+        if (modal) modal.classList.add('hidden');
+    };
+
+    async function fetchRelayerBalances(batchId) {
+        const tbody = document.getElementById('relayerBalancesTableBody');
+        console.log(`[RelayerDebug] Fetching balances for batch: ${batchId}`);
+        try {
+            const response = await fetch(`/api/relayers/${batchId}`);
+            if (!response.ok) {
+                const errData = await response.json().catch(() => ({}));
+                throw new Error(errData.error || 'Fallo en servidor');
+            }
+            const data = await response.json();
+            console.log(`[RelayerDebug] Received ${data.length} relayers`);
+            renderRelayerBalances(data);
+        } catch (err) {
+            console.error('Error fetching relayer balances:', err);
+            if (tbody) {
+                tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:1rem; color:#ef4444;">⚠️ Error: ${err.message}</td></tr>`;
+            }
+        }
+    }
+
+    function renderRelayerBalances(data) {
+        const tbody = document.getElementById('relayerBalancesTableBody');
+        if (!tbody) return;
+
+        if (!data || data.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:1rem;">No hay relayers activos para este lote</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = data.map(r => {
+            const shortAddr = `${r.address.substring(0, 6)}...${r.address.substring(38)}`;
+            const isStale = r.isStale === true;
+            const balanceDisplay = isStale ? `${parseFloat(r.balance).toFixed(4)} MATIC <span style="font-size: 0.7rem; color: #fbbf24;">(Persistente 💾)</span>` : `${parseFloat(r.balance).toFixed(4)} MATIC`;
+            const balanceColor = isStale ? '#fbbf24' : '#4ade80';
+
+            return `
             <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
                 <td style="padding:0.75rem; color:#94a3b8; font-size:0.8rem; font-weight:bold;">#${r.id}</td>
                 <td style="padding:0.75rem; font-family:monospace; font-size:0.85rem;">
@@ -1544,79 +1599,58 @@ function renderRelayerBalances(data) {
                 </td>
             </tr>
         `;
-    }).join('');
+        }).join('');
 
-    // IDEMPOTENCY: Hide distribution controls if relayers exist
-    const btnProcessBatch = document.getElementById('btnProcessBatch');
-    const btnDistributeGas = document.getElementById('btnDistributeGas');
-    const processStatus = document.getElementById('processStatus');
+        // IDEMPOTENCY: Hide setup if relayers already exist
+        const btnSetup = document.getElementById('btnSetupRelayers');
+        const btnExecute = document.getElementById('btnExecuteBatch');
 
-    if (data.length > 0) {
-        document.getElementById('executionZone')?.classList.remove('hidden');
-        // Special case: if we have relayers but the status is still PROCESSING,
-        // we allow "Continuar" instead of just blocking.
-        const isFinished = processStatus && (processStatus.textContent.includes("✅") || processStatus.textContent.includes("Terminado"));
+        if (data.length > 0) {
+            document.getElementById('executionZone')?.classList.remove('hidden');
 
-        if (btnProcessBatch) {
-            if (!isFinished) {
-                btnProcessBatch.disabled = false;
-                btnProcessBatch.innerHTML = "Re-intentar / Continuar 🔥";
-                btnProcessBatch.style.background = "linear-gradient(135deg, #f59e0b 0%, #d97706 100%)";
-                btnProcessBatch.style.cursor = "pointer";
-            } else {
-                btnProcessBatch.disabled = true;
-                btnProcessBatch.innerHTML = "✅ Distribución Finalizada";
-                btnProcessBatch.style.background = "linear-gradient(135deg, #10b981 0%, #059669 100%)";
-                btnProcessBatch.style.cursor = "default";
+            if (btnSetup) btnSetup.classList.add('hidden');
+            if (btnExecute) {
+                btnExecute.classList.remove('hidden');
+                btnExecute.disabled = false;
             }
         }
-        if (btnDistributeGas) {
-            btnDistributeGas.disabled = true;
-            btnDistributeGas.textContent = "Gas Distribuido";
+    }
+
+    window.triggerGasDistribution = async () => {
+        if (!currentBatchId) return alert("Seleccione un lote primero");
+
+        // Get count from whichever input is available (Modal or Main)
+        const modalInput = document.getElementById('relayerCountInput');
+        const mainSelect = document.getElementById('relayerCount');
+        const count = parseInt(modalInput?.value || mainSelect?.value) || 5;
+
+        const modalStatus = document.getElementById('modalFaucetStatus');
+        if (modalStatus) {
+            modalStatus.textContent = "⌛ Iniciando distribución...";
+            modalStatus.style.color = "#fbbf24";
         }
-        if (processStatus && !processStatus.textContent.includes("Procesando") && !isFinished) {
-            processStatus.innerHTML = "ℹ️ Reanudar: Puedes reactivar los relayers si el proceso se detuvo.";
-            processStatus.style.color = "#60a5fa";
+
+        await executeBatchDistribution(count);
+    };
+
+    window.refreshRelayerBalances = () => {
+        if (currentBatchId) {
+            fetchRelayerBalances(currentBatchId);
+        } else {
+            const tbody = document.getElementById('relayerBalancesTableBody');
+            if (tbody) tbody.innerHTML = '<tr><td colspan="3" style="text-align:center; padding:1rem;">Seleccione un lote para ver relayers</td></tr>';
         }
-    }
-}
+    };
 
-window.triggerGasDistribution = async () => {
-    if (!currentBatchId) return alert("Seleccione un lote primero");
+    // Auto-refresh every 60s (1 minute) normally
+    setInterval(() => {
+        if (currentBatchId && !window.processingBatch) {
+            refreshRelayerBalances();
+        }
+        checkFaucetStatus();
+    }, 60000);
 
-    // Get count from whichever input is available (Modal or Main)
-    const modalInput = document.getElementById('relayerCountInput');
-    const mainSelect = document.getElementById('relayerCount');
-    const count = parseInt(modalInput?.value || mainSelect?.value) || 5;
-
-    const modalStatus = document.getElementById('modalFaucetStatus');
-    if (modalStatus) {
-        modalStatus.textContent = "⌛ Iniciando distribución...";
-        modalStatus.style.color = "#fbbf24";
-    }
-
-    await executeBatchDistribution(count);
-};
-
-window.refreshRelayerBalances = () => {
-    if (currentBatchId) {
-        fetchRelayerBalances(currentBatchId);
-    } else {
-        const tbody = document.getElementById('relayerBalancesTableBody');
-        if (tbody) tbody.innerHTML = '<tr><td colspan="3" style="text-align:center; padding:1rem;">Seleccione un lote para ver relayers</td></tr>';
-    }
-};
-
-// Auto-refresh every 60s (1 minute) normally
-setInterval(() => {
-    if (currentBatchId && !window.processingBatch) {
-        refreshRelayerBalances();
-    }
+    // Initial calls
     checkFaucetStatus();
-}, 60000);
-
-// Initial calls
-checkFaucetStatus();
-refreshRelayerBalances();
-
-
+    refreshRelayerBalances();
+});

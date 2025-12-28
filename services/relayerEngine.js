@@ -139,45 +139,65 @@ class RelayerEngine {
         }
     }
 
-    // 1. Orchestrator: Setup relayers and background the processing
-    async startBatchProcessing(batchId, numRelayers, permitData = null, rootSignatureData = null) {
-        console.log(`[Engine] 🚀 startBatchProcessing(id = ${batchId}, count = ${numRelayers}, hasPermit=${!!permitData}, hasRootSig=${!!rootSignatureData})`);
+    /**
+     * PHASE 1: Setup relayers and fund them.
+     */
+    async prepareRelayers(batchId, numRelayers) {
+        console.log(`[Engine] 🏗️ prepareRelayers(id = ${batchId}, count = ${numRelayers})`);
 
-        // A. Check for existing relayers in DB
+        // Check for existing relayers in DB
         const existingRelayersRes = await this.pool.query(
-            'SELECT address, private_key FROM relayers WHERE batch_id = $1 AND status = $2',
-            [batchId, 'active']
+            'SELECT address, private_key FROM relayers WHERE batch_id = $1',
+            [batchId]
         );
 
-        let finalRelayers = [];
-        let isResumption = false;
-
+        let relayers = [];
         if (existingRelayersRes.rows.length > 0) {
-            console.log(`🔄 Found ${existingRelayersRes.rows.length} existing relayers. Resuming processing...`);
-            finalRelayers = existingRelayersRes.rows.map(r => {
-                const w = new ethers.Wallet(r.private_key, this.provider);
-                w.batch_id = batchId;
-                return w;
-            });
-            isResumption = true;
+            console.log(`[Engine] Found ${existingRelayersRes.rows.length} existing relayers for Batch ${batchId}.`);
+            relayers = existingRelayersRes.rows.map(r => new ethers.Wallet(r.private_key, this.provider));
         } else {
-            console.log(`🆕 No active relayers found. Creating ${numRelayers} new ones...`);
+            console.log(`[Engine] Creating ${numRelayers} new relayers...`);
             for (let i = 0; i < numRelayers; i++) {
                 const wallet = ethers.Wallet.createRandom(this.provider);
-                wallet.batch_id = batchId;
-                finalRelayers.push(wallet);
+                relayers.push(wallet);
             }
-            // B. Record Relayers in DB for Audit
-            await this.persistRelayers(batchId, finalRelayers);
+            await this.persistRelayers(batchId, relayers);
         }
 
-        // Background the rest (Funding + Workers)
-        this.backgroundProcess(batchId, finalRelayers, isResumption, permitData, rootSignatureData).catch(err => {
+        // Trigger Atomic Funding
+        console.log(`[Engine] Funding relayers for Batch ${batchId}...`);
+        await this.distributeGasToRelayers(batchId, relayers);
+
+        return { success: true, count: relayers.length };
+    }
+
+    /**
+     * PHASE 2: Consume signatures and start the swarm.
+     */
+    async startExecution(batchId, permitData = null, rootSignatureData = null) {
+        console.log(`[Engine] 🚀 startExecution(id = ${batchId}, hasPermit=${!!permitData}, hasRootSig=${!!rootSignatureData})`);
+
+        const relayersRes = await this.pool.query(
+            'SELECT address, private_key FROM relayers WHERE batch_id = $1',
+            [batchId]
+        );
+
+        if (relayersRes.rows.length === 0) {
+            throw new Error("Relayers not prepared. Run setup first.");
+        }
+
+        const relayers = relayersRes.rows.map(r => {
+            const w = new ethers.Wallet(r.private_key, this.provider);
+            w.batch_id = batchId;
+            return w;
+        });
+
+        // Background the execution
+        this.backgroundProcess(batchId, relayers, true, permitData, rootSignatureData).catch(err => {
             console.error(`❌ Critical error in background execution for Batch ${batchId}: `, err);
         });
 
-        const msg = isResumption ? "Processing resumed" : "Relayers setup and processing started";
-        return { success: true, message: msg, count: finalRelayers.length };
+        return { success: true, message: "Execution started in background" };
     }
 
     async backgroundProcess(batchId, relayers, isResumption = false, externalPermit = null, rootSignatureData = null) {

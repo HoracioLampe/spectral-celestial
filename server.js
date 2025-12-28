@@ -341,40 +341,65 @@ app.post('/api/batches/:id/merkle', async (req, res) => {
     }
 });
 
-// Process Batch (Trigger Relayers)
-app.post('/api/batches/:id/process', async (req, res) => {
+// GET Faucet Helper (internal)
+async function getFaucetCredentials() {
+    const faucetRes = await pool.query('SELECT private_key FROM faucets ORDER BY id DESC LIMIT 1');
+    let faucetPk = process.env.FAUCET_PRIVATE_KEY;
+    if (faucetRes.rows.length > 0) {
+        faucetPk = faucetRes.rows[0].private_key;
+    }
+    if (!faucetPk) {
+        throw new Error("No Faucet configured. Generate one in Faucet Management.");
+    }
+    return faucetPk;
+}
+
+// Phase 1: Setup & Fund Relayers
+app.post('/api/batches/:id/setup', async (req, res) => {
     try {
         const batchId = parseInt(req.params.id);
-        if (isNaN(batchId)) return res.status(400).json({ error: 'Invalid batchId' });
-        const { relayerCount, permitData, rootSignatureData } = req.body;
+        const { relayerCount } = req.body;
 
-        // RELAXED IDEMPOTENCY: allow resumption if status is READY or PROCESSING
-        const batchStatusRes = await pool.query('SELECT status FROM batches WHERE id = $1', [batchId]);
-        const currentStatus = batchStatusRes.rows[0]?.status;
-
-        if (currentStatus === 'SENT' || currentStatus === 'COMPLETED') {
-            return res.status(400).json({ error: `Este lote ya terminó (Estado: ${currentStatus})` });
-        }
-
-        // Fetch Faucet from DB
-        const faucetRes = await pool.query('SELECT private_key FROM faucets ORDER BY id DESC LIMIT 1');
-        let faucetPk = process.env.FAUCET_PRIVATE_KEY;
-
-        if (faucetRes.rows.length > 0) {
-            faucetPk = faucetRes.rows[0].private_key;
-        } else if (!faucetPk) {
-            const wallet = ethers.Wallet.createRandom();
-            faucetPk = wallet.privateKey;
-            await pool.query('INSERT INTO faucets (address, private_key) VALUES ($1, $2)', [wallet.address, faucetPk]);
-        }
-
+        const faucetPk = await getFaucetCredentials();
         const providerUrl = process.env.PROVIDER_URL || "https://dawn-palpable-telescope.matic.quiknode.pro/e7d140234fbac5b00d93bfedf2e1c555fa2fdb65/";
         const engine = new RelayerEngine(pool, providerUrl, faucetPk);
 
-        const setup = await engine.startBatchProcessing(batchId, relayerCount || 5, permitData, rootSignatureData);
-        res.json({ message: "Relayers setup and processing started", batchId, relayers: setup.count });
+        const result = await engine.prepareRelayers(batchId, relayerCount || 5);
+        res.json({ message: "Relayers created and funded", count: result.count });
     } catch (err) {
-        console.error(err);
+        console.error("[Setup] Error:", err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Phase 2: Start Execution (Swarm)
+app.post('/api/batches/:id/execute', async (req, res) => {
+    try {
+        const batchId = parseInt(req.params.id);
+        const { permitData, rootSignatureData } = req.body;
+
+        const faucetPk = await getFaucetCredentials();
+        const providerUrl = process.env.PROVIDER_URL || "https://dawn-palpable-telescope.matic.quiknode.pro/e7d140234fbac5b00d93bfedf2e1c555fa2fdb65/";
+        const engine = new RelayerEngine(pool, providerUrl, faucetPk);
+
+        const result = await engine.startExecution(batchId, permitData, rootSignatureData);
+        res.json(result);
+    } catch (err) {
+        console.error("[Execute] Error:", err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Keep /process alias for backwards compatibility or rename it
+app.post('/api/batches/:id/process', async (req, res) => {
+    // Redirecting legacy calls to execute
+    try {
+        const batchId = parseInt(req.params.id);
+        const faucetPk = await getFaucetCredentials();
+        const engine = new RelayerEngine(pool, process.env.PROVIDER_URL, faucetPk);
+        const result = await engine.startExecution(batchId, req.body.permitData, req.body.rootSignatureData);
+        res.json(result);
+    } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
