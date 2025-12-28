@@ -906,7 +906,8 @@ function renderPaginationControls(totalItems) {
     let container = document.querySelector('#batchDetailView .table-container');
     if (!container) {
         // Fallback: Find the table and use its parent
-        const table = document.getElementById('batchTransactionsTable');
+        // Fallback: Find the table and use its parent
+        const table = document.getElementById('batchTable');
         if (table) container = table.parentElement;
     }
 
