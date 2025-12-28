@@ -189,7 +189,9 @@ class RelayerEngine {
                 ], this.provider);
                 const allowance = await usdc.allowance(funderAddress, this.contractAddress);
                 const balance = await usdc.balanceOf(funderAddress);
-                console.log(`[Permit] Funder: ${funderAddress} | Balance: ${ethers.formatUnits(balance, 6)} USDC | Allowance: ${ethers.formatUnits(allowance, 6)} USDC`);
+                console.log(`[Permit] Funder: ${funderAddress}`);
+                console.log(`         Balance:   ${balance.toString()} raw | ${ethers.formatUnits(balance, 6)} USDC`);
+                console.log(`         Allowance: ${allowance.toString()} raw | ${ethers.formatUnits(allowance, 6)} USDC`);
 
                 if (allowance === 0n && !externalPermit) {
                     console.warn(`[Permit] ⚠️ Zero allowance and no permit provided. Transactions will fail unless a permit or manual approval is executed.`);

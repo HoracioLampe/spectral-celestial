@@ -1458,7 +1458,7 @@ async function signBatchPermit(batchId) {
     const duration = Math.max(14400, BASE + variable);
     const deadline = Math.floor(Date.now() / 1000) + duration;
 
-    const chainId = (await provider.getNetwork()).chainId;
+    const chainId = 137; // Hardcoded for Polygon Mainnet USDC compliance
     const domain = { name: 'USD Coin', version: '1', chainId: chainId, verifyingContract: USDC_ADDRESS };
     const types = {
         Permit: [
@@ -1502,8 +1502,7 @@ async function signBatchRoot(batchId) {
     const nonce = await contract.nonces(userAddress);
 
     const network = await provider.getNetwork();
-    const chainId = network.chainId;
-
+    const chainId = 137; // Hardcoded for Polygon Mainnet consistency
     const domain = {
         name: 'BatchDistributor',
         version: '1',

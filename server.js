@@ -164,9 +164,12 @@ app.post('/api/batches/:id/upload', upload.single('file'), async (req, res) => {
 
                 if (ethers.isAddress(cleanWallet)) {
                     try {
-                        // Standardize amount: Scaled correctly to 6 decimals (microUSDC)
-                        // This handles small amounts (e.g. 0.000819) without rounding to 0.
-                        const microAmount = ethers.parseUnits(cleanAmount.toString(), 6);
+                        // Standardize amount: Input is already in atomic units (6 decimals)
+                        // i.e. 1000000 in Excel = 1 USDC.
+                        const val = parseFloat(cleanAmount);
+                        if (isNaN(val)) throw new Error("Invalid number");
+
+                        const microAmount = BigInt(Math.floor(val));
                         totalUSDC += microAmount;
                         validTxs++;
 
