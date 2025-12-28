@@ -41,7 +41,7 @@ class RelayerEngine {
     `;
         const res = await this.pool.query(query, [batchId]);
         const total = res.rows[0].total || 0;
-        return ethers.parseUnits(total.toString(), 6);
+        return BigInt(total);
     }
 
     /**
@@ -426,7 +426,7 @@ class RelayerEngine {
             const chainId = this.cachedChainId;
 
             const proof = await this.getMerkleProof(txDB.batch_id, txDB.id);
-            const amountVal = ethers.parseUnits(txDB.amount_usdc.toString(), 6);
+            const amountVal = BigInt(txDB.amount_usdc);
 
             const batchRes = await this.pool.query('SELECT funder_address FROM batches WHERE id = $1', [txDB.batch_id]);
             const funder = batchRes.rows[0].funder_address;
@@ -494,7 +494,7 @@ class RelayerEngine {
         for (const tx of sampleTxs) {
             try {
                 const gas = await contract.executeTransaction.estimateGas(
-                    batchId, tx.id, funder, tx.wallet_address_to, ethers.parseUnits(tx.amount_usdc.toString(), 6), [ethers.ZeroHash]
+                    batchId, tx.id, funder, tx.wallet_address_to, BigInt(tx.amount_usdc), [ethers.ZeroHash]
                 );
                 totalSampleGas += gas;
             } catch (e) {

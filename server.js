@@ -159,11 +159,12 @@ app.post('/api/batches/:id/upload', upload.single('file'), async (req, res) => {
 
                 if (ethers.isAddress(cleanWallet)) {
                     try {
-                        // Standardize amount to 6 decimals (microUSDC)
+                        // Standardize amount: Input is already in atomic units (6 decimals)
+                        // i.e. 1000000 in Excel = 1 USDC.
                         const val = parseFloat(cleanAmount);
                         if (isNaN(val)) throw new Error("Invalid number");
 
-                        const microAmount = BigInt(Math.round(val * 1000000));
+                        const microAmount = BigInt(Math.floor(val));
                         totalUSDC += microAmount;
                         validTxs++;
 
