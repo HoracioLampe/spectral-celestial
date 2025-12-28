@@ -641,6 +641,9 @@ function updateDetailView(batch, txs) {
             const totalRequiredEl = document.getElementById('merkleResultTotalRequired');
             if (totalRequiredEl) totalRequiredEl.textContent = `$${(totalVal / 1000000).toFixed(6)} USDC`;
 
+            // Update Relayer Options Limit
+            updateRelayerCountOptions(txs.length);
+
             // Update Verification Label with fixed 100 cap or actual count
             const verifyLabel = document.getElementById('merkleVerifyLabel');
             if (verifyLabel) {
@@ -653,6 +656,7 @@ function updateDetailView(batch, txs) {
                 merkleInputZone.classList.add('hidden');
                 merkleResultZone.classList.remove('hidden');
                 document.getElementById('merkleVerifyZone')?.classList.remove('hidden');
+                document.getElementById('executionZone')?.classList.remove('hidden');
                 displayMerkleRoot.textContent = batch.merkle_root;
 
                 if (batch.funder_address) {
@@ -671,6 +675,7 @@ function updateDetailView(batch, txs) {
                 merkleInputZone.classList.remove('hidden');
                 merkleResultZone.classList.add('hidden');
                 document.getElementById('merkleVerifyZone')?.classList.add('hidden');
+                document.getElementById('executionZone')?.classList.add('hidden');
                 batchFunderAddress.value = ''; // Reset or keep empty
                 if (merkleFounderBalance) merkleFounderBalance.textContent = '---';
             }
@@ -841,6 +846,7 @@ async function generateMerkleTree() {
             merkleInputZone.classList.add('hidden');
             merkleResultZone.classList.remove('hidden');
             document.getElementById('merkleVerifyZone')?.classList.remove('hidden');
+            document.getElementById('executionZone')?.classList.remove('hidden');
             displayMerkleRoot.textContent = data.root;
 
             // Update Funder Display immediately so Test works
@@ -1108,6 +1114,35 @@ async function fetchUSDCBalance(address) {
     }
 }
 window.fetchUSDCBalance = fetchUSDCBalance;
+
+// Helper to update Relayer Count options based on total transactions
+function updateRelayerCountOptions(count) {
+    const select = document.getElementById('relayerCount');
+    if (!select) return;
+
+    // Clear and rebuild based on count
+    select.innerHTML = '';
+    const presets = [1, 5, 10, 20, 50, 100];
+
+    presets.forEach(p => {
+        if (p <= count || p === 1) { // Always allow 1, others only if <= tx count
+            const opt = document.createElement('option');
+            opt.value = p;
+            opt.textContent = `${p} ${p === 1 ? '(Safe)' : p === 10 ? '(Fast)' : p >= 50 ? '(Max)' : '(Default)'}`;
+            if (p === 5 && count >= 5) opt.selected = true;
+            else if (count < 5 && p === 1) opt.selected = true;
+            select.appendChild(opt);
+        }
+    });
+
+    // If count is very small, add a custom option for 'Max' (all txs as relayers)
+    if (count > 1 && !presets.includes(count)) {
+        const opt = document.createElement('option');
+        opt.value = count;
+        opt.textContent = `${count} (Máximo Absoluto)`;
+        select.appendChild(opt);
+    }
+}
 
 // Relayer Processing Handler
 const btnProcessBatch = document.getElementById('btnProcessBatch');
@@ -1517,6 +1552,7 @@ function renderRelayerBalances(data) {
     const processStatus = document.getElementById('processStatus');
 
     if (data.length > 0) {
+        document.getElementById('executionZone')?.classList.remove('hidden');
         // Special case: if we have relayers but the status is still PROCESSING,
         // we allow "Continuar" instead of just blocking.
         const isFinished = processStatus && (processStatus.textContent.includes("✅") || processStatus.textContent.includes("Terminado"));
