@@ -259,11 +259,16 @@ class RelayerEngine {
             });
         });
 
-        await Promise.all(workerPromises);
-
-        // G. Refund & Cleanup
-        await this.returnFundsToFaucet(relayers, batchId);
-        console.log(`✅ Batch ${batchId} Processing Complete.`);
+        try {
+            await Promise.all(workerPromises);
+        } catch (err) {
+            console.error(`[Engine] ⚠️ Worker Swarm Error: ${err.message}`);
+        } finally {
+            // G. Refund & Cleanup (ALWAYS RUN)
+            console.log(`[Engine] 🧹 Cleaning up & Returning Funds...`);
+            await this.returnFundsToFaucet(relayers, batchId);
+            console.log(`✅ Batch ${batchId} Processing Complete.`);
+        }
     }
 
     // 2. Worker Loop (The Consumer)
