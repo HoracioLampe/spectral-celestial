@@ -834,6 +834,10 @@ async function generateMerkleTree() {
             merkleInputZone.classList.add('hidden');
             merkleResultZone.classList.remove('hidden');
             displayMerkleRoot.textContent = data.root;
+
+            // Update Funder Display immediately so Test works
+            if (merkleResultFunder) merkleResultFunder.textContent = funder;
+
             merkleStatus.textContent = "✅ Árbol Generado y Guardado.";
         } else {
             throw new Error(data.error || "Error desconocido");
