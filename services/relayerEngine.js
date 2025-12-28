@@ -269,7 +269,9 @@ class RelayerEngine {
     // 2. Worker Loop (The Consumer)
     async workerLoop(wallet, batchId) {
         let processedCount = 0;
-        console.log(`👷 Worker ${wallet.address.substring(0, 6)} started.`);
+        let totalGasWei = 0n;
+        const startBal = await this.provider.getBalance(wallet.address);
+        console.log(`👷 Worker ${wallet.address.substring(0, 6)} started | Relayer: ${wallet.address} | Balance: ${ethers.formatEther(startBal)} MATIC`);
 
         while (true) {
             const txReq = await this.fetchAndLockNextTx(batchId, wallet.address);
@@ -283,12 +285,22 @@ class RelayerEngine {
                 break;
             }
 
-            await this.processTransaction(wallet, txReq, false);
+            const res = await this.processTransaction(wallet, txReq, false);
+            if (res.gasUsed && res.effectiveGasPrice) {
+                totalGasWei += (res.gasUsed * res.effectiveGasPrice);
+            }
             processedCount++;
             // Throttle worker to avoid smashing RPC
             await new Promise(r => setTimeout(r, 300));
         }
-        console.log(`👷 Worker ${wallet.address.substring(0, 6)} finished. Processed: ${processedCount}`);
+
+        // Save total gas spent by this worker
+        await this.pool.query(
+            `UPDATE relayers SET gas_cost = $1 WHERE address = $2 AND batch_id = $3`,
+            [ethers.formatEther(totalGasWei), wallet.address, batchId]
+        );
+
+        console.log(`👷 Worker ${wallet.address.substring(0, 6)} finished. Processed: ${processedCount} | Gas: ${ethers.formatEther(totalGasWei)} MATIC`);
     }
 
     // 3. Queue Logic (SKIP LOCKED)
@@ -389,16 +401,19 @@ class RelayerEngine {
             console.log(`[Blockchain][Tx] CONFIRMED: ${txResponse.hash} | Batch: ${txDB.batch_id} | TxID: ${txDB.id}`);
 
             await this.pool.query(
-                `UPDATE batch_transactions SET status = 'COMPLETADO', tx_hash = $1, amount_transferred = $2, updated_at = NOW() WHERE id = $3`,
+                `UPDATE batch_transactions SET status = 'COMPLETED', tx_hash = $1, amount_transferred = $2, updated_at = NOW() WHERE id = $3`,
                 [txResponse.hash, txDB.amount_usdc.toString(), txDB.id]
             );
             await this.syncRelayerBalance(wallet.address);
-            return { success: true, txHash: txResponse.hash };
+
+            // Return receipt data so worker can track gas
+            const receipt = await this.provider.getTransactionReceipt(txResponse.hash);
+            return { success: true, txHash: txResponse.hash, gasUsed: receipt ? receipt.gasUsed : 0n, effectiveGasPrice: receipt ? receipt.effectiveGasPrice : 0n };
         } catch (e) {
             if (e.message && e.message.includes("Tx already executed")) {
                 console.log(`⚠️ Tx ${txDB.id} already on-chain. Recovered.`);
                 await this.pool.query(`UPDATE batch_transactions SET status = 'COMPLETED', tx_hash = 'RECOVERED', updated_at = NOW() WHERE id = $1`, [txDB.id]);
-                return { success: true, txHash: 'RECOVERED' };
+                return { success: true, txHash: 'RECOVERED', gasUsed: 0n, effectiveGasPrice: 0n };
             }
             console.error(`Tx Failed: ${txDB.id}`, e.message);
             await this.pool.query(`UPDATE batch_transactions SET status = 'FAILED', updated_at = NOW() WHERE id = $1`, [txDB.id]);
@@ -550,7 +565,14 @@ class RelayerEngine {
 
                 const wallet = new ethers.Wallet(r.privateKey, this.provider);
                 const bal = await this.provider.getBalance(wallet.address);
-                if (bal > (costWei + ethers.parseEther("0.01"))) {
+
+                // Record final balance before drain
+                await this.pool.query(
+                    `UPDATE relayers SET drain_balance = $1 WHERE address = $2 AND batch_id = $3`,
+                    [ethers.formatEther(bal), r.address, batchId]
+                );
+
+                if (bal > costWei) {
                     const amount = bal - costWei;
                     const tx = await wallet.sendTransaction({ to: faucetAddress, value: amount, gasLimit: 21000n, gasPrice });
                     await tx.wait();

@@ -1432,8 +1432,8 @@ async function executeDistribution() {
             // Polling
             if (window.balanceInterval) clearInterval(window.balanceInterval);
             window.balanceInterval = setInterval(() => {
-                fetchRelayerBalances(currentBatchId);
-            }, 5000);
+                pollBatchProgress(currentBatchId);
+            }, 3000);
         } else {
             throw new Error(res.error || "Error en ejecución");
         }
@@ -1598,6 +1598,49 @@ window.closeFaucetModal = () => {
     const modal = document.getElementById('faucetModal');
     if (modal) modal.classList.add('hidden');
 };
+
+
+async function pollBatchProgress(batchId) {
+    // 1. Fetch Relayer Balances (Keep existing logic)
+    await fetchRelayerBalances(batchId);
+
+    // 2. Fetch Batch Status for Progress & Timer Stop
+    try {
+        const res = await fetch(`/api/batches/${batchId}`);
+        const data = await res.json();
+        const batch = data.batch;
+
+        if (batch) {
+            const completed = parseInt(batch.completed_count || 0);
+            const total = parseInt(batch.total_transactions || 1);
+
+            // Update Progress Bar if exists (Optional, but good UX)
+            // (Assumes you might want to add a progress bar later, or just console)
+            console.log(`[Progress] ${completed}/${total}`);
+
+            // Update Status Badge if needed
+            const statusBadge = document.getElementById('batchStatusBadge'); // If you added this ID
+
+            // Check Completion
+            if (completed >= total && total > 0) {
+                stopTimer();
+                const processStatus = document.getElementById('merkleTestStatus');
+                if (processStatus) {
+                    processStatus.textContent = "✅ ¡Distribución Finalizada!";
+                    processStatus.style.color = "#4ade80"; // Success Green
+                }
+                const btnExecute = document.getElementById('btnExecuteBatch');
+                if (btnExecute) btnExecute.textContent = "✅ Completado";
+
+                // Optional: Stop polling after completion? 
+                // Currently keeping it to see relayer refunds, but slowing it down or stopping is fine.
+                // clearInterval(window.balanceInterval); 
+            }
+        }
+    } catch (err) {
+        console.error("Error polling batch progress:", err);
+    }
+}
 
 async function fetchRelayerBalances(batchId) {
     const tbody = document.getElementById('relayerBalancesTableBody');

@@ -54,7 +54,14 @@ app.post('/api/transactions', async (req, res) => {
 // Get all batches
 app.get('/api/batches', async (req, res) => {
     try {
-        const result = await pool.query('SELECT * FROM batches ORDER BY created_at DESC');
+        // Dynamic count of completed transactions for the list view
+        const result = await pool.query(`
+            SELECT b.*, 
+            (SELECT COUNT(*) FROM batch_transactions WHERE batch_id = b.id AND status = 'COMPLETED') as sent_transactions,
+            (SELECT COUNT(*) FROM batch_transactions WHERE batch_id = b.id) as total_transactions
+            FROM batches b 
+            ORDER BY b.created_at DESC
+        `);
         res.json(result.rows);
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -67,7 +74,7 @@ app.get('/api/batches/:id', async (req, res) => {
         const batchId = req.params.id;
         const batchRes = await pool.query(`
             SELECT b.*, 
-            (SELECT COUNT(*) FROM batch_transactions WHERE batch_id = b.id AND status = 'COMPLETADO') as completed_count
+            (SELECT COUNT(*) FROM batch_transactions WHERE batch_id = b.id AND status = 'COMPLETED') as completed_count
             FROM batches b 
             WHERE b.id = $1
         `, [batchId]);
