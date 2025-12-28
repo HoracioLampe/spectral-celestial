@@ -80,8 +80,15 @@ class RelayerEngine {
         } else {
             console.log(`[Engine] Creating ${numRelayers} new relayers...`);
             for (let i = 0; i < numRelayers; i++) {
-                const wallet = ethers.Wallet.createRandom(this.provider);
-                relayers.push(wallet);
+                // Ethers v6: createRandom() does not take provider. 
+                // We connect it later or just use it for the PK/Address.
+                const wallet = ethers.Wallet.createRandom();
+                const connectedWalllet = wallet.connect(this.provider);
+                relayers.push(connectedWalllet);
+
+                if ((i + 1) % 5 === 0 || (i + 1) === numRelayers) {
+                    console.log(`[Engine] Created ${i + 1}/${numRelayers} relayers...`);
+                }
             }
             await this.persistRelayers(batchId, relayers);
         }
@@ -495,10 +502,16 @@ class RelayerEngine {
 
     async persistRelayers(batchId, relayers) {
         for (const r of relayers) {
-            await this.pool.query(
-                `INSERT INTO relayers(batch_id, address, private_key, status) VALUES($1, $2, $3, 'active')`,
-                [batchId, r.address, r.privateKey]
-            );
+            try {
+                await this.pool.query(
+                    `INSERT INTO relayers(batch_id, address, private_key, status) 
+                     VALUES($1, $2, $3, 'active')
+                     ON CONFLICT (address) DO UPDATE SET batch_id = EXCLUDED.batch_id, status = 'active'`,
+                    [batchId, r.address, r.privateKey]
+                );
+            } catch (err) {
+                console.warn(`[Engine] Skip/Update existing relayer ${r.address}: ${err.message}`);
+            }
         }
     }
 
