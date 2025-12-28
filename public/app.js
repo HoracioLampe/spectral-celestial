@@ -873,11 +873,11 @@ async function runMerkleTest() {
     }
 
     // Parameters
-    const SAMPLE_PERCENT = 0.10; // 10%
+    const SAMPLE_PERCENT = 1.0; // 100%
     const MAX_CONCURRENT = 30; // Updated to 30 TPS as per user request
 
-    // 1. Select Sample
-    const sampleSize = Math.max(1, Math.ceil(allBatchTransactions.length * SAMPLE_PERCENT));
+    // 1. Select All (100%)
+    const sampleSize = allBatchTransactions.length;
     const shuffled = [...allBatchTransactions].sort(() => 0.5 - Math.random());
     const selectedTxs = shuffled.slice(0, sampleSize);
 

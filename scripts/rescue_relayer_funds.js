@@ -54,8 +54,8 @@ async function rescueFunds() {
             const res = await pool.query("SELECT address, private_key FROM relayers WHERE address = $1", [targetAddress]);
             relayers = res.rows;
         } else {
-            // 3. Fetch relayers with funds from DB (Avoid scanning all)
-            const res = await pool.query("SELECT address, private_key, last_balance FROM relayers WHERE CAST(last_balance AS NUMERIC) > 0.01");
+            // 3. Fetch ALL relayers to handle DB/On-chain desync (Checking all 800)
+            const res = await pool.query("SELECT address, private_key, last_balance FROM relayers");
             relayers = res.rows;
         }
 
@@ -66,7 +66,7 @@ async function rescueFunds() {
         const gasPrice = feeData.gasPrice || 35000000000n;
         const gasLimit = 21000n;
         const minCost = gasLimit * gasPrice;
-        const dustBuffer = ethers.parseEther("0.02");
+        const dustBuffer = ethers.parseEther("0.0"); // Set to 0 to sweep everything above gas cost
 
         console.log(`⛽ Current Gas Price: ${ethers.formatUnits(gasPrice, 'gwei')} gwei`);
         console.log(`💰 Minimum sweep cost: ${ethers.formatEther(minCost)} MATIC`);
@@ -75,59 +75,83 @@ async function rescueFunds() {
         let totalRescued = 0n;
         let successCount = 0;
 
-        console.log(`⏳ Processing ${relayers.length} relayers sequentially...`);
+        console.log(`⏳ Processing ${relayers.length} relayers in parallel (Concurrency: 15)...`);
 
-        for (let i = 0; i < relayers.length; i++) {
-            const r = relayers[i];
-            try {
-                process.stdout.write(`[${i + 1}/${relayers.length}] Checking ${r.address.substring(0, 10)}... `);
+        const concurrency = 3;
+        const maxRetries = 3;
+        const queue = [...relayers];
+        let processedCount = 0;
 
-                const wallet = new ethers.Wallet(r.private_key, provider);
-                const balance = await provider.getBalance(wallet.address);
+        console.log(`⏳ Processing ${relayers.length} relayers with Concurrency: ${concurrency} and Retries...`);
 
-                if (balance > (minCost + dustBuffer)) {
-                    const amountToReturn = balance - minCost;
-                    console.log(`✨ Sweeping ${ethers.formatEther(amountToReturn)} MATIC...`);
+        const worker = async () => {
+            while (queue.length > 0) {
+                const r = queue.shift();
+                if (!r) continue;
 
-                    const tx = await wallet.sendTransaction({
-                        to: faucetAddress,
-                        value: amountToReturn,
-                        gasLimit: gasLimit,
-                        gasPrice: gasPrice
-                    });
+                let attempts = 0;
+                let success = false;
 
-                    await tx.wait();
-                    totalRescued += amountToReturn;
-                    successCount++;
-                    console.log(`   ✅ Success! Tx: ${tx.hash}`);
+                while (attempts < maxRetries && !success) {
+                    try {
+                        const wallet = new ethers.Wallet(r.private_key, provider);
+                        const balance = await provider.getBalance(wallet.address);
 
+                        if (balance > (minCost + dustBuffer)) {
+                            const amountToReturn = balance - minCost;
 
-                    // Small sleep to avoid hitting rate limits (15 req/sec)
+                            if (attempts > 0) {
+                                console.log(`   🔄 [Retry ${attempts}] ${wallet.address.substring(0, 8)}...`);
+                            } else {
+                                console.log(`✨ [${wallet.address.substring(0, 8)}] Balance: ${ethers.formatEther(balance)} MATIC`);
+                            }
 
+                            const tx = await wallet.sendTransaction({
+                                to: faucetAddress,
+                                value: amountToReturn,
+                                gasLimit: gasLimit,
+                                gasPrice: gasPrice
+                            });
 
-                } else {
-                    console.log(`⏭️ Skipping (low balance: ${ethers.formatEther(balance)} MATIC)`);
+                            console.log(`   🚀 Broadcasted: ${tx.hash}. Waiting for confirmation...`);
+                            const receipt = await tx.wait();
 
-                    // SYNC DB: If discrepancy is found
-                    const dbBal = parseFloat(r.last_balance || '0');
-                    const chainBal = parseFloat(ethers.formatEther(balance));
-
-                    if (dbBal > 0.001) {
-                        // Only update if DB has something significantly different to avoid spamming writes for Dust differences
-                        if (Math.abs(dbBal - chainBal) > 0.001) {
-                            console.log(`   🔸 Syncing DB (Stale: ${dbBal} -> Real: ${chainBal})`);
-                            await pool.query('UPDATE relayers SET last_balance = $1, last_activity = NOW() WHERE address = $2', [ethers.formatEther(balance), r.address]);
+                            if (receipt.status === 1) {
+                                console.log(`   ✅ Confirmed! Sweep successful.`);
+                                totalRescued += amountToReturn;
+                                successCount++;
+                                success = true;
+                                // Update DB only on actual success
+                                await pool.query('UPDATE relayers SET last_balance = $1, last_activity = NOW() WHERE address = $2', ['0', r.address]);
+                            } else {
+                                throw new Error("Transaction reverted on-chain");
+                            }
+                        } else {
+                            // Already empty or dust
+                            success = true;
+                            if (parseFloat(r.last_balance || '0') > 0) {
+                                await pool.query('UPDATE relayers SET last_balance = $1, last_activity = NOW() WHERE address = $2', [ethers.formatEther(balance), r.address]);
+                            }
+                        }
+                    } catch (err) {
+                        attempts++;
+                        console.log(`   ⚠️ Error for ${r.address} (Attempt ${attempts}): ${err.message}`);
+                        if (attempts < maxRetries) {
+                            const waitTime = attempts * 2000;
+                            await new Promise(res => setTimeout(res, waitTime));
                         }
                     }
                 }
-
-                // Small sleep to avoid hitting rate limits (15 req/sec)
-                await new Promise(resolve => setTimeout(resolve, 200));
-
-            } catch (err) {
-                console.log(`\n⚠️ Failed for ${r.address}: ${err.message}`);
+                processedCount++;
+                if (processedCount % 5 === 0 || processedCount === relayers.length) {
+                    console.log(`📊 Progress: ${processedCount}/${relayers.length} relayers processed.`);
+                }
             }
-        }
+        };
+
+        // Start workers
+        const workers = Array(Math.min(concurrency, relayers.length || 0)).fill(null).map(() => worker());
+        await Promise.all(workers);
 
         console.log("\n--- Rescue Summary ---");
         console.log(`✅ Relayers Processed: ${relayers.length}`);
