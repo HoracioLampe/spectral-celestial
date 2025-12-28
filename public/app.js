@@ -621,10 +621,14 @@ window.openBatchDetail = async function (id) {
 };
 
 // Pagination State
-let currentTxPage = 1;
 const txPerPage = 5; // Temporarily lowered for testing
-console.log("[UI] Version 2.2: Pagination Limit = 5");
+console.log("[UI] Version 2.3: Relayer Pagination Added");
 let allBatchTransactions = []; // Store full list
+
+// Relayer Pagination State
+let currentRelayerPage = 1;
+const relayersPerPage = 5;
+let allRelayers = [];
 
 function updateDetailView(batch, txs) {
     detailBatchTitle.textContent = `${batch.batch_number} - ${batch.detail}`;
@@ -887,6 +891,7 @@ function renderPaginationControls(totalItems) {
     const totalPages = Math.ceil(totalItems / txPerPage);
     const div = document.createElement('div');
     div.id = 'paginationControls';
+    div.className = 'pagination-controls'; // Add class for easy lookup
     div.style.display = 'flex';
     div.style.justifyContent = 'center';
     div.style.gap = '1rem';
@@ -897,9 +902,19 @@ function renderPaginationControls(totalItems) {
         <button class="btn-glass" onclick="changePage(1)" ${currentTxPage === totalPages ? 'disabled' : ''}>Siguiente ➡️</button>
     `;
 
-    // Append after table container
-    const tableContainer = document.querySelector('#batchDetailView .table-container');
-    tableContainer.parentNode.insertBefore(div, tableContainer.nextSibling);
+    // Robust Append: Try known container, else fallback to table parent
+    let container = document.querySelector('#batchDetailView .table-container');
+    if (!container) {
+        // Fallback: Find the table and use its parent
+        const table = document.getElementById('batchTransactionsTable');
+        if (table) container = table.parentElement;
+    }
+
+    if (container) {
+        container.appendChild(div);
+    } else {
+        console.warn("[UI] Pagination container not found");
+    }
 }
 
 window.changePage = function (direction) {
@@ -1661,7 +1676,8 @@ async function fetchRelayerBalances(batchId) {
         }
         const data = await response.json();
         console.log(`[RelayerDebug] Received ${data.length} relayers`);
-        renderRelayerBalances(data);
+        allRelayers = data; // Store full list
+        renderRelayerBalances(); // No arg, uses global state
     } catch (err) {
         console.error('Error fetching relayer balances:', err);
         if (tbody) {
@@ -1670,16 +1686,29 @@ async function fetchRelayerBalances(batchId) {
     }
 }
 
-function renderRelayerBalances(data) {
+// Update signature to use global state if data not provided (or handle both)
+function renderRelayerBalances(explicitData) {
+    // If explicitData is passed (legacy call), use it but warn/adapt? 
+    // Actually, improved flow uses allRelayers global.
+    const data = explicitData || allRelayers;
+
     const tbody = document.getElementById('relayerBalancesTableBody');
     if (!tbody) return;
 
     if (!data || data.length === 0) {
         tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:1rem;">No hay relayers activos para este lote</td></tr>';
+        // Remove pagination if empty
+        const ctrls = document.getElementById('relayerPaginationControls');
+        if (ctrls) ctrls.remove();
         return;
     }
 
-    tbody.innerHTML = data.map(r => {
+    // Pagination Logic
+    const start = (currentRelayerPage - 1) * relayersPerPage;
+    const end = start + relayersPerPage;
+    const pageItems = data.slice(start, end);
+
+    tbody.innerHTML = pageItems.map(r => {
         const shortAddr = `${r.address.substring(0, 6)}...${r.address.substring(38)}`;
         const isStale = r.isStale === true;
         const balanceDisplay = isStale ? `${parseFloat(r.balance).toFixed(4)} MATIC <span style="font-size: 0.7rem; color: #fbbf24;">(Persistente 💾)</span>` : `${parseFloat(r.balance).toFixed(4)} MATIC`;
@@ -1702,6 +1731,8 @@ function renderRelayerBalances(data) {
         `;
     }).join('');
 
+    renderRelayerPaginationControls(data.length);
+
     const btnSetup = document.getElementById('btnSetupRelayers');
     const paymentTriggerZone = document.getElementById('paymentTriggerZone');
 
@@ -1716,6 +1747,40 @@ function renderRelayerBalances(data) {
         if (paymentTriggerZone) paymentTriggerZone.classList.add('hidden');
     }
 }
+
+// Relayer Pagination Helper
+function renderRelayerPaginationControls(totalItems) {
+    const existing = document.getElementById('relayerPaginationControls');
+    if (existing) existing.remove();
+
+    if (totalItems <= relayersPerPage) return;
+
+    const totalPages = Math.ceil(totalItems / relayersPerPage);
+    const div = document.createElement('div');
+    div.id = 'relayerPaginationControls';
+    div.style.display = 'flex';
+    div.style.justifyContent = 'center';
+    div.style.gap = '1rem';
+    div.style.marginTop = '1rem';
+    div.style.paddingPadding = '1rem';
+
+    div.innerHTML = `
+        <button class="btn-glass" onclick="changeRelayerPage(-1)" ${currentRelayerPage === 1 ? 'disabled' : ''}>⬅️ Anterior</button>
+        <span style="align-self: center; font-size: 0.9rem;">Página ${currentRelayerPage} de ${totalPages}</span>
+        <button class="btn-glass" onclick="changeRelayerPage(1)" ${currentRelayerPage === totalPages ? 'disabled' : ''}>Siguiente ➡️</button>
+    `;
+
+    // Append to Relayer Table Container
+    const table = document.getElementById('relayerBalancesTable');
+    if (table && table.parentElement) {
+        table.parentElement.appendChild(div);
+    }
+}
+
+window.changeRelayerPage = function (direction) {
+    currentRelayerPage += direction;
+    renderRelayerBalances();
+};
 
 window.triggerGasDistribution = async () => {
     if (!currentBatchId) return alert("Seleccione un lote primero");
