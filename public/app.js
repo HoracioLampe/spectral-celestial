@@ -1059,6 +1059,9 @@ async function uploadBatchFile() {
         if (result.batch) {
             updateDetailView(result.batch, result.transactions);
             uploadStatus.textContent = "✅ Carga exitosa";
+            // Refresh grid
+            currentTxPage = 1;
+            fetchBatchTransactions(currentBatchId);
         } else {
             throw new Error(result.error || "Error en respuesta");
         }
