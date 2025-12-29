@@ -532,7 +532,7 @@ function renderBatchesList(batches) {
             <td style="color:#4ade80;">${total}</td>
             <td style="font-size: 0.8rem;">${b.start_time ? new Date(b.start_time).toLocaleString('es-AR', TIMEZONE_CONFIG) : '-'}</td>
             <td style="font-size: 0.8rem;">${b.end_time ? new Date(b.end_time).toLocaleString('es-AR', TIMEZONE_CONFIG) : '-'}</td>
-            <td style="color:#fbbf24; font-weight: bold;">${b.total_gas_used ? b.total_gas_used + ' MATIC' : '-'}</td>
+            <td style="color:#fbbf24; font-weight: bold;">${b.total_gas_used ? parseFloat(b.total_gas_used).toFixed(6) + ' MATIC' : '-'}</td>
             <td style="font-family:monospace; color:#cbd5e1;">${b.execution_time || '-'}</td>
             <td>${progress}</td>
             <td>
