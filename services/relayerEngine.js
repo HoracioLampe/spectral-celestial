@@ -416,6 +416,31 @@ class RelayerEngine {
             }
 
             console.log(`[Engine] Executing Standard for Batch ${txDB.batch_id} (TX #${txDB.id})`);
+
+            // PRE-FLIGHT CHECK: Verify Allowance & Balance to avoid generic CALL_EXCEPTION
+            try {
+                const usdc = new ethers.Contract(this.usdcAddress, [
+                    "function allowance(address,address) view returns (uint256)",
+                    "function balanceOf(address) view returns (uint256)"
+                ], this.provider);
+
+                const [allowance, balance] = await Promise.all([
+                    usdc.allowance(funder, this.contractAddress),
+                    usdc.balanceOf(funder)
+                ]);
+
+                if (balance < amountVal) {
+                    throw new Error(`Insufficient USDC Balance. Funder has ${ethers.formatUnits(balance, 6)}, needs ${ethers.formatUnits(amountVal, 6)}`);
+                }
+                if (allowance < amountVal) {
+                    throw new Error(`Insufficient USDC Allowance. Funder approved ${ethers.formatUnits(allowance, 6)}, needs ${ethers.formatUnits(amountVal, 6)}`);
+                }
+            } catch (preFlightErr) {
+                console.warn(`[Engine] ⚠️ Pre-Flight Check Failed: ${preFlightErr.message}`);
+                // If it's our custom error, rethrow it to abort
+                if (preFlightErr.message.includes("Insufficient")) throw preFlightErr;
+            }
+
             const gasLimit = await contract.executeTransaction.estimateGas(
                 txDB.batch_id, txDB.id, funder, txDB.wallet_address_to, amountVal, proof
             );
