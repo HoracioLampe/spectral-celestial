@@ -650,6 +650,12 @@ app.get('/api/batches/:id/transactions', async (req, res) => {
     }
 });
 
+
+// Fallback para SPA (Al final de todo)
+app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
 const VERSION = "2.3.0";
 const PORT_LISTEN = process.env.PORT || 3000;
 
