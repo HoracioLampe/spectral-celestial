@@ -393,6 +393,10 @@ class RelayerEngine {
             const proof = await this.getMerkleProof(txDB.batch_id, txDB.id);
             const amountVal = BigInt(txDB.amount_usdc);
 
+            // Fetch Funder FIRST (Needed for Idempotency Check)
+            const batchRes = await this.pool.query('SELECT funder_address FROM batches WHERE id = $1', [txDB.batch_id]);
+            const funder = batchRes.rows[0].funder_address;
+
             // IDEMPOTENCY CHECK: Check if leaf is already processed on-chain
             // Calculate Leaf Hash: keccak256(abi.encode(chainId, contract, batchId, txId, funder, recipient, amount))
             const abiCoder = ethers.AbiCoder.defaultAbiCoder();
@@ -410,9 +414,6 @@ class RelayerEngine {
                 );
                 return { success: true, txHash: 'ON_CHAIN_DEDUPE', gasUsed: 0n, effectiveGasPrice: 0n };
             }
-
-            const batchRes = await this.pool.query('SELECT funder_address FROM batches WHERE id = $1', [txDB.batch_id]);
-            // funder already defined above in updated code, but let's keep flow consistent
 
             console.log(`[Engine] Executing Standard for Batch ${txDB.batch_id} (TX #${txDB.id})`);
             const gasLimit = await contract.executeTransaction.estimateGas(
