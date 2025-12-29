@@ -451,17 +451,23 @@ class RelayerEngine {
             const gasLimit = await contract.executeTransaction.estimateGas(
                 txDB.batch_id, txDB.id, funder, txDB.wallet_address_to, amountVal, proof
             );
+            const feeData = await this.provider.getFeeData();
+            const gasPrice = (feeData.gasPrice * 120n) / 100n; // 20% boost
+
             const txResponse = await contract.executeTransaction(
                 txDB.batch_id, txDB.id, funder, txDB.wallet_address_to, amountVal, proof,
-                { gasLimit: gasLimit * 125n / 100n }
+                {
+                    gasLimit: gasLimit * 140n / 100n, // 40% gas limit buffer
+                    gasPrice: gasPrice
+                }
             );
 
             console.log(`[Blockchain][Tx] SENT: ${txResponse.hash} | TxID: ${txDB.id} | From: ${wallet.address}`);
 
-            // Use a timeout for waiting - Ethers v6 can hang if connection drops
+            // Increase timeout to 5 minutes for high congestion
             const receipt = await Promise.race([
-                txResponse.wait(),
-                new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout waiting for receipt (60s)")), 60000))
+                txResponse.wait(1), // Wait for 1 confirmation
+                new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout waiting for receipt (300s)")), 300000))
             ]);
 
             if (receipt.status === 1) {
