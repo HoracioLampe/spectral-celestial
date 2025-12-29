@@ -474,6 +474,9 @@ class RelayerEngine {
         const { totalCostWei } = await this.estimateBatchGas(batchId);
         if (relayers.length === 0 || totalCostWei === 0n) return;
 
+        // Step 0: Ensure Network Health
+        await this.verifyAndRepairNonce();
+
         // Check Faucet Balance BEFORE calculating per-relayer split
         const faucetBalance = await this.provider.getBalance(this.faucetWallet.address);
         // Reserve 0.2 MATIC for the distribution tx gas itself
@@ -546,25 +549,44 @@ class RelayerEngine {
             await Promise.all(relayers.map(r => this.syncRelayerBalance(r.address)));
         } catch (err) {
             console.error(`❌ Atomic funding FAILED:`, err.message);
-            console.log(`⚠️ Falling back to sequential distribution due to: ${err.reason || err.code || 'Unknown Error'}`);
+            // FAIL FAST: Do not fallback to sequential distribution which causes nonce chaos.
+            throw new Error(`Atomic Funding Failed: ${err.message}`);
+        }
+    }
 
-            let nonce = await this.faucetWallet.getNonce();
-            for (const r of relayers) {
-                try {
-                    await new Promise(res => setTimeout(res, 500)); // Throttling
-                    const tx = await this.faucetWallet.sendTransaction({
-                        to: r.address,
-                        value: amountWei,
-                        nonce: nonce++,
-                        gasLimit: 21000n
-                    });
-                    await tx.wait();
-                    await this.pool.query(`UPDATE relayers SET transactionhash_deposit = $1 WHERE address = $2 AND batch_id = $3`, [tx.hash, r.address, batchId]);
-                    await this.syncRelayerBalance(r.address);
-                } catch (ser) {
-                    console.error(`   ❌ Fallback failed for ${r.address}:`, ser.message);
-                }
+    /**
+     * AUTO-REPAIR: Checks for stuck "ghost" transactions in mempool and clears them.
+     */
+    async verifyAndRepairNonce() {
+        try {
+            const address = this.faucetWallet.address;
+            const latestNonce = await this.provider.getTransactionCount(address, "latest");
+            const pendingNonce = await this.provider.getTransactionCount(address, "pending");
+
+            if (pendingNonce > latestNonce) {
+                console.warn(`[AutoRepair] ⚠️ Detected stuck transactions! Pending: ${pendingNonce} | Latest: ${latestNonce}`);
+                console.log(`[AutoRepair] 🔧 Sending self-transaction to flush mempool...`);
+
+                const feeData = await this.provider.getFeeData();
+                const boostPrice = (feeData.gasPrice * 30n) / 10n; // 3x aggressive gas
+
+                // Send 0-value self-transfer with correct NONCE
+                const tx = await this.faucetWallet.sendTransaction({
+                    to: address,
+                    value: 0,
+                    nonce: latestNonce,
+                    gasLimit: 30000,
+                    gasPrice: boostPrice
+                });
+
+                console.log(`[AutoRepair] 💉 Correction TX Sent: ${tx.hash}. Waiting...`);
+                await tx.wait();
+                console.log(`[AutoRepair] ✅ Mempool flushed. Logic restored.`);
+            } else {
+                console.log(`[AutoRepair] ✅ Nonce looks clean (L=${latestNonce}).`);
             }
+        } catch (e) {
+            console.warn(`[AutoRepair] ⚠️ Failed to auto-repair nonce: ${e.message}`);
         }
     }
 
