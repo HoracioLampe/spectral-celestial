@@ -641,6 +641,7 @@ console.log("[UI] Version 2.4.1-FIX: Filters, UI Bugs & Refund Logic");
 const TIMEZONE_CONFIG = { timeZone: 'America/Argentina/Buenos_Aires' };
 let allBatchTransactions = []; // Store full list
 let filteredTransactions = []; // Store filtered list for rendering
+let currentTxPage = 1;
 
 // Relayer Pagination State
 
