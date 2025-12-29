@@ -202,9 +202,9 @@ app.post('/api/batches/:id/upload', upload.single('file'), async (req, res) => {
             throw new Error(`No se encontraron transacciones válidas. Columnas detectadas: [${foundKeys}]. Se busca: 'Wallet' y 'Amount'.`);
         }
 
-        // Update Batch Totals
+        // Update Batch Totals and RESET status/merkle for new file
         const updateRes = await client.query(
-            'UPDATE batches SET total_transactions = $1, total_usdc = $2, status = $3 WHERE id = $4 RETURNING *',
+            'UPDATE batches SET total_transactions = $1, total_usdc = $2, status = $3, merkle_root = NULL, funder_address = NULL WHERE id = $4 RETURNING *',
             [validTxs, totalUSDC.toString(), 'READY', batchId]
         );
         console.log("[UPLOAD] Batch Updated successfully");
