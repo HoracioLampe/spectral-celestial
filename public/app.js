@@ -637,7 +637,7 @@ window.openBatchDetail = async function (id) {
 // Pagination State
 // Pagination State
 const txPerPage = 10; // Updated to 10 as requested
-console.log("[UI] Version 2.4: Timezone & Enhanced Pagination");
+console.log("[UI] Version 2.4.1-FIX: Filters, UI Bugs & Refund Logic");
 const TIMEZONE_CONFIG = { timeZone: 'America/Argentina/Buenos_Aires' };
 let allBatchTransactions = []; // Store full list
 let filteredTransactions = []; // Store filtered list for rendering
