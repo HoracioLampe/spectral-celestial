@@ -520,7 +520,7 @@ function renderBatchesList(batches) {
         // Fix: Divide by 1,000,000 for display
         let totalVal = (b.total_usdc !== null && b.total_usdc !== undefined) ? parseFloat(b.total_usdc) : 0;
         const total = (b.total_usdc !== null) ? `$${(totalVal / 1000000).toFixed(6)}` : '-';
-        const date = new Date(b.created_at).toLocaleDateString() + ' ' + new Date(b.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const date = new Date(b.created_at).toLocaleString('es-AR', TIMEZONE_CONFIG);
 
         tr.innerHTML = `
             <td style="font-weight: bold;">${b.batch_number}</td>
@@ -529,6 +529,10 @@ function renderBatchesList(batches) {
             <td style="font-size: 0.8rem; opacity: 0.7;">${date}</td>
             <td>${statusBadge}</td>
             <td style="color:#4ade80;">${total}</td>
+            <td style="font-size: 0.8rem;">${b.start_time ? new Date(b.start_time).toLocaleString('es-AR', TIMEZONE_CONFIG) : '-'}</td>
+            <td style="font-size: 0.8rem;">${b.end_time ? new Date(b.end_time).toLocaleString('es-AR', TIMEZONE_CONFIG) : '-'}</td>
+            <td style="color:#fbbf24; font-weight: bold;">${b.total_gas_used ? b.total_gas_used + ' MATIC' : '-'}</td>
+            <td style="font-family:monospace; color:#cbd5e1;">${b.execution_time || '-'}</td>
             <td>${progress}</td>
             <td>
                 <button class="btn-glass" style="padding: 0.3rem 0.8rem; font-size: 0.8rem;" onclick="openBatchDetail(${b.id})">
@@ -542,7 +546,9 @@ function renderBatchesList(batches) {
 
 function getStatusBadge(status) {
     if (status === 'READY') return '<span class="badge" style="background: #3b82f6;">Preparado</span>';
-    if (status === 'SENT') return '<span class="badge" style="background: #10b981;">Enviado</span>';
+    if (status === 'SENT') return '<span class="badge" style="background: #10b981;">Enviando</span>';
+    if (status === 'COMPLETED') return '<span class="badge" style="background: #059669; box-shadow: 0 0 10px #059669;">Enviado con Exito</span>';
+    if (status === 'PROCESSING') return '<span class="badge" style="background: #8b5cf6;">Procesando</span>';
     return '<span class="badge" style="background: #f59e0b; color: #000;">En Preparación</span>';
 }
 
@@ -595,14 +601,22 @@ window.openBatchDetail = async function (id) {
 
     // Reset view
     detailBatchTitle.textContent = "Cargando...";
-    batchTableBody.innerHTML = '<tr><td colspan="5" style="text-align: center;">Cargando...</td></tr>';
+    batchTableBody.innerHTML = '<tr><td colspan="6" style="text-align: center;">Cargando...</td></tr>';
+
+    // Added: Clear Filters UI
+    if (document.getElementById('filterWallet')) document.getElementById('filterWallet').value = '';
+    if (document.getElementById('filterAmount')) document.getElementById('filterAmount').value = '';
+    if (document.getElementById('filterStatus')) document.getElementById('filterStatus').value = '';
 
     try {
         const res = await fetch(`/api/batches/${id}`);
         const data = await res.json();
 
         if (data.batch) {
-            updateDetailView(data.batch, data.transactions);
+            updateDetailView(data.batch); // Don't pass transactions here, fetch separately
+
+            // Fetch Transactions Server-Side
+            await fetchBatchTransactions(id);
             // Refresh relayer balances for this batch
             refreshRelayerBalances();
 
@@ -621,9 +635,12 @@ window.openBatchDetail = async function (id) {
 };
 
 // Pagination State
-const txPerPage = 5; // Temporarily lowered for testing
-console.log("[UI] Version 2.3: Relayer Pagination Added");
+// Pagination State
+const txPerPage = 10; // Updated to 10 as requested
+console.log("[UI] Version 2.4: Timezone & Enhanced Pagination");
+const TIMEZONE_CONFIG = { timeZone: 'America/Argentina/Buenos_Aires' };
 let allBatchTransactions = []; // Store full list
+let filteredTransactions = []; // Store filtered list for rendering
 
 // Relayer Pagination State
 let currentRelayerPage = 1;
@@ -675,13 +692,14 @@ function updateDetailView(batch, txs) {
             const totalRequiredEl = document.getElementById('merkleResultTotalRequired');
             if (totalRequiredEl) totalRequiredEl.textContent = `$${(totalVal / 1000000).toFixed(6)} USDC`;
 
-            // Update Relayer Options Limit
-            updateRelayerCountOptions(txs.length);
+            // Update Relayer Options Limit (Use batch.total_transactions since we don't have full tx array here)
+            updateRelayerCountOptions(batch.total_transactions || 100);
 
             // Update Verification Label with fixed 100 cap or actual count
             const verifyLabel = document.getElementById('merkleVerifyLabel');
             if (verifyLabel) {
-                const count = Math.min(100, (txs || []).length);
+                // Use total_transactions from batch object
+                const count = Math.min(100, batch.total_transactions || 0);
                 verifyLabel.textContent = `🔬 Verificación On-Chain (Muestreo ${count} ${count === 1 ? 'tx' : 'txs'})`;
             }
 
@@ -713,6 +731,19 @@ function updateDetailView(batch, txs) {
                 if (batch.status === 'SENT' || batch.status === 'PROCESSING') {
                     if (progressZone) progressZone.classList.remove('hidden');
                     startProgressPolling(batch.id);
+                    // Fix: Ensure relayer setup zone is reset/visible if needed
+                    const relayerMsg = document.getElementById('relayerMsg');
+                    const relayerSetupZone = document.getElementById('relayerSetupZone');
+
+                    // Determine if we need to show setup options
+                    // IF relayers exist, show them (via refreshRelayerBalances). ELSE show setup button.
+                    // Reset UI state to "Loading/Checking"
+                    if (relayerMsg) {
+                        relayerMsg.classList.remove('hidden');
+                        relayerMsg.innerHTML = `<span style="color:#fbbf24;">⏳ Verificando Relayers...</span>`;
+                    }
+                    if (relayerSetupZone) relayerSetupZone.classList.remove('hidden');
+
                 } else {
                     if (progressZone) progressZone.classList.add('hidden');
                     stopProgressPolling();
@@ -732,7 +763,13 @@ function updateDetailView(batch, txs) {
 
     // Init Pagination
     allBatchTransactions = txs || [];
+    filteredTransactions = [...allBatchTransactions]; // Init filtered with all
     currentTxPage = 1;
+    // Clear filter inputs on new batch load
+    if (document.getElementById('filterWallet')) document.getElementById('filterWallet').value = '';
+    if (document.getElementById('filterAmount')) document.getElementById('filterAmount').value = '';
+    if (document.getElementById('filterStatus')) document.getElementById('filterStatus').value = '';
+
     renderBatchTransactions();
 }
 
@@ -819,15 +856,46 @@ async function fetchUSDCAllowance(address) {
     }
 }
 
+// Filter Logic
+window.applyFilters = function () {
+    const w = document.getElementById('filterWallet').value.toLowerCase();
+    const a = document.getElementById('filterAmount').value;
+    const s = document.getElementById('filterStatus').value;
+
+    filteredTransactions = allBatchTransactions.filter(tx => {
+        const matchWallet = tx.wallet_address_to.toLowerCase().includes(w);
+        // Amount stored as integer (microUSDC), input is human USDC
+        let matchAmount = true;
+        if (a) {
+            const txVal = parseFloat(tx.amount_usdc) / 1000000;
+            // Allow slight fuzzy match or exact? Let's starts with exact-ish
+            matchAmount = Math.abs(txVal - parseFloat(a)) < 0.000001;
+        }
+        const matchStatus = s ? tx.status === s : true;
+
+        return matchWallet && matchAmount && matchStatus;
+    });
+
+    currentTxPage = 1; // Reset to page 1
+    renderBatchTransactions();
+};
+
+window.clearFilters = function () {
+    document.getElementById('filterWallet').value = '';
+    document.getElementById('filterAmount').value = '';
+    document.getElementById('filterStatus').value = '';
+    filteredTransactions = [...allBatchTransactions];
+    currentTxPage = 1;
+    renderBatchTransactions();
+};
+
 // Render with Pagination
 function renderBatchTransactions() {
     batchTableBody.innerHTML = '';
-    const totalItems = allBatchTransactions.length;
+    const totalItems = filteredTransactions.length;
 
-    // Pagination Logic
-    const start = (currentTxPage - 1) * txPerPage;
-    const end = start + txPerPage;
-    const pageItems = allBatchTransactions.slice(start, end);
+    // Server-side filters return exactly the page we need, no slicing needed
+    const pageItems = filteredTransactions;
 
     if (totalItems === 0) {
         batchTableBody.innerHTML = '<tr><td colspan="6" style="text-align:center;">No hay registros</td></tr>';
@@ -889,6 +957,9 @@ function renderPaginationControls(totalItems) {
     if (totalItems <= txPerPage) return; // No pagination needed
 
     const totalPages = Math.ceil(totalItems / txPerPage);
+    // Explicitly expose totalPages to global scope so jump logic works
+    window.currentTotalPages = totalPages;
+
     const div = document.createElement('div');
     div.id = 'paginationControls';
     div.className = 'pagination-controls'; // Add class for easy lookup
@@ -897,9 +968,11 @@ function renderPaginationControls(totalItems) {
     div.style.gap = '1rem';
     div.style.marginTop = '1rem';
     div.innerHTML = `
-        <button class="btn-glass" onclick="changePage(-1)" ${currentTxPage === 1 ? 'disabled' : ''}>⬅️ Anterior</button>
+        <button class="btn-glass" onclick="changePage('first')" ${currentTxPage === 1 ? 'disabled' : ''}>⏮️</button>
+        <button class="btn-glass" onclick="changePage(-1)" ${currentTxPage === 1 ? 'disabled' : ''}>⬅️ Ant.</button>
         <span style="align-self: center;">Página ${currentTxPage} de ${totalPages}</span>
-        <button class="btn-glass" onclick="changePage(1)" ${currentTxPage === totalPages ? 'disabled' : ''}>Siguiente ➡️</button>
+        <button class="btn-glass" onclick="changePage(1)" ${currentTxPage === totalPages ? 'disabled' : ''}>Sig. ➡️</button>
+        <button class="btn-glass" onclick="changePage('last')" ${currentTxPage === totalPages ? 'disabled' : ''}>⏭️</button>
     `;
 
     // Robust Append: Try known container, else fallback to table parent
@@ -919,7 +992,13 @@ function renderPaginationControls(totalItems) {
 }
 
 window.changePage = function (direction) {
-    currentTxPage += direction;
+    if (direction === 'first') {
+        currentTxPage = 1;
+    } else if (direction === 'last') {
+        currentTxPage = window.currentTotalPages || 1;
+    } else {
+        currentTxPage += direction;
+    }
     renderBatchTransactions();
 };
 

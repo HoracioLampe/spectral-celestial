@@ -132,7 +132,12 @@ class RelayerEngine {
     }
 
     async backgroundProcess(batchId, relayers, isResumption = false, externalPermit = null, rootSignatureData = null) {
-        console.log(`[Background] 🎬 START | Batch: ${batchId} | Relayers: ${relayers.length} | Resumption: ${isResumption} | ExternalPermit: ${!!externalPermit} | RootSig: ${!!rootSignatureData}`);
+        // Track Start Time
+        const startTime = Date.now();
+        console.log(`[Background] 🎬 START | Batch: ${batchId} | Relayers: ${relayers.length} | StartTime: ${new Date(startTime).toISOString()}`);
+
+        // Update Status to SENT (Enviando) immediately
+        await this.pool.query(`UPDATE batches SET status = 'SENT', start_time = NOW(), updated_at = NOW() WHERE id = $1`, [batchId]);
 
         // 1. Fetch Funder Address for this batch
         const batchRes = await this.pool.query('SELECT funder_address FROM batches WHERE id = $1', [batchId]);
@@ -270,9 +275,45 @@ class RelayerEngine {
             console.error(`[Engine] ⚠️ Worker Swarm Error: ${err.message}`);
         } finally {
             // G. Refund & Cleanup (ALWAYS RUN)
+            // G. Refund & Cleanup (ALWAYS RUN)
             console.log(`[Engine] 🧹 Cleaning up & Returning Funds...`);
-            await this.returnFundsToFaucet(relayers, batchId);
-            console.log(`✅ Batch ${batchId} Processing Complete.`);
+            try {
+                await this.returnFundsToFaucet(relayers, batchId);
+            } catch (cleanupErr) {
+                console.error(`[Engine] ⚠️ Refund failed (ignoring to save metrics): ${cleanupErr.message}`);
+            }
+
+            // --- CALCULATE FINAL METRICS ---
+            const endTime = Date.now();
+            const durationMs = endTime - startTime;
+
+            // Format duration (e.g., "2m 15s")
+            const minutes = Math.floor(durationMs / 60000);
+            const seconds = ((durationMs % 60000) / 1000).toFixed(0);
+            const durationStr = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+
+            // Aggregate Total Gas from Database (saved by workers)
+            const gasRes = await this.pool.query(
+                `SELECT SUM(gas_cost::numeric) as total_gas FROM relayers WHERE batch_id = $1`,
+                [batchId]
+            );
+            const totalGasMatic = gasRes.rows[0].total_gas || "0";
+
+            console.log(`[Engine] 🏁 Metrics | Time: ${durationStr} | Gas: ${totalGasMatic} MATIC`);
+
+            // Update Batch with Metrics and Final Status
+            await this.pool.query(
+                `UPDATE batches SET 
+                    status = 'COMPLETED', 
+                    total_gas_used = $1, 
+                    execution_time = $2, 
+                    end_time = NOW(),
+                    updated_at = NOW() 
+                 WHERE id = $3`,
+                [totalGasMatic, durationStr, batchId]
+            );
+
+            console.log(`✅ Batch ${batchId} Processing Complete. metrics saved.`);
         }
     }
 
@@ -790,21 +831,26 @@ class RelayerEngine {
                     [ethers.formatEther(bal), wallet.address, batchId]
                 );
 
-                if (bal > (costWei + safetyBuffer)) {
-                    const amount = bal - costWei; // Sweep everything except gas cost
+                // Check if balance covers at least gas cost + tiny buffer
+                if (bal > (costWei + 5000000000000n)) { // Buffer ~0.005 MATIC (Wait, 5000 Gwei is small)
+                    // Let's rely on gasPrice * 21000 + buffer
+                    const buffer = ethers.parseEther("0.002");
+                    if (bal > (costWei + buffer)) {
+                        const amount = bal - costWei;
 
-                    if (amount > 0n) {
-                        const tx = await wallet.sendTransaction({
-                            to: targetFaucetAddress,
-                            value: amount,
-                            gasLimit: 21000n,
-                            gasPrice
-                        });
-                        console.log(`[Refund] Tx Sent: ${tx.hash} | From: ${wallet.address.substring(0, 6)} | Value: ${ethers.formatEther(amount)}`);
-                        // We don't necessarily await each receipt to speed up if batch is large, 
-                        // but for safety we can.
-                        await tx.wait();
-                        return tx.hash;
+                        if (amount > 0n) {
+                            const tx = await wallet.sendTransaction({
+                                to: targetFaucetAddress,
+                                value: amount,
+                                gasLimit: 21000n,
+                                gasPrice
+                            });
+                            console.log(`[Refund] Tx Sent: ${tx.hash} | From: ${wallet.address.substring(0, 6)} | Value: ${ethers.formatEther(amount)}`);
+                            // We don't necessarily await each receipt to speed up if batch is large, 
+                            // but for safety we can.
+                            await tx.wait();
+                            return tx.hash;
+                        }
                     }
                 }
             } catch (err) {

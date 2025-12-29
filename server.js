@@ -593,6 +593,65 @@ app.get('/api/setup', async (req, res) => {
     }
 });
 
+// 8. Get Transactions for a Batch (Server-Side Pagination & Filtering)
+app.get('/api/batches/:id/transactions', async (req, res) => {
+    try {
+        const batchId = parseInt(req.params.id);
+        const { page = 1, limit = 10, wallet, amount, status } = req.query;
+        const offset = (page - 1) * limit;
+
+        // Build Dynamic Query
+        let query = `SELECT * FROM batch_transactions WHERE batch_id = $1`;
+        let countQuery = `SELECT count(*) FROM batch_transactions WHERE batch_id = $1`;
+        const params = [batchId];
+        let paramIdx = 2;
+
+        if (wallet) {
+            query += ` AND wallet_address_to ILIKE $${paramIdx}`;
+            countQuery += ` AND wallet_address_to ILIKE $${paramIdx}`;
+            params.push(`%${wallet}%`); // Partial match
+            paramIdx++;
+        }
+
+        if (status) {
+            query += ` AND status = $${paramIdx}`;
+            countQuery += ` AND status = $${paramIdx}`;
+            params.push(status);
+            paramIdx++;
+        }
+
+        if (amount) {
+            // Amount in database is microUSDC (integer). Input is USDC (float).
+            const amountMicro = Math.round(parseFloat(amount) * 1000000);
+            query += ` AND amount_usdc = $${paramIdx}`;
+            countQuery += ` AND amount_usdc = $${paramIdx}`;
+            params.push(amountMicro);
+            paramIdx++;
+        }
+
+        // Add sorting and pagination
+        query += ` ORDER BY id ASC LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`;
+
+        // Execute Queries
+        const totalRes = await pool.query(countQuery, params.slice(0, paramIdx - 1)); // Exclude limit/offset params
+        const totalItems = parseInt(totalRes.rows[0].count);
+
+        const dataRes = await pool.query(query, [...params, limit, offset]);
+
+        res.json({
+            data: dataRes.rows,
+            total: totalItems,
+            page: parseInt(page),
+            limit: parseInt(limit),
+            totalPages: Math.ceil(totalItems / limit)
+        });
+
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 const VERSION = "2.3.0";
 const PORT_LISTEN = process.env.PORT || 3000;
 
