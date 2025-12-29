@@ -556,35 +556,53 @@ class RelayerEngine {
 
     /**
      * AUTO-REPAIR: Checks for stuck "ghost" transactions in mempool and clears them.
+     * Aggressively loops until Pending == Latest.
      */
     async verifyAndRepairNonce() {
         try {
             const address = this.faucetWallet.address;
-            const latestNonce = await this.provider.getTransactionCount(address, "latest");
-            const pendingNonce = await this.provider.getTransactionCount(address, "pending");
+            let latestNonce = await this.provider.getTransactionCount(address, "latest");
+            let pendingNonce = await this.provider.getTransactionCount(address, "pending");
 
-            if (pendingNonce > latestNonce) {
-                console.warn(`[AutoRepair] ⚠️ Detected stuck transactions! Pending: ${pendingNonce} | Latest: ${latestNonce}`);
-                console.log(`[AutoRepair] 🔧 Sending self-transaction to flush mempool...`);
+            console.log(`[AutoRepair] 🔍 Nonce Check: L=${latestNonce} | P=${pendingNonce}`);
+
+            let attempt = 0;
+            const MAX_ATTEMPTS = 10; // Safety break
+
+            while (pendingNonce > latestNonce && attempt < MAX_ATTEMPTS) {
+                attempt++;
+                console.warn(`[AutoRepair] ⚠️ Stuck Queue Detected (Diff: ${pendingNonce - latestNonce}). Clearing slot ${latestNonce}...`);
 
                 const feeData = await this.provider.getFeeData();
                 const boostPrice = (feeData.gasPrice * 30n) / 10n; // 3x aggressive gas
 
-                // Send 0-value self-transfer with correct NONCE
-                const tx = await this.faucetWallet.sendTransaction({
-                    to: address,
-                    value: 0,
-                    nonce: latestNonce,
-                    gasLimit: 30000,
-                    gasPrice: boostPrice
-                });
+                // Send 0-value self-transfer to overwrite the "head" of the stuck queue
+                try {
+                    const tx = await this.faucetWallet.sendTransaction({
+                        to: address,
+                        value: 0,
+                        nonce: latestNonce,
+                        gasLimit: 30000,
+                        gasPrice: boostPrice
+                    });
+                    console.log(`[AutoRepair] 💉 Correction TX Sent: ${tx.hash}. Waiting...`);
+                    await tx.wait();
+                    console.log(`[AutoRepair] ✅ Slot ${latestNonce} cleared.`);
+                } catch (txErr) {
+                    console.warn(`[AutoRepair] ⚠️ Tx Replacement failed: ${txErr.message}. Retrying check...`);
+                }
 
-                console.log(`[AutoRepair] 💉 Correction TX Sent: ${tx.hash}. Waiting...`);
-                await tx.wait();
-                console.log(`[AutoRepair] ✅ Mempool flushed. Logic restored.`);
-            } else {
-                console.log(`[AutoRepair] ✅ Nonce looks clean (L=${latestNonce}).`);
+                // Refresh counts
+                latestNonce = await this.provider.getTransactionCount(address, "latest");
+                pendingNonce = await this.provider.getTransactionCount(address, "pending");
             }
+
+            if (pendingNonce > latestNonce) {
+                console.warn(`[AutoRepair] ⚠️ Queue still stuck after ${MAX_ATTEMPTS} attempts. Proceeding with caution.`);
+            } else {
+                console.log(`[AutoRepair] ✨ Mempool is clean.`);
+            }
+
         } catch (e) {
             console.warn(`[AutoRepair] ⚠️ Failed to auto-repair nonce: ${e.message}`);
         }
