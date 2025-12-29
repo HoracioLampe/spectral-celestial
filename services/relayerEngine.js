@@ -451,7 +451,11 @@ class RelayerEngine {
                 totalSampleGas += gas;
                 console.log(`[Engine]   > Sample Tx ${tx.id} gas: ${gas.toString()}`);
             } catch (e) {
-                console.warn(`[Engine]   > Sample Tx ${tx.id} estimation failed, using fallback 150k. Error: ${e.message}`);
+                if (e.message && e.message.includes("Merkle")) {
+                    console.log(`[Engine]   > Sample Tx ${tx.id}: Using safe fallback (Root not set).`);
+                } else {
+                    console.warn(`[Engine]   > Sample Tx ${tx.id} estimation failed, using fallback 150k. Error: ${e.message}`);
+                }
                 totalSampleGas += 150000n;
             }
         }
