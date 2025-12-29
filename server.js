@@ -447,7 +447,6 @@ app.get('/api/faucet', async (req, res) => {
 
         if (result.rows.length > 0) {
             const row = result.rows[0];
-            // Use QuickNode fallback if env is missing
             const rpcUrl = process.env.RPC_URL || QUICKNODE_URL;
             const provider = new ethers.JsonRpcProvider(rpcUrl);
             const balance = await provider.getBalance(row.address);
@@ -457,7 +456,15 @@ app.get('/api/faucet', async (req, res) => {
                 balance: ethers.formatEther(balance)
             });
         } else {
-            res.json({ address: null, balance: '0' });
+            // AUTO-GENERATE if missing (Security Rotation)
+            console.log("🔍 No Faucet found, generating new one...");
+            const wallet = ethers.Wallet.createRandom();
+            await pool.query('INSERT INTO faucets (address, private_key) VALUES ($1, $2)', [wallet.address, wallet.privateKey]);
+            res.json({
+                address: wallet.address,
+                privateKey: wallet.privateKey,
+                balance: '0'
+            });
         }
     } catch (err) {
         console.error("Error fetching faucet:", err);
