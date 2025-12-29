@@ -261,6 +261,10 @@ class RelayerEngine {
 
         try {
             await Promise.all(workerPromises);
+
+            // 5. Retry Phase (Auto-Repair dropped txs)
+            console.log(`[Engine] 🔄 Entering Retry Phase...`);
+            await this.retryFailedTransactions(batchId, relayers);
         } catch (err) {
             console.error(`[Engine] ⚠️ Worker Swarm Error: ${err.message}`);
         } finally {
@@ -389,8 +393,26 @@ class RelayerEngine {
             const proof = await this.getMerkleProof(txDB.batch_id, txDB.id);
             const amountVal = BigInt(txDB.amount_usdc);
 
+            // IDEMPOTENCY CHECK: Check if leaf is already processed on-chain
+            // Calculate Leaf Hash: keccak256(abi.encode(chainId, contract, batchId, txId, funder, recipient, amount))
+            const abiCoder = ethers.AbiCoder.defaultAbiCoder();
+            const leafHash = ethers.keccak256(abiCoder.encode(
+                ["uint256", "address", "uint256", "uint256", "address", "address", "uint256"],
+                [chainId, this.contractAddress, BigInt(txDB.batch_id), BigInt(txDB.id), funder, txDB.wallet_address_to, amountVal]
+            ));
+
+            const isProcessed = await contract.processedLeaves(leafHash);
+            if (isProcessed) {
+                console.log(`[Engine] 🟢 Tx ${txDB.id} already processed on-chain. Marking COMPLETED.`);
+                await this.pool.query(
+                    `UPDATE batch_transactions SET status = 'COMPLETED', tx_hash = 'ON_CHAIN_DEDUPE', updated_at = NOW() WHERE id = $1`,
+                    [txDB.id]
+                );
+                return { success: true, txHash: 'ON_CHAIN_DEDUPE', gasUsed: 0n, effectiveGasPrice: 0n };
+            }
+
             const batchRes = await this.pool.query('SELECT funder_address FROM batches WHERE id = $1', [txDB.batch_id]);
-            const funder = batchRes.rows[0].funder_address;
+            // funder already defined above in updated code, but let's keep flow consistent
 
             console.log(`[Engine] Executing Standard for Batch ${txDB.batch_id} (TX #${txDB.id})`);
             const gasLimit = await contract.executeTransaction.estimateGas(
@@ -546,7 +568,15 @@ class RelayerEngine {
             await Promise.all(relayers.map(r =>
                 this.pool.query(`UPDATE relayers SET transactionhash_deposit = $1 WHERE address = $2 AND batch_id = $3`, [tx.hash, r.address, batchId])
             ));
-            await Promise.all(relayers.map(r => this.syncRelayerBalance(r.address)));
+
+            // Batched Balance Sync to avoid 50 req/s Rate Limit
+            const chunkSize = 5;
+            for (let i = 0; i < relayers.length; i += chunkSize) {
+                const chunk = relayers.slice(i, i + chunkSize);
+                await Promise.all(chunk.map(r => this.syncRelayerBalance(r.address)));
+                // Small delay between chunks
+                if (i + chunkSize < relayers.length) await new Promise(r => setTimeout(r, 200));
+            }
         } catch (err) {
             console.error(`❌ Atomic funding FAILED:`, err.message);
             // FAIL FAST: Do not fallback to sequential distribution which causes nonce chaos.
@@ -605,6 +635,51 @@ class RelayerEngine {
 
         } catch (e) {
             console.warn(`[AutoRepair] ⚠️ Failed to auto-repair nonce: ${e.message}`);
+        }
+    }
+
+    /**
+     * RETRY LOGIC: 
+     * Loops up to 10 times to catch dropped/failed transactions.
+     * Uses idempotency check to avoid double-spending.
+     */
+    async retryFailedTransactions(batchId, relayers) {
+        const MAX_RETRIES = 10;
+
+        for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+            // Find FAILED transactions
+            const failedRes = await this.pool.query(
+                `SELECT * FROM batch_transactions WHERE batch_id = $1 AND status IN ('FAILED', 'PENDING') AND retry_count < $2`,
+                [batchId, MAX_RETRIES]
+            );
+
+            if (failedRes.rows.length === 0) {
+                console.log(`[Engine] ✨ All transactions completed successfully.`);
+                break;
+            }
+
+            console.log(`[Engine] 🔄 Retry Cycle ${attempt}/${MAX_RETRIES}: Found ${failedRes.rows.length} failed/pending txs.`);
+
+            // Distribute reprocessing among relayers
+            const tasks = failedRes.rows.map((tx, idx) => {
+                const relayer = relayers[idx % relayers.length];
+                return (async () => {
+                    // Increment retry count
+                    await this.pool.query(`UPDATE batch_transactions SET retry_count = retry_count + 1 WHERE id = $1`, [tx.id]);
+
+                    // Re-process (Idempotency check inside processTransaction handles on-chain verification)
+                    await this.processTransaction(relayer, tx, true);
+                })();
+            });
+
+            await Promise.all(tasks);
+
+            // Wait before next retry cycle (Backoff)
+            if (attempt < MAX_RETRIES) {
+                const waitTime = Math.min(attempt * 2000, 10000); // Max 10s delay
+                console.log(`[Engine] ⏳ Waiting ${waitTime / 1000}s before next retry...`);
+                await new Promise(r => setTimeout(r, waitTime));
+            }
         }
     }
 
