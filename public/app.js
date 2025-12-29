@@ -647,7 +647,7 @@ let currentRelayerPage = 1;
 const relayersPerPage = 5;
 let allRelayers = [];
 
-function updateDetailView(batch, txs) {
+function updateDetailView(batch) {
     detailBatchTitle.textContent = `${batch.batch_number} - ${batch.detail}`;
     detailBatchDesc.textContent = batch.description || "Sin descripción";
 
