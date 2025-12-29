@@ -1915,7 +1915,7 @@ function renderRelayerBalances(explicitData) {
     tbody.innerHTML = pageItems.map(r => {
         const shortAddr = `${r.address.substring(0, 6)}...${r.address.substring(38)}`;
         const isStale = r.isStale === true;
-        const balanceDisplay = isStale ? `${parseFloat(r.balance).toFixed(4)} MATIC <span style="font-size: 0.7rem; color: #fbbf24;">(Persistente 💾)</span>` : `${parseFloat(r.balance).toFixed(4)} MATIC`;
+        const balanceDisplay = isStale ? `${parseFloat(r.balance).toFixed(6)} MATIC <span style="font-size: 0.7rem; color: #fbbf24;">(Persistente 💾)</span>` : `${parseFloat(r.balance).toFixed(6)} MATIC`;
         const balanceColor = isStale ? '#fbbf24' : '#4ade80';
 
         return `
