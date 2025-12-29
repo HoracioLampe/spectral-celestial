@@ -1215,6 +1215,11 @@ async function runMerkleTest() {
         return;
     }
 
+    // UI Setup moved up to avoid ReferenceError
+    const btn = document.getElementById('btnTestMerkle');
+    const status = document.getElementById('merkleTestStatus');
+    const verifyLabel = document.getElementById('merkleVerifyLabel');
+
     // 1. Fetch Sample if needed (Server-Side Fix)
     let testTransactions = allBatchTransactions;
     if (!testTransactions || testTransactions.length === 0) {
@@ -1242,11 +1247,6 @@ async function runMerkleTest() {
     const sampleSize = Math.min(MAX_SAMPLES, testTransactions.length);
     const shuffled = [...testTransactions].sort(() => 0.5 - Math.random());
     const selectedTxs = shuffled.slice(0, sampleSize);
-
-    // UI Setup
-    const btn = document.getElementById('btnTestMerkle');
-    const status = document.getElementById('merkleTestStatus');
-    const verifyLabel = document.getElementById('merkleVerifyLabel');
 
     if (verifyLabel) {
         verifyLabel.textContent = `🔬 Verificación On-Chain (Muestreo ${sampleSize} ${sampleSize === 1 ? 'tx' : 'txs'})`;
