@@ -1105,8 +1105,7 @@ async function uploadBatchFile() {
 
         if (result.batch) {
             updateDetailView(result.batch, result.transactions);
-            // Force hide Merkle Zone until regenerated
-            document.getElementById('merkleContainer')?.classList.add('hidden');
+            // Removed incorrect hidden force
             uploadStatus.textContent = "✅ Carga exitosa";
             // Refresh grid
             currentTxPage = 1;
