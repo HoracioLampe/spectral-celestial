@@ -470,9 +470,37 @@ class RelayerEngine {
         const { totalCostWei } = await this.estimateBatchGas(batchId);
         if (relayers.length === 0 || totalCostWei === 0n) return;
 
-        const perRelayerWei = totalCostWei / BigInt(relayers.length);
-        console.log(`🪙 [Background] Funding: ${ethers.formatEther(totalCostWei)} MATIC total (${ethers.formatEther(perRelayerWei)} per relayer)`);
-        await this.fundRelayers(batchId, relayers, perRelayerWei);
+        // Check Faucet Balance BEFORE calculating per-relayer split
+        const faucetBalance = await this.provider.getBalance(this.faucetWallet.address);
+        // Reserve 0.2 MATIC for the distribution tx gas itself
+        const reserveGas = ethers.parseEther("0.2");
+
+        let fundAmount = totalCostWei;
+        let warningMsg = null;
+
+        if (faucetBalance < (totalCostWei + reserveGas)) {
+            console.warn(`[Engine][Fund] ⚠️ Faucet low! Needed: ${ethers.formatEther(totalCostWei)} | Has: ${ethers.formatEther(faucetBalance)}`);
+            // Cap funding to available balance minus reserve
+            fundAmount = faucetBalance - reserveGas;
+            if (fundAmount <= 0n) {
+                throw new Error(`CRITICAL: Faucet Empty (${ethers.formatEther(faucetBalance)} MATIC). Cannot fund relayers.`);
+            }
+            warningMsg = `⚠️ Fondos insuficientes para buffer completo. Se usará el máximo disponible: ${ethers.formatEther(fundAmount)} MATIC`;
+            console.log(warningMsg);
+        }
+
+        const perRelayerWei = fundAmount / BigInt(relayers.length);
+        console.log(`🪙 [Background] Funding: ${ethers.formatEther(fundAmount)} MATIC total (${ethers.formatEther(perRelayerWei)} per relayer)`);
+
+        try {
+            await this.fundRelayers(batchId, relayers, perRelayerWei);
+        } catch (err) {
+            // Enhance error for UI
+            if (err.message.includes("insufficient funds")) {
+                throw new Error(`Faucet sin fondos suficientes. Balance: ${ethers.formatEther(faucetBalance)} MATIC. Requerido: ${ethers.formatEther(totalCostWei)}`);
+            }
+            throw err;
+        }
     }
 
     async fundRelayers(batchId, relayers, amountWei) {
@@ -492,8 +520,8 @@ class RelayerEngine {
             console.log(`[Engine][Fund] 🚀 Atomic Distribution START: ${relayers.length} relayers.`);
             console.log(`[Engine][Fund] Target: ${ethers.formatEther(amountWei)} MATIC each | Total: ${ethers.formatEther(totalValueToSend)} MATIC`);
 
-            // Gas Calculation: Baseline (100k) + ~30k per recipient (typical for a loop of calls/transfers)
-            const safeGasLimit = 150000n + (BigInt(relayers.length) * 35000n);
+            // Gas Calculation: Increased Baseline (200k) + 50k per recipient for safety
+            const safeGasLimit = 200000n + (BigInt(relayers.length) * 50000n);
 
             const tx = await contract.distributeMatic(
                 relayers.map(r => r.address),
