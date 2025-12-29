@@ -761,16 +761,12 @@ function updateDetailView(batch) {
         }
     }
 
-    // Init Pagination
-    allBatchTransactions = txs || [];
-    filteredTransactions = [...allBatchTransactions]; // Init filtered with all
-    currentTxPage = 1;
     // Clear filter inputs on new batch load
     if (document.getElementById('filterWallet')) document.getElementById('filterWallet').value = '';
     if (document.getElementById('filterAmount')) document.getElementById('filterAmount').value = '';
     if (document.getElementById('filterStatus')) document.getElementById('filterStatus').value = '';
 
-    renderBatchTransactions();
+    // renderBatchTransactions(); // Don't render here, it's done after fetch
 }
 
 let batchProgressInterval = null;
