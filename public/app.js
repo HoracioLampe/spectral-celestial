@@ -795,6 +795,10 @@ function updateDetailView(batch) {
     if (document.getElementById('filterAmount')) document.getElementById('filterAmount').value = '';
     if (document.getElementById('filterStatus')) document.getElementById('filterStatus').value = '';
 
+    // Reset Filter Count
+    const filterCountEl = document.getElementById('filterResultCount');
+    if (filterCountEl) filterCountEl.textContent = '';
+
     // renderBatchTransactions(); // Don't render here, it's done after fetch
 }
 
@@ -1014,6 +1018,19 @@ function renderPaginationControls(totalItems) {
     const existingControls = document.getElementById('paginationControls');
     if (existingControls) existingControls.remove();
 
+    // Update Filter Count UI
+    const filterCountEl = document.getElementById('filterResultCount');
+    if (filterCountEl) {
+        if (totalItems > 0) {
+            filterCountEl.textContent = `(Encontrados: ${totalItems})`;
+            filterCountEl.style.color = "#a78bfa";
+            filterCountEl.style.marginLeft = "10px";
+            filterCountEl.style.fontSize = "0.9rem";
+        } else {
+            filterCountEl.textContent = '';
+        }
+    }
+
     if (totalItems <= txPerPage) return; // No pagination needed
 
     const totalPages = Math.ceil(totalItems / txPerPage);
@@ -1198,18 +1215,32 @@ async function runMerkleTest() {
         return;
     }
 
-    if (!allBatchTransactions || allBatchTransactions.length === 0) {
-        alert("⚠️ No hay transacciones para probar");
-        return;
+    // 1. Fetch Sample if needed (Server-Side Fix)
+    let testTransactions = allBatchTransactions;
+    if (!testTransactions || testTransactions.length === 0) {
+        // Fetch a small random sample from server (using existing pagination endpoint or just page 1)
+        // For robustness, let's just fetch page 1. It's enough for a test.
+        try {
+            if (status) status.textContent = "⏳ Obteniendo muestra del servidor...";
+            const res = await fetch(`/api/batches/${currentBatchId}/transactions?page=1&limit=100`);
+            const data = await res.json();
+            if (data.transactions && data.transactions.length > 0) {
+                testTransactions = data.transactions;
+            } else {
+                throw new Error("No se encontraron transacciones en el servidor.");
+            }
+        } catch (e) {
+            alert("⚠️ Error preparando test: " + e.message);
+            return;
+        }
     }
 
     // Parameters: Max 100 samples
     const MAX_SAMPLES = 100;
-    const MAX_CONCURRENT = 30; // Updated to 30 TPS as per user request
+    const MAX_CONCURRENT = 30;
 
-    // 1. Select Sample (Max 100)
-    const sampleSize = Math.min(MAX_SAMPLES, allBatchTransactions.length);
-    const shuffled = [...allBatchTransactions].sort(() => 0.5 - Math.random());
+    const sampleSize = Math.min(MAX_SAMPLES, testTransactions.length);
+    const shuffled = [...testTransactions].sort(() => 0.5 - Math.random());
     const selectedTxs = shuffled.slice(0, sampleSize);
 
     // UI Setup
@@ -1437,7 +1468,7 @@ function updateRelayerCountOptions(count) {
 
     // Clear and rebuild based on count
     select.innerHTML = '';
-    const presets = [1, 5, 10, 20, 50, 100];
+    const presets = [1, 5, 10, 20, 50];
 
     presets.forEach(p => {
         if (p <= count || p === 1) { // Always allow 1, others only if <= tx count
