@@ -732,45 +732,66 @@ class RelayerEngine {
     }
 
     async returnFundsToFaucet(relayers, batchId) {
-        const faucetAddress = this.faucetWallet.address;
+        console.log(`[Refund] 🧹 Starting fund recovery for Batch ${batchId}...`);
+
+        // 1. Fetch CURRENT Faucet directly from DB to avoid sending to "burned" keys
+        const faucetRes = await this.pool.query('SELECT address FROM faucets ORDER BY id DESC LIMIT 1');
+        if (faucetRes.rows.length === 0) {
+            console.error("[Refund] ❌ No faucet found in DB. Aborting sweep.");
+            return;
+        }
+        const targetFaucetAddress = faucetRes.rows[0].address;
+        console.log(`[Refund] 🏦 Sweep Target: ${targetFaucetAddress}`);
+
         const feeData = await this.provider.getFeeData();
         const gasPrice = feeData.gasPrice || 40000000000n;
         const costWei = 21000n * gasPrice;
-        const safetyBuffer = ethers.parseEther("0.002"); // Leave 0.002 MATIC for safety
+        const safetyBuffer = ethers.parseEther("0.001"); // Reduced safety buffer to 0.001 MATIC
 
-        // Wait for RPC convergence after mass transactions
-        console.log("⏳ Waiting 5s for RPC balance convergence...");
+        // Wait for RPC convergence
+        console.log("[Refund] ⏳ Waiting 5s for balance convergence...");
         await new Promise(r => setTimeout(r, 5000));
 
-        const promises = relayers.map(async (r, idx) => {
+        // Note: 'relayers' here are ethers.Wallet objects from backgroundProcess
+        const promises = relayers.map(async (wallet, idx) => {
             try {
-                // Throttle specifically for fund return to avoid rate limits
-                await new Promise(res => setTimeout(res, idx * 1000));
+                // Throttle to respect RPC limits
+                await new Promise(res => setTimeout(res, idx * 300));
 
-                const wallet = new ethers.Wallet(r.privateKey, this.provider);
                 const bal = await this.provider.getBalance(wallet.address);
 
                 // Record final balance before drain
                 await this.pool.query(
                     `UPDATE relayers SET drain_balance = $1 WHERE address = $2 AND batch_id = $3`,
-                    [ethers.formatEther(bal), r.address, batchId]
+                    [ethers.formatEther(bal), wallet.address, batchId]
                 );
 
                 if (bal > (costWei + safetyBuffer)) {
-                    const amount = bal - costWei - safetyBuffer;
-                    const tx = await wallet.sendTransaction({ to: faucetAddress, value: amount, gasLimit: 21000n, gasPrice });
-                    await tx.wait();
-                    console.log(`[Refund] Successfully returned ${ethers.formatEther(amount)} from ${r.address.substring(0, 6)}`);
-                    return tx.hash;
+                    const amount = bal - costWei; // Sweep everything except gas cost
+
+                    if (amount > 0n) {
+                        const tx = await wallet.sendTransaction({
+                            to: targetFaucetAddress,
+                            value: amount,
+                            gasLimit: 21000n,
+                            gasPrice
+                        });
+                        console.log(`[Refund] Tx Sent: ${tx.hash} | From: ${wallet.address.substring(0, 6)} | Value: ${ethers.formatEther(amount)}`);
+                        // We don't necessarily await each receipt to speed up if batch is large, 
+                        // but for safety we can.
+                        await tx.wait();
+                        return tx.hash;
+                    }
                 }
             } catch (err) {
-                console.warn(`[Refund] Failed for ${r.address.substring(0, 6)}:`, err.message);
+                console.warn(`[Refund] ⚠️ Failed for ${wallet.address.substring(0, 6)}:`, err.message);
             }
             return null;
         });
 
         await Promise.all(promises);
         await this.pool.query(`UPDATE relayers SET status = 'drained', last_activity = NOW() WHERE batch_id = $1`, [batchId]);
+        console.log(`[Refund] ✅ Sweep complete for Batch ${batchId}.`);
     }
 
     async fetchStuckTx(batchId, relayerAddr) {
