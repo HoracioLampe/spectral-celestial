@@ -694,19 +694,21 @@ class RelayerEngine {
 
             console.log(`[Engine] 🔄 Retry Cycle ${attempt}/${MAX_RETRIES}: Found ${failedRes.rows.length} failed/pending txs.`);
 
-            // Distribute reprocessing among relayers
-            const tasks = failedRes.rows.map((tx, idx) => {
-                const relayer = relayers[idx % relayers.length];
-                return (async () => {
-                    // Increment retry count
-                    await this.pool.query(`UPDATE batch_transactions SET retry_count = retry_count + 1 WHERE id = $1`, [tx.id]);
-
-                    // Re-process (Idempotency check inside processTransaction handles on-chain verification)
-                    await this.processTransaction(relayer, tx, true);
-                })();
-            });
-
-            await Promise.all(tasks);
+            // Distribute reprocessing among relayers with THROTTLING
+            const CONCURRENCY = 5;
+            for (let i = 0; i < failedRes.rows.length; i += CONCURRENCY) {
+                const chunk = failedRes.rows.slice(i, i + CONCURRENCY);
+                const tasks = chunk.map((tx, idx) => {
+                    const relayer = relayers[(i + idx) % relayers.length];
+                    return (async () => {
+                        await this.pool.query(`UPDATE batch_transactions SET retry_count = retry_count + 1 WHERE id = $1`, [tx.id]);
+                        await this.processTransaction(relayer, tx, true);
+                    })();
+                });
+                await Promise.all(tasks);
+                // Subtle delay between chunks to stay under RPC rate limits
+                await new Promise(r => setTimeout(r, 100));
+            }
 
             // Wait before next retry cycle (Backoff)
             if (attempt < MAX_RETRIES) {

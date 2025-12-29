@@ -10,8 +10,6 @@ const pool = new Pool({
 
 const RPC_URL = "https://polygon-mainnet.core.chainstack.com/05aa9ef98aa83b585c14fa0438ed53a9";
 const CONTRACT_ADDRESS = "0x7B25Ce9800CCE4309E92e2834E09bD89453d90c5";
-
-// We only need the event definition in the ABI
 const CONTRACT_ABI = [
     "event TransactionExecuted(uint256 indexed batchId, uint256 indexed txId, address indexed recipient, address funder, uint256 amount)"
 ];
@@ -19,49 +17,56 @@ const CONTRACT_ABI = [
 async function recover() {
     const provider = new ethers.JsonRpcProvider(RPC_URL);
     const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, provider);
+    const batchId = 167;
 
-    const batchId = 167; // The batch to recover hashes for
-    console.log(`🚀 Iniciando recuperación de hashes vía Eventos para Batch ${batchId}...`);
+    console.log(`🚀 Recuperación Multi-Chunk para Batch ${batchId}...`);
 
     try {
-        // 1. Get current block to define search range
         const latestBlock = await provider.getBlockNumber();
-        const startBlock = latestBlock - 5000; // Search last ~3 hours of Polygon blocks
+        const totalBlocks = 30000;
+        const chunkSize = 5000;
+        let allLogs = [];
 
-        console.log(`🔎 Buscando eventos desde bloque ${startBlock} hasta ${latestBlock}...`);
+        for (let i = 0; i < totalBlocks; i += chunkSize) {
+            const end = latestBlock - i;
+            const start = end - chunkSize;
+            console.log(`🔎 Bloques ${start} -> ${end}...`);
 
-        // 2. Query logs for this specific batchId
-        // The first 'indexed' parameter after the event name is the first filter argument
-        const filter = contract.filters.TransactionExecuted(batchId);
-        const logs = await contract.queryFilter(filter, startBlock, latestBlock);
+            try {
+                const logs = await contract.queryFilter(contract.filters.TransactionExecuted(batchId), start, end);
+                allLogs = allLogs.concat(logs);
+                console.log(`   + Encontrados ${logs.length} eventos.`);
+            } catch (e) {
+                console.warn(`   ⚠️ Error en chunk ${start}-${end}: ${e.message}`);
+                // Try smaller sub-chunk if it fails? No, just continue.
+            }
+            await new Promise(r => setTimeout(r, 200)); // Throttle
+        }
 
-        console.log(`✅ Se encontraron ${logs.length} transacciones ejecutadas en la blockchain.`);
+        console.log(`✅ Total Eventos Encontrados: ${allLogs.length}`);
 
         let updatedCount = 0;
-        for (const log of logs) {
+        for (const log of allLogs) {
             const txId = Number(log.args.txId);
             const txHash = log.transactionHash;
+            const amount = log.args.amount.toString();
 
-            // 3. Update only those that don't have a real hash in DB
             const res = await pool.query(
                 `UPDATE batch_transactions 
-                 SET tx_hash = $1, updated_at = NOW() 
-                 WHERE batch_id = $2 
-                 AND id = $3 
-                 AND (tx_hash IS NULL OR tx_hash = 'ON_CHAIN_SYNC' OR tx_hash = 'ON_CHAIN_DEDUPE')`,
-                [txHash, batchId, txId]
+                 SET status = 'COMPLETED', tx_hash = $1, amount_transferred = $2, updated_at = NOW() 
+                 WHERE batch_id = $3 AND id = $4 AND status != 'COMPLETED'`,
+                [txHash, amount, batchId, txId]
             );
 
             if (res.rowCount > 0) {
-                console.log(`🔗 Hash restaurado para Tx ${txId}: ${txHash}`);
                 updatedCount++;
             }
         }
 
-        console.log(`\n🎉 Proceso finalizado. Se restauraron ${updatedCount} hashes en la base de datos.`);
+        console.log(`🎉 DB Sincronizada: ${updatedCount} transacciones corregidas.`);
 
     } catch (err) {
-        console.error("❌ Error en la recuperación:", err);
+        console.error("❌ Fallo crítico:", err);
     } finally {
         await pool.end();
     }
