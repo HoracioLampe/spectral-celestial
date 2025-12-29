@@ -554,10 +554,8 @@ app.get('/api/batches/:batchId/transactions/:txId/proof', async (req, res) => {
     }
 });
 
-// Fallback para SPA
-app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
+// Fallback para SPA moved to bottom
+
 
 // Setup Endpoint for DB migrations
 app.get('/api/setup', async (req, res) => {
@@ -639,7 +637,7 @@ app.get('/api/batches/:id/transactions', async (req, res) => {
         const dataRes = await pool.query(query, [...params, limit, offset]);
 
         res.json({
-            data: dataRes.rows,
+            transactions: dataRes.rows,
             total: totalItems,
             page: parseInt(page),
             limit: parseInt(limit),
