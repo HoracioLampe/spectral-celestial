@@ -629,7 +629,7 @@ window.openBatchDetail = async function (id) {
         }
     } catch (error) {
         console.error(error);
-        alert("Error cargando detalle");
+        alert("Error cargando detalle: " + error.message);
         showBatchList();
     }
 };
@@ -643,9 +643,11 @@ let allBatchTransactions = []; // Store full list
 let filteredTransactions = []; // Store filtered list for rendering
 
 // Relayer Pagination State
-let currentRelayerPage = 1;
+
 const relayersPerPage = 5;
 let allRelayers = [];
+window.currentServerTotal = 0; // Server-side pagination total
+
 
 function updateDetailView(batch) {
     detailBatchTitle.textContent = `${batch.batch_number} - ${batch.detail}`;
@@ -885,10 +887,45 @@ window.clearFilters = function () {
     renderBatchTransactions();
 };
 
+// Server-Side Fetch
+async function fetchBatchTransactions(batchId) {
+    if (!batchId) return;
+    const wallet = document.getElementById('filterWallet')?.value || '';
+    const amount = document.getElementById('filterAmount')?.value || '';
+    const status = document.getElementById('filterStatus')?.value || '';
+
+    try {
+        const query = new URLSearchParams({
+            page: currentTxPage,
+            limit: txPerPage,
+            wallet,
+            amount,
+            status
+        });
+
+        const res = await fetch(`/api/batches/${batchId}/transactions?${query}`);
+        const data = await res.json();
+
+        if (data.error) throw new Error(data.error);
+
+        filteredTransactions = data.transactions || [];
+        window.currentServerTotal = data.total || 0;
+        window.currentTotalPages = data.totalPages || 1;
+
+        renderBatchTransactions();
+
+    } catch (e) {
+        console.error("Error searching transactions:", e);
+        const tbody = document.getElementById('batchTableBody');
+        if (tbody) tbody.innerHTML = `<tr><td colspan="6" style="color:#ef4444; text-align:center;">Error cargando transacciones: ${e.message}</td></tr>`;
+    }
+}
+
 // Render with Pagination
 function renderBatchTransactions() {
     batchTableBody.innerHTML = '';
-    const totalItems = filteredTransactions.length;
+    batchTableBody.innerHTML = '';
+    const totalItems = window.currentServerTotal || filteredTransactions.length;
 
     // Server-side filters return exactly the page we need, no slicing needed
     const pageItems = filteredTransactions;
