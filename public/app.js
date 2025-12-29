@@ -644,7 +644,7 @@ let filteredTransactions = []; // Store filtered list for rendering
 let currentTxPage = 1;
 
 // Relayer Pagination State
-
+let currentRelayerPage = 1;
 const relayersPerPage = 5;
 let allRelayers = [];
 window.currentServerTotal = 0; // Server-side pagination total
