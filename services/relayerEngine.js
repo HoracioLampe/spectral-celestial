@@ -21,7 +21,8 @@ class RelayerEngine {
             "function distributeMatic(address[] calldata recipients, uint256 amount) external payable",
             "function setBatchRoot(uint256 batchId, bytes32 merkleRoot) external",
             "function setBatchRootWithSignature(address funder, uint256 batchId, bytes32 merkleRoot, uint256 totalTransactions, uint256 totalAmount, bytes calldata signature) external",
-            "function batchRoots(address funder, uint256 batchId) view returns (bytes32)"
+            "function batchRoots(address funder, uint256 batchId) view returns (bytes32)",
+            "event TransactionExecuted(uint256 indexed batchId, uint256 indexed txId, address indexed recipient, address funder, uint256 amount)"
         ];
     }
 
@@ -407,12 +408,18 @@ class RelayerEngine {
 
             const isProcessed = await contract.processedLeaves(leafHash);
             if (isProcessed) {
-                console.log(`[Engine] 🟢 Tx ${txDB.id} already processed on-chain. Marking COMPLETED.`);
+                console.log(`[Engine] 🟢 Tx ${txDB.id} already processed on-chain. Recovering data...`);
+
+                // Try to find the real hash and amount in events
+                const recovery = await this._recoverFromEvents(txDB.batch_id, txDB.id);
+                const finalHash = recovery ? recovery.txHash : 'ON_CHAIN_DEDUPE';
+                const finalAmount = recovery ? recovery.amount : txDB.amount_usdc.toString();
+
                 await this.pool.query(
-                    `UPDATE batch_transactions SET status = 'COMPLETED', tx_hash = 'ON_CHAIN_DEDUPE', updated_at = NOW() WHERE id = $1`,
-                    [txDB.id]
+                    `UPDATE batch_transactions SET status = 'COMPLETED', tx_hash = $1, amount_transferred = $2, updated_at = NOW() WHERE id = $3`,
+                    [finalHash, finalAmount, txDB.id]
                 );
-                return { success: true, txHash: 'ON_CHAIN_DEDUPE', gasUsed: 0n, effectiveGasPrice: 0n };
+                return { success: true, txHash: finalHash, gasUsed: 0n, effectiveGasPrice: 0n };
             }
 
             console.log(`[Engine] Executing Standard for Batch ${txDB.batch_id} (TX #${txDB.id})`);
@@ -792,6 +799,31 @@ class RelayerEngine {
         await Promise.all(promises);
         await this.pool.query(`UPDATE relayers SET status = 'drained', last_activity = NOW() WHERE batch_id = $1`, [batchId]);
         console.log(`[Refund] ✅ Sweep complete for Batch ${batchId}.`);
+    }
+
+    /**
+     * Internal helper to find a transaction in blockchain events.
+     */
+    async _recoverFromEvents(batchId, txId) {
+        try {
+            const contract = new ethers.Contract(this.contractAddress, this.contractABI, this.provider);
+            const latestBlock = await this.provider.getBlockNumber();
+            const startBlock = latestBlock - 10000; // Search last ~5-6 hours
+
+            const filter = contract.filters.TransactionExecuted(batchId, txId);
+            const logs = await contract.queryFilter(filter, startBlock, latestBlock);
+
+            if (logs.length > 0) {
+                const log = logs[0];
+                return {
+                    txHash: log.transactionHash,
+                    amount: log.args.amount.toString()
+                };
+            }
+        } catch (e) {
+            console.warn(`[Engine] Recovery failed for Tx ${txId}: ${e.message}`);
+        }
+        return null;
     }
 
     async fetchStuckTx(batchId, relayerAddr) {
