@@ -490,6 +490,7 @@ if (btnTestMerkle) btnTestMerkle.onclick = runMerkleTest;
 window.closeBatchModal = () => batchModal.classList.remove('active');
 
 window.showBatchList = function () {
+    stopTxPolling();
     batchDetailView.classList.add('hidden');
     batchListView.classList.remove('hidden');
     fetchBatches(); // Refresh list
@@ -599,6 +600,10 @@ window.openBatchDetail = async function (id) {
     batchDetailView.classList.remove('hidden');
     window.scrollTo(0, 0); // Scroll to top for better ux
 
+    // Start Polling
+    startTxPolling(id);
+
+
     // Reset view
     detailBatchTitle.textContent = "Cargando...";
     batchTableBody.innerHTML = '<tr><td colspan="6" style="text-align: center;">Cargando...</td></tr>';
@@ -642,6 +647,9 @@ const TIMEZONE_CONFIG = { timeZone: 'America/Argentina/Buenos_Aires' };
 let allBatchTransactions = []; // Store full list
 let filteredTransactions = []; // Store filtered list for rendering
 let currentTxPage = 1;
+
+// Polling interval
+let txPollInterval = null;
 
 // Relayer Pagination State
 let currentRelayerPage = 1;
@@ -1025,6 +1033,26 @@ function renderPaginationControls(totalItems) {
     }
 }
 
+
+// Polling Functions
+function startTxPolling(batchId) {
+    if (txPollInterval) clearInterval(txPollInterval);
+    console.log("[Polling] Started for Batch " + batchId);
+    txPollInterval = setInterval(() => {
+        if (!document.hidden && currentBatchId === batchId) {
+            fetchBatchTransactions(batchId);
+        }
+    }, 5000);
+}
+
+function stopTxPolling() {
+    if (txPollInterval) {
+        clearInterval(txPollInterval);
+        txPollInterval = null;
+        console.log("[Polling] Stopped");
+    }
+}
+
 window.changePage = function (direction) {
     if (direction === 'first') {
         currentTxPage = 1;
@@ -1033,7 +1061,8 @@ window.changePage = function (direction) {
     } else {
         currentTxPage += direction;
     }
-    renderBatchTransactions();
+    // CRITICAL FIX: Fetch from server for new page
+    fetchBatchTransactions(currentBatchId);
 };
 
 // Upload Logic restored
@@ -1421,6 +1450,8 @@ const processStatus = document.getElementById('processStatus');
 if (btnProcessBatch) {
     btnProcessBatch.addEventListener('click', async () => {
         if (!currentBatchId) return;
+        // Ensure polling is active
+        startTxPolling(currentBatchId);
         const count = parseInt(relayerCountSelect.value) || 5;
         if (!confirm(`¿Estás seguro de iniciar la distribución con ${count} Relayer(s)?`)) return;
 
