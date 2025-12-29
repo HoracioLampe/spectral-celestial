@@ -670,10 +670,11 @@ class RelayerEngine {
      * Uses idempotency check to avoid double-spending.
      */
     async retryFailedTransactions(batchId, relayers) {
-        const MAX_RETRIES = 10;
+        const MAX_RETRIES = 50;
 
         for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-            // Find FAILED transactions
+            // Find FAILED/PENDING transactions eligible for retry
+            // Reset "Processing" ones that might be stuck? No, status is FAILED or PENDING.
             const failedRes = await this.pool.query(
                 `SELECT * FROM batch_transactions WHERE batch_id = $1 AND status IN ('FAILED', 'PENDING') AND retry_count < $2`,
                 [batchId, MAX_RETRIES]
