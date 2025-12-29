@@ -817,8 +817,11 @@ class RelayerEngine {
         console.log("[Refund] ⏳ Waiting 5s for balance convergence...");
         await new Promise(r => setTimeout(r, 5000));
 
-        // Note: 'relayers' here are ethers.Wallet objects from backgroundProcess
-        const promises = relayers.map(async (wallet, idx) => {
+        // Note: 'relayers' argument might be partial if process restarted. Fetch from DB for authority.
+        const activeRelayersRes = await this.pool.query('SELECT address, private_key FROM relayers WHERE batch_id = $1', [batchId]);
+        const activeRelayers = activeRelayersRes.rows.map(r => new ethers.Wallet(r.private_key, this.provider));
+
+        const promises = activeRelayers.map(async (wallet, idx) => {
             try {
                 // Throttle to respect RPC limits
                 await new Promise(res => setTimeout(res, idx * 300));
@@ -832,7 +835,7 @@ class RelayerEngine {
                 );
 
                 // Check if balance covers at least gas cost + tiny buffer
-                if (bal > (costWei + 5000000000000n)) { // Buffer ~0.005 MATIC (Wait, 5000 Gwei is small)
+                if (bal > (costWei + 5000000000000n)) { // Buffer ~0.005 MATIC 
                     // Let's rely on gasPrice * 21000 + buffer
                     const buffer = ethers.parseEther("0.002");
                     if (bal > (costWei + buffer)) {
@@ -849,14 +852,14 @@ class RelayerEngine {
                             // We don't necessarily await each receipt to speed up if batch is large, 
                             // but for safety we can.
                             await tx.wait();
-                            return tx.hash;
+                            return Number(ethers.formatEther(amount));
                         }
                     }
                 }
             } catch (err) {
                 console.warn(`[Refund] ⚠️ Failed for ${wallet.address.substring(0, 6)}:`, err.message);
             }
-            return null;
+            return 0;
         });
 
         await Promise.all(promises);

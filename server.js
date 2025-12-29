@@ -656,6 +656,24 @@ app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+
+// Manual Fund Recovery Endpoint
+app.post('/api/batches/:id/return-funds', async (req, res) => {
+    try {
+        const batchId = parseInt(req.params.id);
+        const faucetPk = await getFaucetCredentials();
+        const providerUrl = process.env.PROVIDER_URL || "https://polygon-mainnet.core.chainstack.com/05aa9ef98aa83b585c14fa0438ed53a9";
+        const engine = new RelayerEngine(pool, providerUrl, faucetPk);
+
+        // Call the method physically (assuming updated RelayerEngine exposes it)
+        const recovered = await engine.returnFundsToFaucet(batchId);
+        res.json({ success: true, message: `Recovery process completed. Recovered: ${recovered || 0} MATIC` });
+    } catch (err) {
+        console.error("[Refund] Error:", err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 const VERSION = "2.3.0";
 const PORT_LISTEN = process.env.PORT || 3000;
 

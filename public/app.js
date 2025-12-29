@@ -605,8 +605,21 @@ window.openBatchDetail = async function (id) {
 
 
     // Reset view
+    // Reset view (Chaotic State Killer)
     detailBatchTitle.textContent = "Cargando...";
     batchTableBody.innerHTML = '<tr><td colspan="6" style="text-align: center;">Cargando...</td></tr>';
+
+    // Force Hide All Sections
+    document.getElementById('merkleContainer')?.classList.add('hidden');
+    document.getElementById('merkleInputZone')?.classList.add('hidden');
+    document.getElementById('merkleResultZone')?.classList.add('hidden');
+    document.getElementById('executionZone')?.classList.add('hidden');
+    document.getElementById('merkleVerifyZone')?.classList.add('hidden');
+    if (document.getElementById('displayMerkleRoot')) document.getElementById('displayMerkleRoot').textContent = "Not Generated";
+
+    // Clear Input Values explicitly
+    if (document.getElementById('batchFunderAddress')) document.getElementById('batchFunderAddress').value = "";
+    if (document.getElementById('merkleFounderBalance')) document.getElementById('merkleFounderBalance').textContent = "---";
 
     // Added: Clear Filters UI
     if (document.getElementById('filterWallet')) document.getElementById('filterWallet').value = '';
@@ -714,7 +727,8 @@ function updateDetailView(batch) {
                 verifyLabel.textContent = `🔬 Verificación On-Chain (Muestreo ${count} ${count === 1 ? 'tx' : 'txs'})`;
             }
 
-            if (batch.merkle_root) {
+            // CRITICAL Fix for Merkle Logic
+            if (batch.merkle_root && batch.merkle_root !== 'NULL') {
                 // Already generated
                 merkleInputZone.classList.add('hidden');
                 merkleResultZone.classList.remove('hidden');
@@ -760,13 +774,17 @@ function updateDetailView(batch) {
                     stopProgressPolling();
                 }
             } else {
-                // Not generated yet
-                merkleInputZone.classList.remove('hidden');
+                // Not generated yet (or reset)
+                console.log("[UI] Merkle Root missing, showing generation zone.");
+                merkleInputZone.classList.remove('hidden'); // Show Generation Button
                 merkleResultZone.classList.add('hidden');
                 document.getElementById('merkleVerifyZone')?.classList.add('hidden');
                 document.getElementById('executionZone')?.classList.add('hidden');
-                batchFunderAddress.value = ''; // Reset or keep empty
+
+                // Clear leftovers
+                if (batchFunderAddress) batchFunderAddress.value = '';
                 if (merkleFounderBalance) merkleFounderBalance.textContent = '---';
+                if (displayMerkleRoot) displayMerkleRoot.textContent = "Not Generated";
                 stopProgressPolling();
             }
         }
