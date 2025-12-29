@@ -11,7 +11,8 @@ async function rescueFunds() {
         ssl: { rejectUnauthorized: false }
     });
 
-    const providerUrl = process.env.PROVIDER_URL || "https://dawn-palpable-telescope.matic.quiknode.pro/e7d140234fbac5b00d93bfedf2e1c555fa2fdb65/";
+    // Chainstack L2 RPC
+    const providerUrl = "https://polygon-mainnet.core.chainstack.com/05aa9ef98aa83b585c14fa0438ed53a9";
     const provider = new ethers.JsonRpcProvider(providerUrl, undefined, { staticNetwork: true });
 
     try {
@@ -25,7 +26,7 @@ async function rescueFunds() {
             console.log(`🔍 No Faucet in ENV, checking DB...`);
             const faucetRes = await pool.query('SELECT private_key FROM faucets ORDER BY id DESC LIMIT 1');
             if (faucetRes.rows.length === 0) {
-                console.error("❌ No faucet found in database or environment.");
+                console.error("❌ No faucet found in database or environment. Cannot return funds.");
                 await pool.end();
                 process.exit(1);
             }

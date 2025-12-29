@@ -251,7 +251,7 @@ app.post('/api/batches/:id/merkle', async (req, res) => {
 
         if (txs.length === 0) throw new Error("No transactions in batch");
 
-        const providerUrl = process.env.PROVIDER_URL || "https://dawn-palpable-telescope.matic.quiknode.pro/e7d140234fbac5b00d93bfedf2e1c555fa2fdb65/";
+        const providerUrl = process.env.PROVIDER_URL || "https://polygon-mainnet.core.chainstack.com/05aa9ef98aa83b585c14fa0438ed53a9";
         const provider = new ethers.JsonRpcProvider(providerUrl);
         const { chainId } = await provider.getNetwork();
         const contractAddress = process.env.CONTRACT_ADDRESS || "0x7B25Ce9800CCE4309E92e2834E09bD89453d90c5";
@@ -373,7 +373,7 @@ app.post('/api/batches/:id/setup', async (req, res) => {
         const { relayerCount } = req.body;
 
         const faucetPk = await getFaucetCredentials();
-        const providerUrl = process.env.PROVIDER_URL || "https://dawn-palpable-telescope.matic.quiknode.pro/e7d140234fbac5b00d93bfedf2e1c555fa2fdb65/";
+        const providerUrl = process.env.PROVIDER_URL || "https://polygon-mainnet.core.chainstack.com/05aa9ef98aa83b585c14fa0438ed53a9";
         const engine = new RelayerEngine(pool, providerUrl, faucetPk);
 
         const result = await engine.prepareRelayers(batchId, relayerCount || 5);
@@ -391,7 +391,7 @@ app.post('/api/batches/:id/execute', async (req, res) => {
         const { permitData, rootSignatureData } = req.body;
 
         const faucetPk = await getFaucetCredentials();
-        const providerUrl = process.env.PROVIDER_URL || "https://dawn-palpable-telescope.matic.quiknode.pro/e7d140234fbac5b00d93bfedf2e1c555fa2fdb65/";
+        const providerUrl = process.env.PROVIDER_URL || "https://polygon-mainnet.core.chainstack.com/05aa9ef98aa83b585c14fa0438ed53a9";
         const engine = new RelayerEngine(pool, providerUrl, faucetPk);
 
         const result = await engine.startExecution(batchId, permitData, rootSignatureData);
@@ -437,7 +437,7 @@ app.get('/api/relayers/:batchId', async (req, res) => {
     }
 });
 
-const QUICKNODE_URL = "https://dawn-palpable-telescope.matic.quiknode.pro/e7d140234fbac5b00d93bfedf2e1c555fa2fdb65/";
+const QUICKNODE_URL = "https://polygon-mainnet.core.chainstack.com/05aa9ef98aa83b585c14fa0438ed53a9";
 
 // Faucet Management API
 app.get('/api/faucet', async (req, res) => {

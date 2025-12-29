@@ -1600,13 +1600,14 @@ function startTimer() {
 }
 
 function stopTimer() {
-    if (window.processTimerInterval) clearInterval(window.processTimerInterval);
+    if (window.processTimerInterval) {
+        clearInterval(window.processTimerInterval);
+        window.processTimerInterval = null;
+    }
     const timerEl = document.getElementById('processTimer');
-    if (timerEl) {
+    if (timerEl && !timerEl.textContent.includes("Finalizado en")) {
         timerEl.style.color = '#10b981'; // Green
         timerEl.textContent = `⏱️ Finalizado en: ${timerEl.textContent}`;
-        // Prevent re-starting or flickering
-        window.processTimerInterval = null;
     }
 }
 
