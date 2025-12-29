@@ -457,8 +457,18 @@ class RelayerEngine {
             );
 
             console.log(`[Blockchain][Tx] SENT: ${txResponse.hash} | TxID: ${txDB.id} | From: ${wallet.address}`);
-            await txResponse.wait();
-            console.log(`[Blockchain][Tx] CONFIRMED: ${txResponse.hash} | Batch: ${txDB.batch_id} | TxID: ${txDB.id}`);
+
+            // Use a timeout for waiting - Ethers v6 can hang if connection drops
+            const receipt = await Promise.race([
+                txResponse.wait(),
+                new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout waiting for receipt (60s)")), 60000))
+            ]);
+
+            if (receipt.status === 1) {
+                console.log(`[Blockchain][Tx] CONFIRMED: ${txResponse.hash} | Batch: ${txDB.batch_id} | TxID: ${txDB.id}`);
+            } else {
+                throw new Error(`Transaction failed on-chain (status: ${receipt.status})`);
+            }
 
             await this.pool.query(
                 `UPDATE batch_transactions SET status = 'COMPLETED', tx_hash = $1, amount_transferred = $2, updated_at = NOW() WHERE id = $3`,
@@ -467,7 +477,6 @@ class RelayerEngine {
             await this.syncRelayerBalance(wallet.address);
 
             // Return receipt data so worker can track gas
-            const receipt = await this.provider.getTransactionReceipt(txResponse.hash);
             return { success: true, txHash: txResponse.hash, gasUsed: receipt ? receipt.gasUsed : 0n, effectiveGasPrice: receipt ? receipt.effectiveGasPrice : 0n };
         } catch (e) {
             if (e.message && e.message.includes("Tx already executed")) {
