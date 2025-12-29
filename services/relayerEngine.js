@@ -574,12 +574,16 @@ class RelayerEngine {
         }
 
         const averageGas = totalSampleGas / BigInt(sampleSize);
-        const bufferedGas = (averageGas * BigInt(txs.length)) * 130n / 100n;
+        // Increase buffer from 30% to 60% to handle aggressive gas spikes
+        const bufferedGas = (averageGas * BigInt(txs.length)) * 160n / 100n;
         const feeData = await this.provider.getFeeData();
         const gasPrice = feeData.gasPrice || 50000000000n;
-        const totalCost = bufferedGas * gasPrice;
 
-        console.log(`[Engine]   > Total estimated cost: ${ethers.formatEther(totalCost)} MATIC`);
+        // Add a flat safety cushion of 0.05 MATIC to the total recommendation
+        const safetyCushion = ethers.parseEther("0.05");
+        const totalCost = (bufferedGas * gasPrice) + safetyCushion;
+
+        console.log(`[Engine]   > Total estimated cost: ${ethers.formatEther(totalCost)} MATIC (inc. 0.05 buffer)`);
         return { totalCostWei: totalCost };
     }
 

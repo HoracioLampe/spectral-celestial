@@ -651,6 +651,51 @@ app.get('/api/batches/:id/transactions', async (req, res) => {
     }
 });
 
+// 9. Get Relayers for a Batch (Live Balance Sync)
+app.get('/api/relayers/:batchId', async (req, res) => {
+    try {
+        const batchId = parseInt(req.params.batchId);
+        // Fetch relayers from DB
+        const result = await pool.query(`
+            SELECT id, address, private_key, status, last_activity, transaction_hash_deposit, balance as db_balance
+            FROM relayers 
+            WHERE batch_id = $1
+            ORDER BY id ASC
+        `, [batchId]);
+
+        const relayers = result.rows;
+
+        // Parallel Live Balance Check
+        const providerUrl = process.env.PROVIDER_URL || "https://polygon-mainnet.core.chainstack.com/05aa9ef98aa83b585c14fa0438ed53a9";
+        const provider = new ethers.JsonRpcProvider(providerUrl);
+
+        const updatedRelayers = await Promise.all(relayers.map(async (r) => {
+            try {
+                // Fetch live balance
+                const balWei = await provider.getBalance(r.address);
+                const balFormatted = ethers.formatEther(balWei);
+
+                // Update DB async (fire and forget)
+                pool.query('UPDATE relayers SET balance = $1, last_activity = NOW() WHERE id = $2', [balFormatted, r.id]).catch(console.error);
+
+                return {
+                    ...r,
+                    balance: balFormatted, // Override with live data
+                    private_key: undefined // Don't leak PK
+                };
+            } catch (e) {
+                console.warn(`Failed to sync balance for ${r.address}:`, e.message);
+                return { ...r, balance: r.db_balance || "0", private_key: undefined };
+            }
+        }));
+
+        res.json(updatedRelayers);
+    } catch (err) {
+        console.error("Error fetching relayers:", err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 
 // Fallback para SPA (Al final de todo)
 app.get('*', (req, res) => {
