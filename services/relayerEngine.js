@@ -721,7 +721,7 @@ class RelayerEngine {
             const amountMaticStr = ethers.formatEther(amountWei);
             await Promise.all(relayers.map(r =>
                 this.pool.query(
-                    `UPDATE relayers SET balance = $1, last_balance = $1, transactionhash_deposit = $2, last_activity = NOW() WHERE address = $3 AND batch_id = $4`,
+                    `UPDATE relayers SET last_balance = $1, transactionhash_deposit = $2, last_activity = NOW() WHERE address = $3 AND batch_id = $4`,
                     [amountMaticStr, tx.hash, r.address, batchId]
                 )
             ));
