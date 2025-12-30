@@ -49,14 +49,15 @@ async function rescueFunds() {
             const res = await pool.query("SELECT address, private_key FROM relayers WHERE batch_id = $1", [batchId]);
             relayers = res.rows;
         } else {
-            console.log(`🎯 Targeting SMART scan of relayers with potential funds...`);
-            // Optimize: Only fetch relayers that recorded a balance > 0.02 (approx twice the rescue cost)
-            // ensuring we don't miss any that haven't been updated (NULL)
+            console.log(`🎯 Targeting AGGRESSIVE scan of relayers from last 50 batches...`);
+            // Fetch relayers from the last 50 batches to ensure we catch everything recent
+            // regardless of 'last_balance' flag which might be stale.
             const res = await pool.query(`
                 SELECT address, private_key 
                 FROM relayers 
-                WHERE last_balance IS NULL 
-                   OR (last_balance ~ '^[0-9\.]+$' AND last_balance::numeric > 0.02)
+                WHERE batch_id IN (
+                    SELECT id FROM batches ORDER BY id DESC LIMIT 50
+                )
             `);
             relayers = res.rows;
         }
