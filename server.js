@@ -371,13 +371,16 @@ async function getFaucetCredentials() {
 app.post('/api/batches/:id/setup', async (req, res) => {
     try {
         const batchId = parseInt(req.params.id);
-        const { relayerCount } = req.body;
+        const safeRelayerCount = relayerCount || 5;
+        if (safeRelayerCount > 100) {
+            throw new Error("Maximum Relayer limit is 100 (Safe). 1000 causes Block Gas Limit errors.");
+        }
 
         const faucetPk = await getFaucetCredentials();
         const providerUrl = process.env.PROVIDER_URL || "https://polygon-mainnet.core.chainstack.com/05aa9ef98aa83b585c14fa0438ed53a9";
         const engine = new RelayerEngine(pool, providerUrl, faucetPk);
 
-        const result = await engine.prepareRelayers(batchId, relayerCount || 5);
+        const result = await engine.prepareRelayers(batchId, safeRelayerCount);
         res.json({ message: "Relayers created and funded", count: result.count });
     } catch (err) {
         console.error("[Setup] Error:", err);
