@@ -26,6 +26,11 @@ class RelayerEngine {
         ];
     }
 
+    // --- Configuration Constants ---
+    static GAS_BUFFER_PERCENTAGE = 60n; // Default 60% buffer
+    static GAS_CUSHION_MATIC = ethers.parseEther("0.25"); // Default 0.25 MATIC cushion
+    static MAX_RETRIES = 1000; // Indefinite retry limit
+
     /**
      * Calculates the total USDC required for a SPECIFIC batch.
      */
@@ -574,13 +579,14 @@ class RelayerEngine {
         }
 
         const averageGas = totalSampleGas / BigInt(sampleSize);
-        // Increase buffer from 30% to 60% to handle aggressive gas spikes
-        const bufferedGas = (averageGas * BigInt(txs.length)) * 160n / 100n;
+        // Use Configurable Buffer
+        const bufferPercent = RelayerEngine.GAS_BUFFER_PERCENTAGE || 60n;
+        const bufferedGas = (averageGas * BigInt(txs.length)) * (100n + bufferPercent) / 100n;
         const feeData = await this.provider.getFeeData();
         const gasPrice = feeData.gasPrice || 50000000000n;
 
-        // Add a flat safety cushion of 0.25 MATIC to the total recommendation
-        const safetyCushion = ethers.parseEther("0.25");
+        // Use Configurable Cushion
+        const safetyCushion = RelayerEngine.GAS_CUSHION_MATIC || ethers.parseEther("0.25");
         const totalCost = (bufferedGas * gasPrice) + safetyCushion;
 
         console.log(`[Engine]   > Total estimated cost: ${ethers.formatEther(totalCost)} MATIC (inc. 0.05 buffer)`);
@@ -738,8 +744,17 @@ class RelayerEngine {
      * Loops up to 10 times to catch dropped/failed transactions.
      * Uses idempotency check to avoid double-spending.
      */
+    // --- Configuration Constants ---
+    static GAS_BUFFER_PERCENTAGE = 60n; // Default 60% buffer
+    static GAS_CUSHION_MATIC = ethers.parseEther("0.25"); // Default 0.25 MATIC cushion
+
+    /**
+     * RETRY LOGIC: 
+     * Loops up to 1000 times (effectively indefinite) to catch dropped/failed transactions.
+     * Uses idempotency check to avoid double-spending.
+     */
     async retryFailedTransactions(batchId, relayers) {
-        const MAX_RETRIES = 50;
+        const MAX_RETRIES = RelayerEngine.MAX_RETRIES || 1000;
 
         for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
             // Find FAILED/PENDING transactions
