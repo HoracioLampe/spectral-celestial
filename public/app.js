@@ -1723,15 +1723,19 @@ async function signBatchPermit(batchId) {
     // We want the Permit to cover: This Batch + All Other Active Batches
     let activeSum = ethers.BigNumber.from(0);
 
-    allBatches.forEach(b => {
-        // If it's active AND not the current one (to avoid double adding if logic overlaps, though current is usually PREPARING)
-        // Actually, current batch is 'PREPARING' usually when we sign.
-        // Active ones are SENT or PROCESSING.
-        if (b.status === 'SENT' || b.status === 'PROCESSING') {
-            const bTotal = ethers.BigNumber.from(b.total_usdc || "0");
-            activeSum = activeSum.add(bTotal);
-        }
-    });
+    if (Array.isArray(allBatches)) {
+        allBatches.forEach(b => {
+            // If it's active AND not the current one (to avoid double adding if logic overlaps, though current is usually PREPARING)
+            // Actually, current batch is 'PREPARING' usually when we sign.
+            // Active ones are SENT or PROCESSING.
+            if (b.status === 'SENT' || b.status === 'PROCESSING') {
+                const bTotal = ethers.BigNumber.from(b.total_usdc || "0");
+                activeSum = activeSum.add(bTotal);
+            }
+        });
+    } else {
+        console.warn("[Permit] Could not fetch active batches for concurrency check. Proceeding with single-batch permit.");
+    }
 
     console.log(`[Permit] Current Batch: ${totalUSDC.toString()} | Active Concurrent: ${activeSum.toString()}`);
 
