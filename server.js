@@ -656,11 +656,14 @@ app.get('/api/relayers/:batchId', async (req, res) => {
     try {
         const batchId = parseInt(req.params.batchId);
         // Fetch relayers from DB
+        // Fetch relayers from DB with Transaction Count
         const result = await pool.query(`
-            SELECT id, address, private_key, status, last_activity, transaction_hash_deposit, balance as db_balance
-            FROM relayers 
-            WHERE batch_id = $1
-            ORDER BY id ASC
+            SELECT 
+                r.id, r.address, r.private_key, r.status, r.last_activity, r.transactionhash_deposit, r.balance as db_balance,
+                (SELECT COUNT(*)::int FROM batch_transactions bt WHERE bt.relayer_address = r.address AND bt.batch_id = r.batch_id AND bt.tx_hash IS NOT NULL) as tx_count
+            FROM relayers r 
+            WHERE r.batch_id = $1
+            ORDER BY r.id ASC
         `, [batchId]);
 
         const relayers = result.rows;

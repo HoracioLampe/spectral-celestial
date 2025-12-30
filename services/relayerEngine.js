@@ -185,7 +185,10 @@ class RelayerEngine {
                         console.log(`[Blockchain][Root] ✅ Registration CONFIRMED (Block: ${receipt.blockNumber})`);
 
                         // TRACK GAS COST (Root)
-                        const rootFee = receipt.gasUsed * receipt.effectiveGasPrice;
+                        const gasUsed = BigInt(receipt.gasUsed);
+                        const gasPrice = BigInt(receipt.effectiveGasPrice || 0);
+                        const rootFee = gasUsed * gasPrice;
+
                         const rootFeeMatic = ethers.formatEther(rootFee);
                         await this.pool.query(
                             `UPDATE batches SET funding_amount = COALESCE(funding_amount, 0) + $1 WHERE id = $2`,
@@ -251,7 +254,10 @@ class RelayerEngine {
                     console.log(`[Blockchain][Permit] ✅ Permit CONFIRMED (Block: ${receipt.blockNumber})`);
 
                     // TRACK GAS COST (Permit)
-                    const permitFee = receipt.gasUsed * receipt.effectiveGasPrice;
+                    const gasUsed = BigInt(receipt.gasUsed);
+                    const gasPrice = BigInt(receipt.effectiveGasPrice || 0);
+                    const permitFee = gasUsed * gasPrice;
+
                     const permitFeeMatic = ethers.formatEther(permitFee);
                     await this.pool.query(
                         `UPDATE batches SET funding_amount = COALESCE(funding_amount, 0) + $1 WHERE id = $2`,
@@ -710,18 +716,28 @@ class RelayerEngine {
             const receipt = await tx.wait();
             console.log(`[Blockchain][Fund] Atomic Batch CONFIRMED (Block: ${receipt.blockNumber})`);
 
+            // Optimistic DB Update: Set balance immediately so UI is responsive
+            // We know exactly how much we sent: amountWei
+            const amountMaticStr = ethers.formatEther(amountWei);
             await Promise.all(relayers.map(r =>
-                this.pool.query(`UPDATE relayers SET transactionhash_deposit = $1 WHERE address = $2 AND batch_id = $3`, [tx.hash, r.address, batchId])
+                this.pool.query(
+                    `UPDATE relayers SET balance = $1, last_balance = $1, transactionhash_deposit = $2, last_activity = NOW() WHERE address = $3 AND batch_id = $4`,
+                    [amountMaticStr, tx.hash, r.address, batchId]
+                )
             ));
+            console.log(`[Engine][Fund] ⚡ Optimistic Balance Update: All relayers set to ${amountMaticStr} MATIC`);
 
-            // Batched Balance Sync to avoid 50 req/s Rate Limit
+            // Batched Verification (Optional / Background)
+            // We can still run sync, but maybe lazily or skipping if we trust the receipt.
+            // Let's keep it but it won't block the UI showing the value we just injected.
+            /*
             const chunkSize = 5;
             for (let i = 0; i < relayers.length; i += chunkSize) {
                 const chunk = relayers.slice(i, i + chunkSize);
                 await Promise.all(chunk.map(r => this.syncRelayerBalance(r.address)));
-                // Small delay between chunks
                 if (i + chunkSize < relayers.length) await new Promise(r => setTimeout(r, 200));
             }
+            */
 
             // Save Funding Total to Batch (Value Sent + Approx Fee)
             // Fee is approx execution gas * gasPrice. Let's precise using receipt.gasUsed

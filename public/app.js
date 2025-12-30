@@ -1972,6 +1972,21 @@ function renderRelayerBalances(explicitData) {
     const end = start + relayersPerPage;
     const pageItems = data.slice(start, end);
 
+    // --- Header Info: Funding Tx (Shared) ---
+    // Assuming all relayers share the same funding tx, we take the first one.
+    const fundingTx = data[0]?.transactionHashDeposit;
+    const fundingTxLink = fundingTx ? `<a href="https://polygonscan.com/tx/${fundingTx}" target="_blank" class="hash-link" style="color: #60a5fa; font-family: monospace;">${fundingTx} ↗️</a>` : '<span style="color:#94a3b8">Pendiente...</span>';
+
+    const infoDiv = document.getElementById('relayerGridInfo');
+    if (infoDiv) {
+        infoDiv.innerHTML = `
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 0.5rem; background: rgba(255,255,255,0.03); padding: 0.5rem 1rem; border-radius: 6px;">
+                <span style="font-size: 0.85rem; color: #cbd5e1;">⚡ TX Carga Relayers:</span>
+                ${fundingTxLink}
+            </div>
+        `;
+    }
+
     tbody.innerHTML = pageItems.map(r => {
         const shortAddr = `${r.address.substring(0, 6)}...${r.address.substring(38)}`;
         const isStale = r.isStale === true;
@@ -1991,6 +2006,7 @@ function renderRelayerBalances(explicitData) {
         }
 
         const balanceDisplay = balanceDisplayStr;
+        const txCount = r.tx_count || 0;
 
         return `
             <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
@@ -2002,8 +2018,8 @@ function renderRelayerBalances(explicitData) {
                 <td style="padding:0.75rem; color:#94a3b8; font-size:0.8rem;">
                     ${r.lastActivity ? new Date(r.lastActivity).toLocaleTimeString() : 'Sin actividad'}
                 </td>
-                <td style="padding:0.75rem; font-family:monospace; font-size:0.85rem;">
-                    ${r.transactionHashDeposit ? `<a href="https://polygonscan.com/tx/${r.transactionHashDeposit}" target="_blank" class="hash-link">🔗 Tx</a>` : '-'}
+                <td style="padding:0.75rem; text-align:center; font-weight:bold; color: #fff;">
+                    ${txCount}
                 </td>
             </tr>
         `;
