@@ -371,6 +371,7 @@ async function getFaucetCredentials() {
 app.post('/api/batches/:id/setup', async (req, res) => {
     try {
         const batchId = parseInt(req.params.id);
+        const { relayerCount } = req.body;
         const safeRelayerCount = relayerCount || 5;
         if (safeRelayerCount > 100) {
             throw new Error("Maximum Relayer limit is 100 (Safe). 1000 causes Block Gas Limit errors.");
