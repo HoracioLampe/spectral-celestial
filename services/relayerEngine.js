@@ -183,6 +183,15 @@ class RelayerEngine {
 
                         const receipt = await tx.wait();
                         console.log(`[Blockchain][Root] ✅ Registration CONFIRMED (Block: ${receipt.blockNumber})`);
+
+                        // TRACK GAS COST (Root)
+                        const rootFee = receipt.gasUsed * receipt.effectiveGasPrice;
+                        const rootFeeMatic = ethers.formatEther(rootFee);
+                        await this.pool.query(
+                            `UPDATE batches SET funding_amount = COALESCE(funding_amount, 0) + $1 WHERE id = $2`,
+                            [rootFeeMatic, batchId]
+                        );
+                        console.log(`[Engine][Gas] ⛽ Added Root Gas Cost: ${rootFeeMatic} MATIC to Funding.`);
                     } catch (rootErr) {
                         console.error(`[Engine] ❌ Failed to set batch root via signature: ${rootErr.message}`);
                         throw new Error(`Failed to set Batch Root: ${rootErr.message}`);
@@ -240,6 +249,15 @@ class RelayerEngine {
                     console.log(`[Blockchain][Permit] 🚀 Permit TX Sent: ${tx.hash}`);
                     const receipt = await tx.wait();
                     console.log(`[Blockchain][Permit] ✅ Permit CONFIRMED (Block: ${receipt.blockNumber})`);
+
+                    // TRACK GAS COST (Permit)
+                    const permitFee = receipt.gasUsed * receipt.effectiveGasPrice;
+                    const permitFeeMatic = ethers.formatEther(permitFee);
+                    await this.pool.query(
+                        `UPDATE batches SET funding_amount = COALESCE(funding_amount, 0) + $1 WHERE id = $2`,
+                        [permitFeeMatic, batchId]
+                    );
+                    console.log(`[Engine][Gas] ⛽ Added Permit Gas Cost: ${permitFeeMatic} MATIC to Funding.`);
                 } catch (permitErr) {
                     console.error(`[Engine][Permit] ❌ Failed to submit permit: ${permitErr.message}`);
                     // We don't throw yet, maybe allowance was already set or it's a retry
@@ -297,12 +315,30 @@ class RelayerEngine {
             const seconds = ((durationMs % 60000) / 1000).toFixed(0);
             const durationStr = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
 
-            // Aggregate Total Gas from Database (saved by workers)
-            const gasRes = await this.pool.query(
-                `SELECT SUM(gas_cost::numeric) as total_gas FROM relayers WHERE batch_id = $1`,
+            // Aggregate Total Gas from Database (Net Calculation)
+            const metricsRes = await this.pool.query(
+                `SELECT funding_amount, refund_amount FROM batches WHERE id = $1`,
                 [batchId]
             );
-            const totalGasMatic = gasRes.rows[0].total_gas || "0";
+            const funding = metricsRes.rows[0]?.funding_amount || 0;
+            const refunded = metricsRes.rows[0]?.refund_amount || 0;
+
+            // Calculate Net Cost: Funding - Refunded (Includes Distribution Cost if we added it to Funding, or just Value)
+            // If funding is 0 (legacy), fallback to sum(gas_cost)
+            let totalGasMatic = "0";
+
+            if (funding > 0) {
+                const netCost = parseFloat(funding) - parseFloat(refunded);
+                totalGasMatic = Math.max(0, netCost).toFixed(6);
+                console.log(`[Engine] 🧮 Net Gas Calc: ${funding} (Funded) - ${refunded} (Refunded) = ${totalGasMatic}`);
+            } else {
+                // Fallback to old summation method
+                const gasRes = await this.pool.query(
+                    `SELECT SUM(gas_cost::numeric) as total_gas FROM relayers WHERE batch_id = $1`,
+                    [batchId]
+                );
+                totalGasMatic = gasRes.rows[0].total_gas || "0";
+            }
 
             console.log(`[Engine] 🏁 Metrics | Time: ${durationStr} | Gas: ${totalGasMatic} MATIC`);
 
@@ -686,6 +722,18 @@ class RelayerEngine {
                 // Small delay between chunks
                 if (i + chunkSize < relayers.length) await new Promise(r => setTimeout(r, 200));
             }
+
+            // Save Funding Total to Batch (Value Sent + Approx Fee)
+            // Fee is approx execution gas * gasPrice. Let's precise using receipt.gasUsed
+            const distributionFeeFn = receipt.gasUsed * receipt.effectiveGasPrice;
+            const totalFundingMatic = ethers.formatEther(totalValueToSend + distributionFeeFn);
+
+            await this.pool.query(
+                `UPDATE batches SET funding_amount = $1 WHERE id = $2`,
+                [totalFundingMatic, batchId]
+            );
+            console.log(`[Engine][Fund] 💾 Saved Funding Amount: ${totalFundingMatic} MATIC (incl. fee)`);
+
         } catch (err) {
             console.error(`❌ Atomic funding FAILED:`, err.message);
             // FAIL FAST: Do not fallback to sequential distribution which causes nonce chaos.
@@ -895,6 +943,13 @@ class RelayerEngine {
 
         const results = await Promise.all(promises);
         const totalRecovered = results.reduce((a, b) => a + b, 0);
+
+        // Save Refund Total to Batch
+        await this.pool.query(
+            `UPDATE batches SET refund_amount = $1, status = 'COMPLETED', last_activity = NOW() WHERE id = $2`,
+            [totalRecovered.toFixed(6), batchId]
+        );
+        // Note: Status might be overwritten by startExecution final update, which is fine.
 
         await this.pool.query(`UPDATE relayers SET status = 'drained', last_activity = NOW() WHERE batch_id = $1`, [batchId]);
         console.log(`[Refund] ✅ Sweep complete for Batch ${batchId}. Total Recovered: ${totalRecovered.toFixed(6)} MATIC`);

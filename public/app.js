@@ -491,6 +491,10 @@ window.closeBatchModal = () => batchModal.classList.remove('active');
 
 window.showBatchList = function () {
     stopTxPolling();
+    if (window.balanceInterval) {
+        clearInterval(window.balanceInterval);
+        window.balanceInterval = null;
+    }
     batchDetailView.classList.add('hidden');
     batchListView.classList.remove('hidden');
     fetchBatches(); // Refresh list
@@ -595,6 +599,10 @@ async function createBatch() {
 
 // Global para poder llamarla desde el HTML onclick
 window.openBatchDetail = async function (id) {
+    if (window.balanceInterval) {
+        clearInterval(window.balanceInterval);
+        window.balanceInterval = null;
+    }
     currentBatchId = id;
     batchListView.classList.add('hidden');
     batchDetailView.classList.remove('hidden');
@@ -1176,6 +1184,21 @@ async function generateMerkleTree() {
             document.getElementById('executionZone')?.classList.remove('hidden');
             displayMerkleRoot.textContent = data.root;
 
+            // --- FIX FOR "SECOND RUN" VISIBILITY ---
+            // Ensure Helper/Setup button is visible and Trigger is hidden (Reset State)
+            const btnSetup = document.getElementById('btnSetupRelayers');
+            const paymentTriggerZone = document.getElementById('paymentTriggerZone');
+
+            if (btnSetup) {
+                btnSetup.classList.remove('hidden');
+                btnSetup.disabled = false;
+                btnSetup.textContent = "1. Preparar Relayers 🏗️";
+            }
+            if (paymentTriggerZone) paymentTriggerZone.classList.add('hidden');
+
+            // Refresh Batch Detail
+            // fetchBatchDetail(currentBatchId); // This line was not in the original, but was in the provided snippet. Keeping it out as per "no unrelated edits"
+
             // Update Funder Display immediately so Test works
             if (merkleResultFunder) merkleResultFunder.textContent = funder;
 
@@ -1647,7 +1670,7 @@ async function executeDistribution() {
             if (window.balanceInterval) clearInterval(window.balanceInterval);
             window.balanceInterval = setInterval(() => {
                 pollBatchProgress(currentBatchId);
-            }, 3000);
+            }, 15000);
         } else {
             throw new Error(res.error || "Error en ejecución");
         }
@@ -1689,16 +1712,48 @@ async function signBatchPermit(batchId) {
     const usdcContract = new ethers.Contract(USDC_ADDRESS, usdcAbi, signer);
 
     const nonce = await usdcContract.nonces(userAddress);
-    const allowance = await usdcContract.allowance(userAddress, APP_CONFIG.CONTRACT_ADDRESS);
+    // const allowance = await usdcContract.allowance(userAddress, APP_CONFIG.CONTRACT_ADDRESS);
 
-    // Sum exact atomic units
-    const value = allowance.add(totalUSDC);
+    // 2.1 Calculate Total Required for ALL Active Batches (Concurrency Support)
+    // Fetch all batches to find others that are 'SENT' or 'PROCESSING'
+    const allBatchesRes = await fetch('/api/batches');
+    const allBatches = await allBatchesRes.json();
 
-    // Doubled Deadline
-    const BASE = 7200;
-    const PER_TX = 240;
-    const variable = totalTx * PER_TX;
-    const duration = Math.max(14400, BASE + variable);
+    // Sum total_usdc of active batches (excluding current if duplicates exist, though status check handles it)
+    // We want the Permit to cover: This Batch + All Other Active Batches
+    let activeSum = ethers.BigNumber.from(0);
+
+    allBatches.forEach(b => {
+        // If it's active AND not the current one (to avoid double adding if logic overlaps, though current is usually PREPARING)
+        // Actually, current batch is 'PREPARING' usually when we sign.
+        // Active ones are SENT or PROCESSING.
+        if (b.status === 'SENT' || b.status === 'PROCESSING') {
+            const bTotal = ethers.BigNumber.from(b.total_usdc || "0");
+            activeSum = activeSum.add(bTotal);
+        }
+    });
+
+    console.log(`[Permit] Current Batch: ${totalUSDC.toString()} | Active Concurrent: ${activeSum.toString()}`);
+
+    // Total Value to Approve = New Batch + Active Batches
+    // This ensures we don't accidentally revoke funds for running batches
+    const value = totalUSDC.add(activeSum);
+
+    // 2.2 Calculate Dynamic Deadline (Concurrency Support)
+    // Formula: (Total Active Txs + Current Batch Txs) * Conservative Time Per Tx
+    let activeTxCount = 0;
+    allBatches.forEach(b => {
+        if (b.status === 'SENT' || b.status === 'PROCESSING') {
+            activeTxCount += parseInt(b.total_transactions || 0);
+        }
+    });
+
+    const combinedTotalTx = activeTxCount + totalTx;
+
+    // User requested fixed max 4 hours (14400s)
+    const duration = 14400;
+
+    console.log(`[Permit] Deadline Fixed: 4 Hours (14400s). Active Txs: ${activeTxCount} + New: ${totalTx}`);
     const deadline = Math.floor(Date.now() / 1000) + duration;
 
     const chainId = 137; // Hardcoded for Polygon Mainnet USDC compliance
@@ -1811,6 +1866,7 @@ function stopTimer() {
 window.openFaucetModal = () => {
     const modal = document.getElementById('faucetModal');
     if (modal) modal.classList.remove('hidden');
+    checkFaucetStatus(); // Fetch latest balance immediately
     refreshRelayerBalances();
 };
 
@@ -1915,8 +1971,22 @@ function renderRelayerBalances(explicitData) {
     tbody.innerHTML = pageItems.map(r => {
         const shortAddr = `${r.address.substring(0, 6)}...${r.address.substring(38)}`;
         const isStale = r.isStale === true;
-        const balanceDisplay = isStale ? `${parseFloat(r.balance).toFixed(6)} MATIC <span style="font-size: 0.7rem; color: #fbbf24;">(Persistente 💾)</span>` : `${parseFloat(r.balance).toFixed(6)} MATIC`;
-        const balanceColor = isStale ? '#fbbf24' : '#4ade80';
+        const isDrained = r.status === 'drained';
+
+        let balanceVal = parseFloat(r.balance || 0);
+        let balanceDisplayStr = `${balanceVal.toFixed(6)} MATIC`;
+        let balanceColor = '#4ade80';
+
+        if (isDrained) {
+            balanceVal = 0;
+            balanceDisplayStr = `0.000000 MATIC`; // Force zero display
+            balanceColor = '#94a3b8'; // Greyout
+        } else if (isStale) {
+            balanceDisplayStr = `${balanceVal.toFixed(6)} MATIC <span style="font-size: 0.7rem; color: #fbbf24;">(Persistente 💾)</span>`;
+            balanceColor = '#fbbf24';
+        }
+
+        const balanceDisplay = balanceDisplayStr;
 
         return `
             <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
@@ -1935,6 +2005,18 @@ function renderRelayerBalances(explicitData) {
         `;
     }).join('');
 
+    // Check for Refund Success (Drained Status)
+    const isDrained = data.some(r => r.status === 'drained');
+    if (isDrained) {
+        tbody.innerHTML += `
+            <tr>
+                <td colspan="5" style="text-align: center; padding: 1rem; color: #4ade80; background: rgba(16, 185, 129, 0.1); border-radius: 8px; margin-top: 5px;">
+                    ✅ <b>Recovered remaining relayer funds to the Faucet wallet.</b>
+                </td>
+            </tr>
+        `;
+    }
+
     renderRelayerPaginationControls(data.length);
 
     const btnSetup = document.getElementById('btnSetupRelayers');
@@ -1946,7 +2028,7 @@ function renderRelayerBalances(explicitData) {
         if (paymentTriggerZone) paymentTriggerZone.classList.remove('hidden');
     } else {
         // Reset state for new batch or if relayers were cleared
-        document.getElementById('executionZone')?.classList.add('hidden');
+        // document.getElementById('executionZone')?.classList.add('hidden'); // REMOVED: Managed by Merkle Logic
         if (btnSetup) btnSetup.classList.remove('hidden');
         if (paymentTriggerZone) paymentTriggerZone.classList.add('hidden');
     }
@@ -2016,12 +2098,20 @@ window.refreshRelayerBalances = () => {
 };
 
 // Auto-refresh every 60s (1 minute) normally
+// Auto-refresh every 60s (1 minute) for Faucet
 setInterval(() => {
-    if (currentBatchId && !window.processingBatch) {
-        refreshRelayerBalances();
-    }
     checkFaucetStatus();
 }, 60000);
+
+// Auto-refresh Relayer Balances every 15s (User Request)
+setInterval(() => {
+    // Only poll here if we are NOT in "active processing" mode (window.balanceInterval)
+    // to avoid double-polling.
+    if (currentBatchId && !window.balanceInterval) {
+        console.log("[Auto-Refresh] Updating Relayer Grid (15s)...");
+        refreshRelayerBalances();
+    }
+}, 15000);
 
 // Initial calls
 checkFaucetStatus();
