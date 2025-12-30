@@ -1505,10 +1505,14 @@ function updateRelayerCountOptions(count) {
     });
 
     // If count is very small, add a custom option for 'Max' (all txs as relayers)
-    if (count > 1 && !presets.includes(count)) {
+    // CRITICAL FIX: Absolut max is 100 to prevent Block Gas Limit errors
+    const effectiveMax = Math.min(count, 100);
+
+    // Only add custom option if it's not already covered and valid
+    if (effectiveMax > 1 && !presets.includes(effectiveMax)) {
         const opt = document.createElement('option');
-        opt.value = count;
-        opt.textContent = `${count} (Máximo Absoluto)`;
+        opt.value = effectiveMax;
+        opt.textContent = `${effectiveMax} (Máximo Absoluto)`;
         select.appendChild(opt);
     }
 }
