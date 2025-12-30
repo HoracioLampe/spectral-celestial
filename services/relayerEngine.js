@@ -725,7 +725,11 @@ class RelayerEngine {
 
             // Save Funding Total to Batch (Value Sent + Approx Fee)
             // Fee is approx execution gas * gasPrice. Let's precise using receipt.gasUsed
-            const distributionFeeFn = receipt.gasUsed * receipt.effectiveGasPrice;
+            const gasUsed = BigInt(receipt.gasUsed);
+            const gasPrice = BigInt(receipt.effectiveGasPrice || 0); // Handle potential undefined/null
+            const distributionFeeFn = gasUsed * gasPrice;
+
+            // totalValueToSend is already BigInt (calculated above)
             const totalFundingMatic = ethers.formatEther(totalValueToSend + distributionFeeFn);
 
             await this.pool.query(
