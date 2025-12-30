@@ -520,18 +520,25 @@ class RelayerEngine {
 
             if (receipt.status === 1) {
                 console.log(`[Blockchain][Tx] CONFIRMED: ${txResponse.hash} | Batch: ${txDB.batch_id} | TxID: ${txDB.id}`);
+                await this.pool.query(
+                    `UPDATE batch_transactions SET status = 'COMPLETED', tx_hash = $1, amount_transferred = $2, updated_at = NOW() WHERE id = $3`,
+                    [txResponse.hash, txDB.amount_usdc.toString(), txDB.id]
+                );
             } else {
-                throw new Error(`Transaction failed on-chain (status: ${receipt.status})`);
+                console.warn(`[Blockchain][Tx] FAILED ON-CHAIN: ${txResponse.hash}`);
+                await this.pool.query(`UPDATE batch_transactions SET status = 'FAILED', tx_hash = $1, updated_at = NOW() WHERE id = $2`, [txResponse.hash, txDB.id]);
             }
 
-            await this.pool.query(
-                `UPDATE batch_transactions SET status = 'COMPLETED', tx_hash = $1, amount_transferred = $2, updated_at = NOW() WHERE id = $3`,
-                [txResponse.hash, txDB.amount_usdc.toString(), txDB.id]
-            );
             await this.syncRelayerBalance(wallet.address);
 
-            // Return receipt data so worker can track gas
-            return { success: true, txHash: txResponse.hash, gasUsed: receipt ? receipt.gasUsed : 0n, effectiveGasPrice: receipt ? receipt.effectiveGasPrice : 0n };
+            // Return receipt data so worker can track gas (Even if failed)
+            return {
+                success: receipt.status === 1,
+                txHash: txResponse.hash,
+                gasUsed: receipt ? receipt.gasUsed : 0n,
+                effectiveGasPrice: receipt ? receipt.effectiveGasPrice : 0n
+            };
+
         } catch (e) {
             if (e.message && e.message.includes("Tx already executed")) {
                 console.log(`⚠️ Tx ${txDB.id} already on-chain. Recovered.`);
@@ -539,8 +546,9 @@ class RelayerEngine {
                 return { success: true, txHash: 'RECOVERED', gasUsed: 0n, effectiveGasPrice: 0n };
             }
             console.error(`Tx Failed: ${txDB.id}`, e.message);
+            // If it failed BEFORE receipt (e.g. estimation error, timeout), we have 0 gas
             await this.pool.query(`UPDATE batch_transactions SET status = 'FAILED', updated_at = NOW() WHERE id = $1`, [txDB.id]);
-            return { success: false, error: e.message };
+            return { success: false, error: e.message, gasUsed: 0n, effectiveGasPrice: 0n };
         }
     }
 
@@ -877,7 +885,7 @@ class RelayerEngine {
                         return Number(ethers.formatEther(amount));
                     }
                 } else {
-                    // console.log(`[Refund] ⏭️ Skipping ${wallet.address.substring(0,6)} (Bal: ${ethers.formatEther(bal)} < Cost+Buffer)`);
+                    console.log(`[Refund] ⏭️ Skipping ${wallet.address.substring(0, 6)} (Bal: ${ethers.formatEther(bal)} < Cost+Buffer)`);
                 }
             } catch (err) {
                 console.warn(`[Refund] ⚠️ Failed for ${wallet.address.substring(0, 6)}:`, err.message);
