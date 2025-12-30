@@ -579,8 +579,8 @@ class RelayerEngine {
         const feeData = await this.provider.getFeeData();
         const gasPrice = feeData.gasPrice || 50000000000n;
 
-        // Add a flat safety cushion of 0.05 MATIC to the total recommendation
-        const safetyCushion = ethers.parseEther("0.05");
+        // Add a flat safety cushion of 0.25 MATIC to the total recommendation
+        const safetyCushion = ethers.parseEther("0.25");
         const totalCost = (bufferedGas * gasPrice) + safetyCushion;
 
         console.log(`[Engine]   > Total estimated cost: ${ethers.formatEther(totalCost)} MATIC (inc. 0.05 buffer)`);
@@ -742,8 +742,7 @@ class RelayerEngine {
         const MAX_RETRIES = 50;
 
         for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-            // Find FAILED/PENDING transactions eligible for retry
-            // Reset "Processing" ones that might be stuck? No, status is FAILED or PENDING.
+            // Find FAILED/PENDING transactions
             const failedRes = await this.pool.query(
                 `SELECT * FROM batch_transactions WHERE batch_id = $1 AND status IN ('FAILED', 'PENDING') AND retry_count < $2`,
                 [batchId, MAX_RETRIES]
@@ -756,20 +755,24 @@ class RelayerEngine {
 
             console.log(`[Engine] 🔄 Retry Cycle ${attempt}/${MAX_RETRIES}: Found ${failedRes.rows.length} failed/pending txs.`);
 
+            // Shuffle relayers to ensure "another relayer grabs it" (avoiding sticky bad relayers)
+            const shuffledRelayers = [...relayers].sort(() => Math.random() - 0.5);
+
             // Distribute reprocessing among relayers with THROTTLING
             const CONCURRENCY = 5;
             for (let i = 0; i < failedRes.rows.length; i += CONCURRENCY) {
                 const chunk = failedRes.rows.slice(i, i + CONCURRENCY);
                 const tasks = chunk.map((tx, idx) => {
-                    const relayer = relayers[(i + idx) % relayers.length];
+                    // Use shuffled array
+                    const relayer = shuffledRelayers[(i + idx) % shuffledRelayers.length];
                     return (async () => {
                         await this.pool.query(`UPDATE batch_transactions SET retry_count = retry_count + 1 WHERE id = $1`, [tx.id]);
                         await this.processTransaction(relayer, tx, true);
                     })();
                 });
                 await Promise.all(tasks);
-                // Subtle delay between chunks to stay under RPC rate limits
-                await new Promise(r => setTimeout(r, 100));
+                // Subtle delay between chunks
+                await new Promise(r => setTimeout(r, 200));
             }
 
             // Wait before next retry cycle (Backoff)
