@@ -388,8 +388,8 @@ class RelayerEngine {
                 totalGasWei += (res.gasUsed * res.effectiveGasPrice);
             }
             processedCount++;
-            // Throttle worker to avoid smashing RPC
-            await new Promise(r => setTimeout(r, 300));
+            // Throttle worker to avoid smashing RPC (RPS Limit Protection)
+            await new Promise(r => setTimeout(r, 1000));
         }
 
         // Save total gas spent by this worker
@@ -721,11 +721,11 @@ class RelayerEngine {
             const amountMaticStr = ethers.formatEther(amountWei);
             await Promise.all(relayers.map(r =>
                 this.pool.query(
-                    `UPDATE relayers SET last_balance = $1, transactionhash_deposit = $2, last_activity = NOW() WHERE address = $3 AND batch_id = $4`,
+                    `UPDATE relayers SET last_balance = $1, transactionhash_deposit = $2, last_activity = NOW(), status = 'active' WHERE address = $3 AND batch_id = $4`,
                     [amountMaticStr, tx.hash, r.address, batchId]
                 )
             ));
-            console.log(`[Engine][Fund] ⚡ Optimistic Balance Update: All relayers set to ${amountMaticStr} MATIC`);
+            console.log(`[Engine][Fund] ⚡ Optimistic Balance Update: All relayers set to ${amountMaticStr} MATIC (and Reactivated)`);
 
             // Batched Verification (Optional / Background)
             // We can still run sync, but maybe lazily or skipping if we trust the receipt.

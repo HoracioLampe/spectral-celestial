@@ -1399,7 +1399,8 @@ async function runMerkleTest() {
             while (queue.length > 0) {
                 const tx = queue.shift();
                 await runVerificationTask(tx);
-                // await new Promise(r => setTimeout(r, 500)); // Delay removed for speed
+                await runVerificationTask(tx);
+                await new Promise(r => setTimeout(r, 500)); // Delay added to prevent RPS Limit errors
             }
         };
 

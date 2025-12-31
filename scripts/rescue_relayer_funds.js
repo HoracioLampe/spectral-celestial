@@ -107,10 +107,10 @@ async function rescueFunds() {
                         console.log(`   ✅ Confirmed: ${tx.hash}`);
                         totalRescued += amountToReturn;
                         successCount++;
-                        await pool.query('UPDATE relayers SET last_balance = $1, last_activity = NOW() WHERE address = $2', ['0', r.address]);
+                        await pool.query("UPDATE relayers SET last_balance = $1, last_activity = NOW(), status = 'drained' WHERE address = $2", ['0', r.address]);
                     } else {
                         // Mark as zero in DB if below sweep threshold
-                        await pool.query('UPDATE relayers SET last_balance = $1, last_activity = NOW() WHERE address = $2', [ethers.formatEther(balance), r.address]);
+                        await pool.query("UPDATE relayers SET last_balance = $1, last_activity = NOW(), status = 'drained' WHERE address = $2", [ethers.formatEther(balance), r.address]);
                     }
                 } catch (err) {
                     console.log(`   ⚠️ Failed for ${r.address.substring(0, 8)}: ${err.message.substring(0, 80)}`);
