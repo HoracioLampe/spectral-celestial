@@ -944,8 +944,8 @@ class RelayerEngine {
         const boostedGasPrice = (gasPrice * 130n) / 100n; // Aggressive for cleanup
         const costWei = 21000n * boostedGasPrice;
 
-        // Safety buffer: 0.002 MATIC (Lowered from 0.005 to catch more dust)
-        const safetyBuffer = ethers.parseEther("0.002");
+        // Safety buffer: 0.1 MATIC (Increased to handle queued txs/fluctuations)
+        const safetyBuffer = ethers.parseEther("0.1");
 
         console.log(`[Refund] ⛽ Gas Price: ${ethers.formatUnits(boostedGasPrice, 'gwei')} gwei | Min Cost: ${ethers.formatEther(costWei)}`);
 
@@ -957,8 +957,8 @@ class RelayerEngine {
 
         const promises = activeRelayers.map(async (wallet, idx) => {
             try {
-                // Throttle to respect RPC limits
-                await new Promise(res => setTimeout(res, idx * 200));
+                // Throttle to respect RPC limits (Staggered start)
+                await new Promise(res => setTimeout(res, idx * 300));
 
                 const bal = await this.provider.getBalance(wallet.address);
 
@@ -969,25 +969,52 @@ class RelayerEngine {
                 );
 
                 if (bal > (costWei + safetyBuffer)) {
-                    const amount = bal - costWei;
+                    let amount = bal - costWei - safetyBuffer;
 
                     if (amount > 0n) {
                         console.log(`[Refund] 💸 Sweeping ${ethers.formatEther(amount)} MATIC from ${wallet.address.substring(0, 6)}...`);
-                        const tx = await wallet.sendTransaction({
-                            to: targetFaucetAddress,
-                            value: amount,
-                            gasLimit: 21000n,
-                            gasPrice: boostedGasPrice
-                        });
-                        console.log(`[Refund] ✅ Tx Sent: ${tx.hash}`);
-                        await tx.wait(); // Wait for confirmation to be sure
-                        return Number(ethers.formatEther(amount));
+                        try {
+                            const tx = await wallet.sendTransaction({
+                                to: targetFaucetAddress,
+                                value: amount,
+                                gasLimit: 21000n,
+                                gasPrice: boostedGasPrice
+                            });
+                            console.log(`[Refund] ✅ Tx Sent: ${tx.hash}`);
+                            await tx.wait(); // Wait for confirmation
+                            return Number(ethers.formatEther(amount));
+                        } catch (txErr) {
+                            if (txErr.code === 'INSUFFICIENT_FUNDS' || txErr.message.includes('insufficient funds')) {
+                                console.warn(`[Refund] ⚠️ Insufficient Funds (Queued/Dust) for ${wallet.address.substring(0, 6)}. Retrying with 50%...`);
+                                // Fallback: Try sweeping 50%
+                                try {
+                                    const safeAmount = amount / 2n;
+                                    const tx2 = await wallet.sendTransaction({
+                                        to: targetFaucetAddress,
+                                        value: safeAmount,
+                                        gasLimit: 21000n,
+                                        gasPrice: boostedGasPrice
+                                    });
+                                    await tx2.wait();
+                                    console.log(`[Refund] ✅ Tx Sent (Fallback): ${tx2.hash}`);
+                                    return Number(ethers.formatEther(safeAmount));
+                                } catch (fallbackErr) {
+                                    console.error(`[Refund] ❌ Fallback failed for ${wallet.address.substring(0, 6)}:`, fallbackErr.message);
+                                }
+                            } else {
+                                throw txErr;
+                            }
+                        }
                     }
                 } else {
                     console.log(`[Refund] ⏭️ Skipping ${wallet.address.substring(0, 6)} (Bal: ${ethers.formatEther(bal)} < Cost+Buffer)`);
                 }
             } catch (err) {
-                console.warn(`[Refund] ⚠️ Failed for ${wallet.address.substring(0, 6)}:`, err.message);
+                if (err.message.includes("429") || err.message.includes("RPS")) {
+                    console.warn(`[Refund] ⚠️ RPS Limit hit for ${wallet.address.substring(0, 6)}. Skipping this run.`);
+                } else {
+                    console.warn(`[Refund] ⚠️ Failed for ${wallet.address.substring(0, 6)}:`, err.message);
+                }
             }
             return 0;
         });
@@ -1000,7 +1027,6 @@ class RelayerEngine {
             `UPDATE batches SET refund_amount = $1, status = 'COMPLETED', last_activity = NOW() WHERE id = $2`,
             [totalRecovered.toFixed(6), batchId]
         );
-        // Note: Status might be overwritten by startExecution final update, which is fine.
 
         await this.pool.query(`UPDATE relayers SET status = 'drained', last_activity = NOW() WHERE batch_id = $1`, [batchId]);
         console.log(`[Refund] ✅ Sweep complete for Batch ${batchId}. Total Recovered: ${totalRecovered.toFixed(6)} MATIC`);

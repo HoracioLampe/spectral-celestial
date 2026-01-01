@@ -88,38 +88,67 @@ async function rescueFunds() {
                     const wallet = new ethers.Wallet(r.private_key, provider);
                     const balance = await provider.getBalance(wallet.address);
 
-                    // Leave 0.005 MATIC safety margin
-                    const safetyMargin = ethers.parseEther("0.005");
+                    // Increase safety margin to 0.1 MATIC to account for queued txs/fluctuations
+                    const safetyMargin = ethers.parseEther("0.1");
 
                     if (balance > (minCost + safetyMargin)) {
-                        const amountToReturn = balance - minCost;
+                        let amountToReturn = balance - minCost - safetyMargin; // Subtract margin from send amount too
 
                         console.log(`✨ [${wallet.address.substring(0, 8)}] Balance: ${ethers.formatEther(balance)} MATIC | Sweeping: ${ethers.formatEther(amountToReturn)}`);
 
-                        const tx = await wallet.sendTransaction({
-                            to: targetFaucetAddress,
-                            value: amountToReturn,
-                            gasLimit: gasLimit,
-                            gasPrice: boostedGasPrice
-                        });
+                        try {
+                            const tx = await wallet.sendTransaction({
+                                to: targetFaucetAddress,
+                                value: amountToReturn,
+                                gasLimit: gasLimit,
+                                gasPrice: boostedGasPrice
+                            });
+                            await tx.wait();
+                            console.log(`   ✅ Confirmed: ${tx.hash}`);
+                            totalRescued += amountToReturn;
+                            successCount++;
+                            await pool.query("UPDATE relayers SET last_balance = $1, last_activity = NOW(), status = 'drained' WHERE address = $2", ['0', r.address]);
+                        } catch (txErr) {
+                            if (txErr.code === 'INSUFFICIENT_FUNDS' || txErr.message.includes('insufficient funds')) {
+                                console.warn(`   ⚠️ Insufficient Funds (Queued/Dust). Retrying with 50%...`);
+                                // Fallback: Try sweeping 50% of the calculated amount to bypass queued locks
+                                try {
+                                    const safeAmount = amountToReturn / 2n;
+                                    const tx2 = await wallet.sendTransaction({
+                                        to: targetFaucetAddress,
+                                        value: safeAmount,
+                                        gasLimit: gasLimit,
+                                        gasPrice: boostedGasPrice
+                                    });
+                                    await tx2.wait();
+                                    console.log(`   ✅ Confirmed (50% Fallback): ${tx2.hash}`);
+                                    totalRescued += safeAmount;
+                                } catch (fallbackErr) {
+                                    console.error(`   ❌ Fallback failed: ${fallbackErr.message.substring(0, 50)}...`);
+                                }
+                            } else {
+                                throw txErr;
+                            }
+                        }
 
-                        await tx.wait();
-                        console.log(`   ✅ Confirmed: ${tx.hash}`);
-                        totalRescued += amountToReturn;
-                        successCount++;
-                        await pool.query("UPDATE relayers SET last_balance = $1, last_activity = NOW(), status = 'drained' WHERE address = $2", ['0', r.address]);
                     } else {
                         // Mark as zero in DB if below sweep threshold
                         await pool.query("UPDATE relayers SET last_balance = $1, last_activity = NOW(), status = 'drained' WHERE address = $2", [ethers.formatEther(balance), r.address]);
                     }
                 } catch (err) {
-                    console.log(`   ⚠️ Failed for ${r.address.substring(0, 8)}: ${err.message.substring(0, 80)}`);
+                    if (err.message.includes("429") || err.message.includes("RPS")) {
+                        console.warn(`   ⚠️ RPS Limit hit. Sleeping 5s...`);
+                        await new Promise(r => setTimeout(r, 5000));
+                        queue.push(r); // Re-queue
+                    } else {
+                        console.log(`   ⚠️ Failed for ${r.address.substring(0, 8)}: ${err.message.substring(0, 80)}`);
+                    }
                 }
 
                 processedCount++;
                 if (processedCount % 5 === 0) console.log(`📊 Progress: ${processedCount}/${relayers.length}`);
 
-                await new Promise(r => setTimeout(r, 1000)); // Delay to prevent RPS issues
+                await new Promise(r => setTimeout(r, 2000)); // Increased delay to 2000ms
             }
         };
 
