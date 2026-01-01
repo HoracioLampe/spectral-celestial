@@ -289,7 +289,14 @@ async function connectWallet() {
         const nonceRes = await fetch('/api/auth/nonce');
         const nonce = await nonceRes.text();
 
-        const message = `DappsFactory Management wants you to sign in with your Ethereum account:\n${userAddress}\n\nI accept the Terms and Conditions.\n\nNonce: ${nonce}`;
+        const domain = window.location.host;
+        const origin = window.location.origin;
+        const statement = "I accept the DappsFactory Terms and Conditions.";
+        const version = "1";
+        const chainId = "137"; // Polygon
+        const issuedAt = new Date().toISOString();
+
+        const message = `${domain} wants you to sign in with your Ethereum account:\n${userAddress}\n\n${statement}\n\nURI: ${origin}\nVersion: ${version}\nChain ID: ${chainId}\nNonce: ${nonce}\nIssued At: ${issuedAt}`;
         const signature = await signer.signMessage(message);
 
         const verifyRes = await fetch('/api/auth/verify', {
