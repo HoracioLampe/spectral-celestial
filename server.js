@@ -659,7 +659,7 @@ app.get('/api/relayers/:batchId', async (req, res) => {
         // Fetch relayers from DB with Transaction Count
         const result = await pool.query(`
             SELECT 
-                r.id, r.address, r.private_key, r.status, r.last_activity, r.transactionhash_deposit, r.balance as db_balance,
+                r.id, r.address, r.private_key, r.status, r.last_activity, r.transactionhash_deposit, r.last_balance as db_balance,
                 (SELECT COUNT(*)::int FROM batch_transactions bt WHERE bt.relayer_address = r.address AND bt.batch_id = r.batch_id AND bt.tx_hash IS NOT NULL) as tx_count
             FROM relayers r 
             WHERE r.batch_id = $1
@@ -679,7 +679,7 @@ app.get('/api/relayers/:batchId', async (req, res) => {
                 const balFormatted = ethers.formatEther(balWei);
 
                 // Update DB async (fire and forget)
-                pool.query('UPDATE relayers SET balance = $1, last_activity = NOW() WHERE id = $2', [balFormatted, r.id]).catch(console.error);
+                pool.query('UPDATE relayers SET last_balance = $1, last_activity = NOW() WHERE id = $2', [balFormatted, r.id]).catch(console.error);
 
                 return {
                     ...r,
