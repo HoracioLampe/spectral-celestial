@@ -281,9 +281,9 @@ function initDOMElements() {
     window.btnDisconnect = document.getElementById('btnDisconnect');
     window.walletInfo = document.getElementById('walletInfo');
     window.walletAddress = document.getElementById('walletAddress');
-    window.balanceMatic = document.getElementById('balanceMatic');
-    window.balanceUsdc = document.getElementById('balanceUsdc');
-    window.userAddressSpan = document.getElementById('userAddress'); // Added this one for top display
+    window.balanceMatic = document.getElementById('maticBalance');
+    window.balanceUsdc = document.getElementById('usdcBalance');
+    window.userAddressSpan = document.getElementById('userAddress');
 }
 
 function attachEventListeners() {
