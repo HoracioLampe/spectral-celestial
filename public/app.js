@@ -1816,8 +1816,8 @@ async function signBatchPermit(batchId) {
 
     const combinedTotalTx = activeTxCount + totalTx;
 
-    // User requested fixed max 4 hours (14400s)
-    const duration = 14400;
+    // User requested configurable duration (Default 2h from server)
+    const duration = parseInt(APP_CONFIG.PERMIT_DEADLINE_SECONDS) || 7200;
 
     console.log(`[Permit] Deadline Fixed: 4 Hours (14400s). Active Txs: ${activeTxCount} + New: ${totalTx}`);
     const deadline = Math.floor(Date.now() / 1000) + duration;

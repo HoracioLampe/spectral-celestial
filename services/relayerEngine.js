@@ -73,6 +73,10 @@ class RelayerEngine {
     async prepareRelayers(batchId, numRelayers) {
         console.log(`[Engine] 🏗️ prepareRelayers(id = ${batchId}, count = ${numRelayers})`);
 
+        // Step 0: Ensure Faucet is healthy (Nonce Repair)
+        // This prevents collisions if a previous batch is still finishing up or if Faucet state is stuck.
+        await this.verifyAndRepairNonce();
+
         // Check for existing relayers in DB
         const existingRelayersRes = await this.pool.query(
             'SELECT address, private_key FROM relayers WHERE batch_id = $1',
@@ -83,20 +87,24 @@ class RelayerEngine {
         if (existingRelayersRes.rows.length > 0) {
             console.log(`[Engine] Found ${existingRelayersRes.rows.length} existing relayers for Batch ${batchId}.`);
             relayers = existingRelayersRes.rows.map(r => new ethers.Wallet(r.private_key, this.provider));
-        } else {
-            console.log(`[Engine] Creating ${numRelayers} new relayers...`);
-            for (let i = 0; i < numRelayers; i++) {
-                // Ethers v6: createRandom() does not take provider. 
-                // We connect it later or just use it for the PK/Address.
-                const wallet = ethers.Wallet.createRandom();
-                const connectedWalllet = wallet.connect(this.provider);
-                relayers.push(connectedWalllet);
+        }
 
-                if ((i + 1) % 5 === 0 || (i + 1) === numRelayers) {
-                    console.log(`[Engine] Created ${i + 1}/${numRelayers} relayers...`);
-                }
+        // Expand if requested count > existing count
+        if (relayers.length < numRelayers) {
+            const needed = numRelayers - relayers.length;
+            console.log(`[Engine] Expanding relayers from ${relayers.length} to ${numRelayers} (+${needed} new)...`);
+
+            const newRelayers = [];
+            for (let i = 0; i < needed; i++) {
+                const wallet = ethers.Wallet.createRandom();
+                const connectedWallet = wallet.connect(this.provider);
+                newRelayers.push(connectedWallet);
+                relayers.push(connectedWallet);
             }
-            await this.persistRelayers(batchId, relayers);
+            // Persist ONLY the new ones
+            await this.persistRelayers(batchId, newRelayers);
+        } else if (relayers.length > numRelayers) {
+            console.log(`[Engine] Note: Using ${relayers.length} existing relayers (Requested: ${numRelayers}). Excess relayers are kept active.`);
         }
 
         // Trigger Atomic Funding
@@ -934,18 +942,18 @@ class RelayerEngine {
         const faucetRes = await this.pool.query('SELECT address FROM faucets ORDER BY id DESC LIMIT 1');
         if (faucetRes.rows.length === 0) {
             console.error("[Refund] ❌ No faucet found in DB. Aborting sweep.");
-            return;
+            return 0;
         }
         const targetFaucetAddress = faucetRes.rows[0].address;
         console.log(`[Refund] 🏦 Sweep Target: ${targetFaucetAddress}`);
 
         const feeData = await this.provider.getFeeData();
-        const gasPrice = feeData.gasPrice || 35000000000n;
-        const boostedGasPrice = (gasPrice * 130n) / 100n; // Aggressive for cleanup
+        const gasPrice = feeData.gasPrice || 50000000000n; // Default 50 gwei
+        const boostedGasPrice = (gasPrice * 130n) / 100n; // 30% Boost for speed
         const costWei = 21000n * boostedGasPrice;
 
-        // Safety buffer: 0.1 MATIC (Increased to handle queued txs/fluctuations)
-        const safetyBuffer = ethers.parseEther("0.1");
+        // Safety buffer: 0.05 MATIC (Aggressive)
+        const safetyBuffer = ethers.parseEther("0.05");
 
         console.log(`[Refund] ⛽ Gas Price: ${ethers.formatUnits(boostedGasPrice, 'gwei')} gwei | Min Cost: ${ethers.formatEther(costWei)}`);
 
@@ -955,20 +963,21 @@ class RelayerEngine {
 
         console.log(`[Refund] Checking balances for ${activeRelayers.length} relayers...`);
 
-        const promises = activeRelayers.map(async (wallet, idx) => {
+        // Concurrency limit for large batches
+        const concurrency = 20;
+        let totalRecovered = 0;
+        let recoveredWei = 0n;
+
+        const worker = async (wallet, idx) => {
             try {
-                // Throttle to respect RPC limits (Staggered start)
-                await new Promise(res => setTimeout(res, idx * 300));
+                // Staggered start to prevent rate limits
+                await new Promise(res => setTimeout(res, idx * 100));
 
                 const bal = await this.provider.getBalance(wallet.address);
 
-                // Record final balance before drain
-                await this.pool.query(
-                    `UPDATE relayers SET drain_balance = $1 WHERE address = $2 AND batch_id = $3`,
-                    [ethers.formatEther(bal), wallet.address, batchId]
-                );
-
                 if (bal > (costWei + safetyBuffer)) {
+                    // Send strictly calculated amount: Balance - (Cost + Buffer)
+                    // We knowingly leave 'Buffer' amount behind to guarantee success.
                     let amount = bal - costWei - safetyBuffer;
 
                     if (amount > 0n) {
@@ -982,45 +991,38 @@ class RelayerEngine {
                             });
                             console.log(`[Refund] ✅ Tx Sent: ${tx.hash}`);
                             await tx.wait(); // Wait for confirmation
-                            return Number(ethers.formatEther(amount));
+
+                            recoveredWei += amount;
+
+                            // Mark drained effectively
+                            await this.pool.query(
+                                `UPDATE relayers SET last_balance = '0', drain_balance = $1, transactionhash_deposit = $2, status = 'drained', last_activity = NOW() WHERE address = $3 AND batch_id = $4`,
+                                [ethers.formatEther(bal), tx.hash, wallet.address, batchId]
+                            );
+
                         } catch (txErr) {
-                            if (txErr.code === 'INSUFFICIENT_FUNDS' || txErr.message.includes('insufficient funds')) {
-                                console.warn(`[Refund] ⚠️ Insufficient Funds (Queued/Dust) for ${wallet.address.substring(0, 6)}. Retrying with 50%...`);
-                                // Fallback: Try sweeping 50%
-                                try {
-                                    const safeAmount = amount / 2n;
-                                    const tx2 = await wallet.sendTransaction({
-                                        to: targetFaucetAddress,
-                                        value: safeAmount,
-                                        gasLimit: 21000n,
-                                        gasPrice: boostedGasPrice
-                                    });
-                                    await tx2.wait();
-                                    console.log(`[Refund] ✅ Tx Sent (Fallback): ${tx2.hash}`);
-                                    return Number(ethers.formatEther(safeAmount));
-                                } catch (fallbackErr) {
-                                    console.error(`[Refund] ❌ Fallback failed for ${wallet.address.substring(0, 6)}:`, fallbackErr.message);
-                                }
-                            } else {
-                                throw txErr;
-                            }
+                            console.warn(`[Refund] ❌ Tx Failed for ${wallet.address.substring(0, 6)}:`, txErr.message);
                         }
                     }
                 } else {
-                    console.log(`[Refund] ⏭️ Skipping ${wallet.address.substring(0, 6)} (Bal: ${ethers.formatEther(bal)} < Cost+Buffer)`);
+                    // Mark as drained even if we didn't extract funds (it's dust)
+                    await this.pool.query(
+                        `UPDATE relayers SET last_balance = $1, drain_balance = $1, status = 'drained', last_activity = NOW() WHERE address = $2 AND batch_id = $3`,
+                        [ethers.formatEther(bal), wallet.address, batchId]
+                    );
                 }
             } catch (err) {
-                if (err.message.includes("429") || err.message.includes("RPS")) {
-                    console.warn(`[Refund] ⚠️ RPS Limit hit for ${wallet.address.substring(0, 6)}. Skipping this run.`);
-                } else {
-                    console.warn(`[Refund] ⚠️ Failed for ${wallet.address.substring(0, 6)}:`, err.message);
-                }
+                console.warn(`[Refund] ⚠️ Failed for ${wallet.address.substring(0, 6)}:`, err.message);
             }
-            return 0;
-        });
+        };
 
-        const results = await Promise.all(promises);
-        const totalRecovered = results.reduce((a, b) => a + b, 0);
+        // Execute in chunks
+        for (let i = 0; i < activeRelayers.length; i += concurrency) {
+            const chunk = activeRelayers.slice(i, i + concurrency);
+            await Promise.all(chunk.map((w, idx) => worker(w, i + idx)));
+        }
+
+        totalRecovered = Number(ethers.formatEther(recoveredWei));
 
         // Save Refund Total to Batch
         await this.pool.query(
@@ -1028,9 +1030,7 @@ class RelayerEngine {
             [totalRecovered.toFixed(6), batchId]
         );
 
-        await this.pool.query(`UPDATE relayers SET status = 'drained', last_activity = NOW() WHERE batch_id = $1`, [batchId]);
         console.log(`[Refund] ✅ Sweep complete for Batch ${batchId}. Total Recovered: ${totalRecovered.toFixed(6)} MATIC`);
-
         return totalRecovered;
     }
 
