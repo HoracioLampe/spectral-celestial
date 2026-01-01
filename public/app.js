@@ -290,9 +290,11 @@ function attachEventListeners() {
     const btnLogout = document.getElementById('btnLogout');
     if (btnLogout) btnLogout.addEventListener('click', logout);
 
+    const btnDisconnect = document.getElementById('btnDisconnect');
+    if (btnDisconnect) btnDisconnect.addEventListener('click', logout);
+
     // Filter toggle
     if (window.btnConnect) window.btnConnect.onclick = connectWallet;
-    if (window.btnDisconnect) window.btnDisconnect.onclick = disconnectWallet;
 }
 
 
