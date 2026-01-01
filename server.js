@@ -8,7 +8,12 @@ const xlsx = require('xlsx');
 const RelayerEngine = require('./services/relayerEngine');
 const RpcManager = require('./services/rpcManager');
 const fs = require('fs');
+const session = require('express-session');
+const { generateNonce, SiweMessage } = require('siwe');
+const jwt = require('jsonwebtoken');
 require('dotenv').config();
+
+const JWT_SECRET = process.env.JWT_SECRET || 'dappsfactory-secret-key-2026';
 
 // RPC Configuration (Failover)
 const RPC_PRIMARY = process.env.RPC_URL || "https://polygon-mainnet.core.chainstack.com/05aa9ef98aa83b585c14fa0438ed53a9";
@@ -21,6 +26,27 @@ const PORT = process.env.PORT || 3000;
 // Middleware
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
+app.use(session({
+    name: 'dappsfactory_session',
+    secret: process.env.SESSION_SECRET || 'siwe-session-secret',
+    resave: false,
+    saveUninitialized: true,
+    cookie: { secure: false, httpOnly: true, maxAge: 600000 } // 10 min session for nonce
+}));
+
+// --- Authentication Middleware ---
+const authenticateToken = (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+
+    if (!token) return res.status(401).json({ error: 'Token missing' });
+
+    jwt.verify(token, JWT_SECRET, (err, user) => {
+        if (err) return res.status(403).json({ error: 'Invalid or expired token' });
+        req.user = user; // { address, role }
+        next();
+    });
+};
 
 // Database Connection
 const pool = new Pool({
@@ -33,32 +59,87 @@ const os = require('os');
 // Multer for Excel Uploads - Use system temp dir for Railway compatibility
 const upload = multer({ dest: os.tmpdir() });
 
+// --- Authentication API ---
+
+app.get('/api/auth/nonce', async (req, res) => {
+    req.session.nonce = generateNonce();
+    res.setHeader('Content-Type', 'text/plain');
+    res.send(req.session.nonce);
+});
+
+app.post('/api/auth/verify', async (req, res) => {
+    try {
+        const { message, signature } = req.body;
+        const siweMessage = new SiweMessage(message);
+
+        const { data: fields } = await siweMessage.verify({
+            signature,
+            nonce: req.session.nonce,
+        });
+
+        if (!fields) return res.status(400).json({ error: 'Signature verification failed' });
+
+        // Check user role in DB. Default to OPERATOR.
+        const userRes = await pool.query('SELECT role FROM rbac_users WHERE address = $1', [fields.address]);
+        let role = 'OPERATOR';
+        if (userRes.rows.length > 0) {
+            role = userRes.rows[0].role;
+        } else {
+            // Auto-register first user as SUPER_ADMIN if needed, or just OPERATOR
+            await pool.query('INSERT INTO rbac_users (address, role) VALUES ($1, $2) ON CONFLICT (address) DO NOTHING', [fields.address, role]);
+        }
+
+        const token = jwt.sign({ address: fields.address, role: role }, JWT_SECRET, { expiresIn: '12h' });
+
+        res.json({ token, address: fields.address, role });
+    } catch (e) {
+        console.error(e);
+        res.status(400).json({ error: e.message });
+    }
+});
+
 // --- API Endpoints ---
 
 // Get Public Transactions History (Home)
 
 
-// Get all batches
-app.get('/api/batches', async (req, res) => {
+// Get all batches (Filtered by User if not Admin)
+app.get('/api/batches', authenticateToken, async (req, res) => {
     try {
-        // Batches Pagination with Dynamic Stats
+        const userAddress = req.user.address;
+        const userRole = req.user.role;
+
         const limit = parseInt(req.query.limit) || 20;
         const page = parseInt(req.query.page) || 1;
         const offset = (page - 1) * limit;
 
-        const countRes = await pool.query('SELECT COUNT(*) FROM batches');
+        // Data Isolation Logic
+        let whereClause = 'WHERE 1=1';
+        let queryParams = [];
+
+        if (userRole !== 'SUPER_ADMIN') {
+            whereClause = 'WHERE b.funder_address = $1';
+            queryParams.push(userAddress);
+        }
+
+        const countQuery = `SELECT COUNT(*) FROM batches b ${whereClause}`;
+        const countRes = await pool.query(countQuery, queryParams);
         const totalItems = parseInt(countRes.rows[0].count);
 
-        const result = await pool.query(`
+        const dataQuery = `
             SELECT b.*,
             COUNT(CASE WHEN t.status = 'COMPLETED' THEN 1 END)::int as sent_transactions,
-                COUNT(t.id):: int as total_transactions
+            COUNT(t.id)::int as total_transactions
             FROM batches b 
             LEFT JOIN batch_transactions t ON b.id = t.batch_id
+            ${whereClause}
             GROUP BY b.id
             ORDER BY b.created_at DESC
-            LIMIT $1 OFFSET $2
-            `, [limit, offset]);
+            LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}
+        `;
+
+        queryParams.push(limit, offset);
+        const result = await pool.query(dataQuery, queryParams);
 
         res.json({
             batches: result.rows,
@@ -70,23 +151,32 @@ app.get('/api/batches', async (req, res) => {
             }
         });
     } catch (err) {
+        console.error(err);
         res.status(500).json({ error: err.message });
     }
 });
 
-// Get batch details + transactions
-app.get('/api/batches/:id', async (req, res) => {
+// Get batch details + transactions (Secure & Isolated)
+app.get('/api/batches/:id', authenticateToken, async (req, res) => {
     try {
         const batchId = req.params.id;
+        const userAddress = req.user.address.toLowerCase();
+
         const batchRes = await pool.query(`
             SELECT b.*,
             (SELECT COUNT(*) FROM batch_transactions WHERE batch_id = b.id AND status = 'COMPLETED') as completed_count
             FROM batches b 
             WHERE b.id = $1
     `, [batchId]);
-        const txRes = await pool.query('SELECT * FROM batch_transactions WHERE batch_id = $1 ORDER BY id ASC', [batchId]);
 
         if (batchRes.rows.length === 0) return res.status(404).json({ error: 'Batch not found' });
+
+        // Ownership Check
+        if (req.user.role !== 'SUPER_ADMIN' && batchRes.rows[0].funder_address?.toLowerCase() !== userAddress) {
+            return res.status(403).json({ error: 'Access denied: You do not own this batch' });
+        }
+
+        const txRes = await pool.query('SELECT * FROM batch_transactions WHERE batch_id = $1 ORDER BY id ASC', [batchId]);
 
         res.json({
             batch: batchRes.rows[0],
@@ -97,13 +187,15 @@ app.get('/api/batches/:id', async (req, res) => {
     }
 });
 
-// Create new batch
-app.post('/api/batches', async (req, res) => {
+// Create new batch (Capture funder from token)
+app.post('/api/batches', authenticateToken, async (req, res) => {
     try {
+        const userAddress = req.user.address;
         const { batch_number, detail, description } = req.body;
+
         const result = await pool.query(
-            'INSERT INTO batches (batch_number, detail, description, status) VALUES ($1, $2, $3, $4) RETURNING *',
-            [batch_number, detail, description, 'PREPARING']
+            'INSERT INTO batches (batch_number, detail, description, status, funder_address) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+            [batch_number, detail, description, 'PREPARING', userAddress]
         );
         res.json(result.rows[0]);
     } catch (err) {
@@ -127,11 +219,20 @@ app.post('/api/admin/sql', async (req, res) => {
     }
 });
 
-// Upload Excel & Calculate Totals
-app.post('/api/batches/:id/upload', upload.single('file'), async (req, res) => {
+// Upload Excel & Calculate Totals (Secure)
+app.post('/api/batches/:id/upload', authenticateToken, upload.single('file'), async (req, res) => {
     const client = await pool.connect();
     try {
         const batchId = req.params.id;
+        const userAddress = req.user.address.toLowerCase();
+
+        // Verify Ownership
+        const ownerRes = await client.query('SELECT funder_address FROM batches WHERE id = $1', [batchId]);
+        if (ownerRes.rows.length === 0) return res.status(404).json({ error: 'Batch not found' });
+        if (req.user.role !== 'SUPER_ADMIN' && ownerRes.rows[0].funder_address?.toLowerCase() !== userAddress) {
+            return res.status(403).json({ error: 'Access denied' });
+        }
+
         const filePath = req.file.path;
 
         // Create batch id log
@@ -274,14 +375,18 @@ total_transactions = $1,
 });
 
 // Generate Merkle Tree & Store Nodes
-app.post('/api/batches/:id/merkle', async (req, res) => {
+app.post('/api/batches/:id/register-merkle', authenticateToken, async (req, res) => {
     const client = await pool.connect();
     try {
         const batchId = req.params.id;
-        const { funder_address } = req.body;
+        // Use user address from JWT instead of trust body
+        const normalizedFunder = req.user.address.toLowerCase();
 
-        if (!ethers.isAddress(funder_address)) throw new Error("Invalid Funder Address");
-        const normalizedFunder = funder_address.toLowerCase();
+        // Safety check: verify user owns this batch before calculating Merkle
+        const ownershipCheck = await pool.query('SELECT funder_address FROM batches WHERE id = $1', [batchId]);
+        if (req.user.role !== 'SUPER_ADMIN' && ownershipCheck.rows[0]?.funder_address?.toLowerCase() !== normalizedFunder) {
+            return res.status(403).json({ error: 'You do not own this batch' });
+        }
 
         const txRes = await client.query('SELECT id, wallet_address_to, amount_usdc FROM batch_transactions WHERE batch_id = $1 ORDER BY id ASC', [batchId]);
         const txs = txRes.rows;
@@ -403,10 +508,19 @@ async function getFaucetCredentials() {
     return faucetPk;
 }
 
-// Phase 1: Setup & Fund Relayers
-app.post('/api/batches/:id/setup', async (req, res) => {
+// Phase 1: Setup & Fund Relayers (Secure)
+app.post('/api/batches/:id/setup', authenticateToken, async (req, res) => {
     try {
         const batchId = parseInt(req.params.id);
+        const userAddress = req.user.address.toLowerCase();
+
+        // Verify Ownership
+        const ownerRes = await pool.query('SELECT funder_address FROM batches WHERE id = $1', [batchId]);
+        if (ownerRes.rows.length === 0) return res.status(404).json({ error: 'Batch not found' });
+        if (req.user.role !== 'SUPER_ADMIN' && ownerRes.rows[0].funder_address?.toLowerCase() !== userAddress) {
+            return res.status(403).json({ error: 'Access denied' });
+        }
+
         const { relayerCount } = req.body;
         const safeRelayerCount = relayerCount || 5;
         if (safeRelayerCount > 100) {
@@ -425,10 +539,19 @@ app.post('/api/batches/:id/setup', async (req, res) => {
     }
 });
 
-// Phase 2: Start Execution (Swarm)
-app.post('/api/batches/:id/execute', async (req, res) => {
+// Phase 2: Start Execution (Swarm) (Secure)
+app.post('/api/batches/:id/execute', authenticateToken, async (req, res) => {
     try {
         const batchId = parseInt(req.params.id);
+        const userAddress = req.user.address.toLowerCase();
+
+        // Verify Ownership
+        const ownerRes = await pool.query('SELECT funder_address FROM batches WHERE id = $1', [batchId]);
+        if (ownerRes.rows.length === 0) return res.status(404).json({ error: 'Batch not found' });
+        if (req.user.role !== 'SUPER_ADMIN' && ownerRes.rows[0].funder_address?.toLowerCase() !== userAddress) {
+            return res.status(403).json({ error: 'Access denied' });
+        }
+
         const { permitData, rootSignatureData } = req.body;
 
         const faucetPk = await getFaucetCredentials();

@@ -1,5 +1,15 @@
 const API_TRANSACTIONS = '/api/transactions';
 let APP_CONFIG = { RPC_URL: '', WS_RPC_URL: '' };
+let AUTH_TOKEN = localStorage.getItem('jwt_token');
+
+async function authenticatedFetch(url, options = {}) {
+    const token = AUTH_TOKEN || localStorage.getItem('jwt_token');
+    const headers = {
+        ...options.headers,
+        'Authorization': `Bearer ${token}`
+    };
+    return fetch(url, { ...options, headers });
+}
 
 
 
@@ -198,7 +208,39 @@ document.addEventListener('DOMContentLoaded', async () => {
             connectWallet();
         }
     }
+
+    initTheme();
 });
+
+function initTheme() {
+    const toggleBtn = document.getElementById('themeToggle');
+    const themeIcon = document.getElementById('themeIcon');
+    const storedTheme = localStorage.getItem('theme') || 'dark';
+
+    // Apply stored
+    if (storedTheme === 'light') {
+        document.documentElement.setAttribute('data-theme', 'light');
+        if (themeIcon) themeIcon.textContent = '☀️';
+    } else {
+        document.documentElement.removeAttribute('data-theme');
+        if (themeIcon) themeIcon.textContent = '🌙';
+    }
+
+    if (toggleBtn) {
+        toggleBtn.onclick = () => {
+            const current = document.documentElement.getAttribute('data-theme');
+            if (current === 'light') {
+                document.documentElement.removeAttribute('data-theme');
+                localStorage.setItem('theme', 'dark');
+                if (themeIcon) themeIcon.textContent = '🌙';
+            } else {
+                document.documentElement.setAttribute('data-theme', 'light');
+                localStorage.setItem('theme', 'light');
+                if (themeIcon) themeIcon.textContent = '☀️';
+            }
+        };
+    }
+}
 
 
 function initDOMElements() {
@@ -236,42 +278,53 @@ function disconnectWallet() {
 
 async function connectWallet() {
     if (!window.ethereum) return alert("⚠️ Instala MetaMask");
+
     try {
-        const forceSelect = localStorage.getItem('forceWalletSelect');
-        if (forceSelect === 'true') {
-            await window.ethereum.request({
-                method: "wallet_requestPermissions",
-                params: [{ eth_accounts: {} }]
-            });
-            localStorage.removeItem('forceWalletSelect');
-        }
-
+        const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+        userAddress = accounts[0];
         provider = new ethers.providers.Web3Provider(window.ethereum);
-        await provider.send("eth_requestAccounts", []);
         signer = provider.getSigner();
-        userAddress = await signer.getAddress();
-        await checkNetwork();
 
-        btnConnect.style.display = 'none';
-        walletInfo.classList.remove('hidden');
-        walletAddress.textContent = `${userAddress.substring(0, 6)}...${userAddress.substring(38)}`;
+        // --- SIWE LOGIN FLOW ---
+        const nonceRes = await fetch('/api/auth/nonce');
+        const nonce = await nonceRes.text();
 
-        fetchBalances();
+        const message = `DappsFactory Management wants you to sign in with your Ethereum account:\n${userAddress}\n\nI accept the Terms and Conditions.\n\nNonce: ${nonce}`;
+        const signature = await signer.signMessage(message);
 
-        // Auto-fill Funder Address if in Batch View
-        const funderInput = document.getElementById('batchFunderAddress');
-        if (funderInput) {
-            funderInput.value = userAddress;
-            checkFunderBalance();
+        const verifyRes = await fetch('/api/auth/verify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message, signature })
+        });
+
+        const authData = await verifyRes.json();
+        if (authData.token) {
+            AUTH_TOKEN = authData.token;
+            localStorage.setItem('jwt_token', authData.token);
+            localStorage.setItem('user_address', authData.address);
+
+            console.log("✅ Authenticated via SIWE");
+
+            const btnConnect = document.getElementById('btnConnect');
+            if (btnConnect) btnConnect.innerHTML = "🔗 Conectado";
+            const walletInfo = document.getElementById('walletInfo');
+            if (walletInfo) walletInfo.classList.remove('hidden');
+            const userAddrSpan = document.getElementById('userAddress');
+            if (userAddrSpan) userAddrSpan.textContent = `${userAddress.substring(0, 6)}...${userAddress.substring(38)}`;
+
+            fetchBalances();
+            fetchBatches(); // Reload batches with filtered view
+
+            window.ethereum.on('accountsChanged', () => location.reload());
+            window.ethereum.on('chainChanged', () => location.reload());
+        } else {
+            throw new Error(authData.error || "Verification failed");
         }
 
-        window.ethereum.on('accountsChanged', () => location.reload());
-        window.ethereum.on('chainChanged', () => location.reload());
-    } catch (error) {
-        console.error(error);
-        if (error.code !== 4001) {
-            alert("Error Wallet: " + error.message);
-        }
+    } catch (err) {
+        console.error("Connection error:", err);
+        if (err.code !== 4001) alert("Error al conectar: " + err.message);
     }
 }
 
@@ -352,51 +405,43 @@ const batchTableBody = document.getElementById('batchTableBody');
 // Upload Excel Logic
 async function uploadBatchFile() {
     const fileInput = document.getElementById('batchFile');
-    const file = fileInput.files[0];
-    const status = document.getElementById('uploadStatus');
-
-    if (!file) {
-        alert("Por favor selecciona un archivo Excel (.xlsx)");
-        return;
-    }
-
-    if (!currentBatchId) {
-        alert("No hay lote seleccionado.");
-        return;
-    }
+    if (!fileInput || !fileInput.files[0]) return alert("Selecciona un archivo Excel");
+    if (!currentBatchId) return alert("No hay lote activo");
 
     const formData = new FormData();
-    formData.append('file', file);
-
-    if (status) {
-        status.textContent = "Subiendo y procesando...";
-        status.style.color = "#fbbf24";
-    }
+    formData.append('file', fileInput.files[0]);
 
     try {
-        const res = await fetch(`/api/batches/${currentBatchId}/upload`, {
+        btnUploadBatch.textContent = "Procesando...";
+        btnUploadBatch.disabled = true;
+        const status = document.getElementById('uploadStatus');
+        if (status) status.textContent = "Leyendo Excel y Calculando...";
+
+        const res = await authenticatedFetch(`/api/batches/${currentBatchId}/upload`, {
             method: 'POST',
             body: formData
         });
+        const result = await res.json();
 
-        const data = await res.json();
+        if (result.batch) {
+            if (status) status.textContent = "✅ Carga exitosa. Generando Merkle Tree automáticamente...";
+            // Refresh grid
+            currentTxPage = 1;
+            await fetchBatchTransactions(currentBatchId);
 
-        if (res.ok) {
-            if (status) {
-                status.textContent = "✅ Subida exitosa. Recargando...";
-                status.style.color = "#4ade80";
-            }
-            // Refresh details
-            await openBatchDetail(currentBatchId);
+            // AUTO-GENERATE MERKLE (Pass authenticated)
+            await generateMerkleTree();
         } else {
-            throw new Error(data.error || "Error al subir");
+            throw new Error(result.error || "Error en respuesta");
         }
-    } catch (err) {
-        console.error(err);
-        if (status) {
-            status.textContent = `❌ Error: ${err.message}`;
-            status.style.color = "#ef4444";
-        }
+
+    } catch (error) {
+        console.error(error);
+        const status = document.getElementById('uploadStatus');
+        if (status) status.textContent = "❌ Error: " + error.message;
+    } finally {
+        btnUploadBatch.textContent = "Subir y Calcular 📤";
+        btnUploadBatch.disabled = false;
     }
 }
 
@@ -432,7 +477,7 @@ const BATCCH_PAGE_SIZE = 10;
 // Cargar lista al iniciar o cambiar tab
 async function fetchBatches(page = 1) {
     try {
-        const res = await fetch(`/api/batches?page=${page}&limit=${BATCCH_PAGE_SIZE}`);
+        const res = await authenticatedFetch(`/api/batches?page=${page}&limit=${BATCCH_PAGE_SIZE}`);
         const data = await res.json();
 
         // Handle new response format { batches: [], pagination: {} }
@@ -533,7 +578,7 @@ async function createBatch() {
 
     try {
         btnSaveBatch.textContent = "Creando...";
-        const res = await fetch('/api/batches', {
+        const res = await authenticatedFetch('/api/batches', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data)
@@ -609,7 +654,7 @@ window.openBatchDetail = async function (id) {
     if (relayerSection) relayerSection.classList.remove('hidden');
 
     try {
-        const res = await fetch(`/api/batches/${id}`);
+        const res = await authenticatedFetch(`/api/batches/${id}`);
         const data = await res.json();
 
         if (data.batch) {
@@ -916,7 +961,7 @@ async function fetchBatchTransactions(batchId) {
             status
         });
 
-        const res = await fetch(`/api/batches/${batchId}/transactions?${query}`);
+        const res = await authenticatedFetch(`/api/batches/${batchId}/transactions?${query}`);
         const data = await res.json();
 
         if (data.error) throw new Error(data.error);
@@ -1088,45 +1133,8 @@ window.changePage = function (direction) {
     fetchBatchTransactions(currentBatchId);
 };
 
-// Upload Logic restored
-async function uploadBatchFile() {
-    const fileInput = document.getElementById('batchFile');
-    if (!fileInput.files[0]) return alert("Selecciona un archivo Excel");
-    if (!currentBatchId) return alert("No hay lote activo");
-
-    const formData = new FormData();
-    formData.append('file', fileInput.files[0]);
-
-    try {
-        btnUploadBatch.textContent = "Procesando...";
-        btnUploadBatch.disabled = true;
-        uploadStatus.textContent = "Leyendo Excel y Calculando...";
-
-        const res = await fetch(`/api/batches/${currentBatchId}/upload`, {
-            method: 'POST',
-            body: formData
-        });
-        const result = await res.json();
-
-        if (result.batch) {
-            updateDetailView(result.batch, result.transactions);
-            // Removed incorrect hidden force
-            uploadStatus.textContent = "✅ Carga exitosa";
-            // Refresh grid
-            currentTxPage = 1;
-            fetchBatchTransactions(currentBatchId);
-        } else {
-            throw new Error(result.error || "Error en respuesta");
-        }
-
-    } catch (error) {
-        console.error(error);
-        uploadStatus.textContent = "❌ Error: " + error.message;
-    } finally {
-        btnUploadBatch.textContent = "Subir y Calcular 📤";
-        btnUploadBatch.disabled = false;
-    }
-}
+// Merkle Tree Logic defined below
+// Deleted duplicated uploadBatchFile implementation from here
 
 async function generateMerkleTree() {
     if (!currentBatchId) return;
@@ -1138,10 +1146,11 @@ async function generateMerkleTree() {
         if (!userAddress) return;
     }
 
-    const funder = batchFunderAddress.value.trim().toLowerCase();
+    // Use the connected userAddress (already verified by SIWE)
+    const funder = (userAddress || localStorage.getItem('user_address'))?.toLowerCase();
 
     if (!funder || !ethers.utils.isAddress(funder)) {
-        return alert("Ingresa una dirección de Funder válida");
+        return alert("Error: No se detectó una dirección de Funder válida. Por favor, reconéctate.");
     }
 
     try {
@@ -1149,10 +1158,10 @@ async function generateMerkleTree() {
         btnGenerateMerkle.textContent = "Generando...";
         merkleStatus.textContent = "Calculando árbol criptográfico...";
 
-        const res = await fetch(`/api/batches/${currentBatchId}/merkle`, {
+        const res = await authenticatedFetch(`/api/batches/${currentBatchId}/register-merkle`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ funder_address: funder })
+            body: JSON.stringify({}) // Funder captured from JWT
         });
         const data = await res.json();
 
@@ -1230,7 +1239,7 @@ async function runMerkleTest() {
         // Fetch a small random sample from server
         try {
             if (status) status.textContent = "⏳ Obteniendo muestra del servidor...";
-            const res = await fetch(`/api/batches/${currentBatchId}/transactions?page=1&limit=100`);
+            const res = await authenticatedFetch(`/api/batches/${currentBatchId}/transactions?page=1&limit=100`);
             const data = await res.json();
             if (data.transactions && data.transactions.length > 0) {
                 testTransactions = data.transactions;
@@ -1304,7 +1313,7 @@ async function runMerkleTest() {
             while (attempts < maxAttempts) {
                 try {
                     // Fetch Proof from Backend
-                    const proofRes = await fetch(`/api/batches/${currentBatchId}/transactions/${tx.id}/proof`);
+                    const proofRes = await authenticatedFetch(`/api/batches/${currentBatchId}/transactions/${tx.id}/proof`);
                     if (!proofRes.ok) throw new Error("API Error fetching proof");
                     const proofData = await proofRes.json();
 
@@ -1596,7 +1605,7 @@ async function setupRelayerBatch() {
         processStatus.textContent = "🏗️ Creando y fondeando relayers (Transacción Atómica)...";
         processStatus.style.color = "#fbbf24";
 
-        const response = await fetch(`/api/batches/${currentBatchId}/setup`, {
+        const response = await authenticatedFetch(`/api/batches/${currentBatchId}/setup`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ relayerCount: count })
@@ -1647,7 +1656,7 @@ async function executeDistribution() {
         processStatus.style.color = "#4ade80";
         if (signHint) signHint.textContent = "Firmas verificadas. Arrancando...";
 
-        const response = await fetch(`/api/batches/${currentBatchId}/execute`, {
+        const response = await authenticatedFetch(`/api/batches/${currentBatchId}/execute`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -1694,7 +1703,7 @@ if (btnExecuteBatch) btnExecuteBatch.onclick = executeDistribution;
 
 async function signBatchPermit(batchId) {
     // 1. Get Batch Total
-    const res = await fetch(`/api/batches/${batchId}`);
+    const res = await authenticatedFetch(`/api/batches/${batchId}`);
     const data = await res.json();
     if (!data.batch) throw new Error("Batch not found");
 
@@ -1715,7 +1724,7 @@ async function signBatchPermit(batchId) {
 
     // 2.1 Calculate Total Required for ALL Active Batches (Concurrency Support)
     // Fetch all batches to find others that are 'SENT' or 'PROCESSING'
-    const allBatchesRes = await fetch('/api/batches?limit=100'); // Increase limit to check concurrency better
+    const allBatchesRes = await authenticatedFetch('/api/batches?limit=100'); // Increase limit to check concurrency better
     const allBatchesData = await allBatchesRes.json();
     const allBatches = allBatchesData.batches || [];
 
@@ -1939,7 +1948,7 @@ async function fetchRelayerBalances(batchId) {
     const tbody = document.getElementById('relayerBalancesTableBody');
     console.log(`[RelayerDebug] Fetching balances for batch: ${batchId}`);
     try {
-        const response = await fetch(`/api/relayers/${batchId}`);
+        const response = await authenticatedFetch(`/api/relayers/${batchId}`);
         if (!response.ok) {
             const errData = await response.json().catch(() => ({}));
             throw new Error(errData.error || 'Fallo en servidor');

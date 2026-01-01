@@ -42,22 +42,30 @@
 
     <header>
         <div class="header-content">
-            <div>
-                <h1>Gestión de Wallet</h1>
-                <p class="subtitle">Polygon Transactions Manager</p>
+            <div class="logo-nav-group">
+                <div class="logo-container">
+                    <img src="assets/logo_dappsfactory.png" alt="DappsFactory" class="logo-img">
+                </div>
+                <nav class="main-nav">
+                    <a href="#" class="nav-link">Dashboard</a>
+                    <a href="#" class="nav-link active">Transacciones</a>
+                </nav>
             </div>
+
             <div class="wallet-controls">
-                <button id="btnConnect" class="btn-glass">🦊 Conectar Wallet</button>
+                <button id="themeToggle" class="theme-toggle" title="Cambiar Tema">
+                    <span id="themeIcon">🌙</span>
+                </button>
                 <div id="walletInfo" class="wallet-info hidden">
-                    <div style="display: flex; align-items: center; gap: 0.5rem;">
-                        <span id="walletAddress" class="badge-address">0x...</span>
-                        <button id="btnDisconnect" class="btn-icon" title="Desconectar">❌</button>
-                    </div>
+                    <span id="userAddress" class="badge-address">0x...</span>
                     <div class="balances">
-                        <span class="balance-item">🟣 <span id="balanceMatic">0.00</span> POL</span>
-                        <span class="balance-item">💵 <span id="balanceUsdc">0.00</span> USDC</span>
+                        <span class="balance-item">💰 <span id="usdcBalance">0.00</span> USDC</span>
+                        <span class="balance-item">⛽ <span id="maticBalance">0.00</span> POL</span>
                     </div>
                 </div>
+                <button id="btnConnect" class="btn btn-glass">
+                    🦊 Conectar Wallet
+                </button>
             </div>
         </div>
     </header>
@@ -148,23 +156,23 @@
                     <h3>🌳 Merkle Tree Verification</h3>
 
                     <div id="merkleInputZone">
-                        <label>Funder Wallet (Quien enviará el lote)</label>
-                        <div style="display: flex; gap: 1rem; margin-top: 0.5rem; align-items: center;">
-                            <input type="text" id="batchFunderAddress" class="input-glass"
-                                placeholder="Conectar Wallet..." readonly onclick="if(!userAddress) connectWallet()"
-                                style="cursor: pointer;">
-                            <button id="btnGenerateMerkle" class="btn btn-primary" style="white-space: nowrap;">Generar
-                                Merkle Tree ⚙️</button>
-                        </div>
-                        <div style="display: flex; gap: 2rem; margin-top: 1rem; font-size: 0.9rem; opacity: 0.9;">
-                            <div>
-                                <span style="color: #94a3b8;">Total a Transferir:</span>
-                                <span id="merkleTotalAmount" style="color: #4ade80; font-weight: bold;">$0.00</span>
+                        <label>Funder Wallet (Origen de Fondos)</label>
+                        <div class="funder-display-card"
+                            style="margin-top: 0.75rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; background: var(--bg-card-hover); padding: 1rem; border-radius: var(--radius-md); border: 1px dashed var(--border-color);">
+                            <div style="display: flex; align-items: center; gap: 0.75rem;">
+                                <div class="avatar-circle"
+                                    style="width: 32px; height: 32px; border-radius: 50%; background: var(--accent-gradient); display: flex; align-items: center; justify-content: center; font-size: 1rem;">
+                                    🛡️</div>
+                                <div>
+                                    <span id="displayFunderAddress"
+                                        style="font-family: monospace; font-weight: 600; color: var(--text-primary);">0x...</span>
+                                    <div style="font-size: 0.8rem; color: var(--text-secondary);">Balance: <span
+                                            id="displayFunderBalance"
+                                            style="color: var(--success); font-weight: 700;">0.00 USDC</span></div>
+                                </div>
                             </div>
-                            <div>
-                                <span style="color: #94a3b8;">Balance Funder:</span>
-                                <span id="merkleFounderBalance" style="color: #f472b6; font-weight: bold;">---</span>
-                            </div>
+                            <button id="btnGenerateMerkle" class="btn btn-primary"
+                                style="white-space: nowrap; height: 42px;">Generar Merkle Tree ⚡</button>
                         </div>
                     </div>
 
