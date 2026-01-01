@@ -139,6 +139,9 @@ app.post('/api/batches/:id/upload', upload.single('file'), async (req, res) => {
 
         await client.query('BEGIN');
 
+        // CLEAR OLD TRANSACTIONS (Fix for "Reset" issue) - MOVED TO START
+        await client.query('DELETE FROM batch_transactions WHERE batch_id = $1', [batchId]);
+
         let totalUSDC = 0n;
         let validTxs = 0;
         let loopIndex = 0;
@@ -202,9 +205,6 @@ app.post('/api/batches/:id/upload', upload.single('file'), async (req, res) => {
             const foundKeys = data.length > 0 ? Object.keys(data[0]).join(', ') : "Ninguna (Archivo vacío)";
             throw new Error(`No se encontraron transacciones válidas. Columnas detectadas: [${foundKeys}]. Se busca: 'Wallet' y 'Amount'.`);
         }
-
-        // CLEAR OLD TRANSACTIONS (Fix for "Reset" issue)
-        await client.query('DELETE FROM batch_transactions WHERE batch_id = $1', [batchId]);
 
         // Update Batch Totals and FULLY RESET status/stats for new file
         const updateRes = await client.query(
