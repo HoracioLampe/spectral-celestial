@@ -331,7 +331,16 @@ async function connectWallet() {
 
         // --- SIWE LOGIN FLOW ---
         const nonceRes = await fetch('/api/auth/nonce');
+        if (!nonceRes.ok) {
+            const errorText = await nonceRes.text();
+            throw new Error(`Error al obtener nonce: ${errorText.substring(0, 100)}`);
+        }
         const nonce = await nonceRes.text();
+
+        // Anti-HTML check
+        if (nonce.includes("<!DOCTYPE") || nonce.includes("<html")) {
+            throw new Error("El servidor devolvió un error en lugar de un código de seguridad (Nonce).");
+        }
 
         const domain = window.location.host;
         const origin = window.location.origin;

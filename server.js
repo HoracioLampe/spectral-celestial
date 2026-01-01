@@ -30,21 +30,20 @@ const pool = new Pool({
     ssl: { rejectUnauthorized: false }
 });
 
-// AUTO-CREATE SESSION TABLE (Railway/Production safety)
+// AUTO-CREATE SESSION TABLE (Simplified for compatibility)
 const initSessionTable = async () => {
     try {
         await pool.query(`
             CREATE TABLE IF NOT EXISTS "session" (
-                "sid" varchar NOT NULL COLLATE "default",
+                "sid" varchar NOT NULL PRIMARY KEY,
                 "sess" json NOT NULL,
-                "expire" timestamp(6) NOT NULL,
-                CONSTRAINT "session_pkey" PRIMARY KEY ("sid")
-            ) WITH (OIDS=FALSE);
+                "expire" timestamp(6) NOT NULL
+            );
             CREATE INDEX IF NOT EXISTS "IDX_session_expire" ON "session" ("expire");
         `);
         console.log("📊 Session table verified/created");
     } catch (err) {
-        console.error("❌ Error creating session table:", err);
+        console.error("❌ Critical Session Table Error:", err);
     }
 };
 initSessionTable();
@@ -88,10 +87,21 @@ const upload = multer({ dest: os.tmpdir() });
 
 // --- Authentication API ---
 
+app.get('/api/health', (req, res) => res.json({ status: 'ok', uptime: process.uptime() }));
+
 app.get('/api/auth/nonce', async (req, res) => {
-    req.session.nonce = generateNonce();
-    res.setHeader('Content-Type', 'text/plain');
-    res.send(req.session.nonce);
+    try {
+        if (!req.session) {
+            console.error("❌ Session undefined in /api/auth/nonce");
+            return res.status(500).send("Session configuration error");
+        }
+        req.session.nonce = generateNonce();
+        res.setHeader('Content-Type', 'text/plain');
+        res.send(req.session.nonce);
+    } catch (err) {
+        console.error("❌ Nonce Error:", err);
+        res.status(500).send("Internal Server Error");
+    }
 });
 
 app.post('/api/auth/verify', async (req, res) => {
