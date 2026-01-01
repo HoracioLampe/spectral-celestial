@@ -6,8 +6,14 @@ const ethers = require('ethers');
 const multer = require('multer');
 const xlsx = require('xlsx');
 const RelayerEngine = require('./services/relayerEngine');
+const RpcManager = require('./services/rpcManager');
 const fs = require('fs');
 require('dotenv').config();
+
+// RPC Configuration (Failover)
+const RPC_PRIMARY = process.env.RPC_URL || "https://polygon-mainnet.core.chainstack.com/05aa9ef98aa83b585c14fa0438ed53a9";
+const RPC_FALLBACK = process.env.RPC_FALLBACK_URL || "https://polygon-bor-rpc.publicnode.com"; // Public Fallback
+const globalRpcManager = new RpcManager(RPC_PRIMARY, RPC_FALLBACK);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -408,8 +414,8 @@ app.post('/api/batches/:id/setup', async (req, res) => {
         }
 
         const faucetPk = await getFaucetCredentials();
-        const providerUrl = process.env.PROVIDER_URL || "https://polygon-mainnet.core.chainstack.com/05aa9ef98aa83b585c14fa0438ed53a9";
-        const engine = new RelayerEngine(pool, providerUrl, faucetPk);
+        // const providerUrl = process.env.PROVIDER_URL || "https://polygon-mainnet.core.chainstack.com/05aa9ef98aa83b585c14fa0438ed53a9"; // OLD
+        const engine = new RelayerEngine(pool, globalRpcManager, faucetPk); // Pass Manager
 
         const result = await engine.prepareRelayers(batchId, safeRelayerCount);
         res.json({ message: "Relayers created and funded", count: result.count });
@@ -426,8 +432,8 @@ app.post('/api/batches/:id/execute', async (req, res) => {
         const { permitData, rootSignatureData } = req.body;
 
         const faucetPk = await getFaucetCredentials();
-        const providerUrl = process.env.PROVIDER_URL || "https://polygon-mainnet.core.chainstack.com/05aa9ef98aa83b585c14fa0438ed53a9";
-        const engine = new RelayerEngine(pool, providerUrl, faucetPk);
+        // const providerUrl = process.env.PROVIDER_URL || "https://polygon-mainnet.core.chainstack.com/05aa9ef98aa83b585c14fa0438ed53a9"; // OLD
+        const engine = new RelayerEngine(pool, globalRpcManager, faucetPk);
 
         const result = await engine.startExecution(batchId, permitData, rootSignatureData);
         res.json(result);
@@ -686,8 +692,10 @@ r.id, r.address, r.private_key, r.status, r.last_activity, r.transactionhash_dep
         const relayers = result.rows;
 
         // Parallel Live Balance Check
-        const providerUrl = process.env.PROVIDER_URL || "https://polygon-mainnet.core.chainstack.com/05aa9ef98aa83b585c14fa0438ed53a9";
-        const provider = new ethers.JsonRpcProvider(providerUrl);
+        // Parallel Live Balance Check (With Failover Support)
+        // const providerUrl = process.env.PROVIDER_URL || "https://polygon-mainnet.core.chainstack.com/05aa9ef98aa83b585c14fa0438ed53a9";
+        // const provider = new ethers.JsonRpcProvider(providerUrl);
+        const provider = globalRpcManager.getProvider(); // Dynamic Provider
 
         // Throttled Live Balance Check (Chunk Size: 5)
         const CHUNK_SIZE = 5;
@@ -738,8 +746,8 @@ app.post('/api/batches/:id/return-funds', async (req, res) => {
     try {
         const batchId = parseInt(req.params.id);
         const faucetPk = await getFaucetCredentials();
-        const providerUrl = process.env.PROVIDER_URL || "https://polygon-mainnet.core.chainstack.com/05aa9ef98aa83b585c14fa0438ed53a9";
-        const engine = new RelayerEngine(pool, providerUrl, faucetPk);
+        // const providerUrl = process.env.PROVIDER_URL || "https://polygon-mainnet.core.chainstack.com/05aa9ef98aa83b585c14fa0438ed53a9";
+        const engine = new RelayerEngine(pool, globalRpcManager, faucetPk);
 
         // Call the method physically (assuming updated RelayerEngine exposes it)
         const recovered = await engine.returnFundsToFaucet(batchId);

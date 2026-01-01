@@ -448,17 +448,34 @@ async function fetchBatches(page = 1) {
 }
 
 function updatePaginationUI(pagination) {
-    const btnPrev = document.getElementById('btnPrevPage');
-    const btnNext = document.getElementById('btnNextPage');
+    const btnFirst = document.getElementById('firstPage');
+    const btnPrev = document.getElementById('prevPage');
+    const btnNext = document.getElementById('nextPage');
+    const btnLast = document.getElementById('lastPage');
     const indicator = document.getElementById('pageIndicator');
 
-    if (btnPrev && btnNext && indicator) {
+    if (indicator) {
         indicator.textContent = `Página ${pagination.currentPage} de ${pagination.totalPages}`;
+    }
+
+    if (btnFirst) {
+        btnFirst.disabled = pagination.currentPage <= 1;
+        btnFirst.onclick = () => fetchBatches(1);
+    }
+
+    if (btnPrev) {
         btnPrev.disabled = pagination.currentPage <= 1;
         btnPrev.onclick = () => fetchBatches(pagination.currentPage - 1);
+    }
 
+    if (btnNext) {
         btnNext.disabled = pagination.currentPage >= pagination.totalPages;
         btnNext.onclick = () => fetchBatches(pagination.currentPage + 1);
+    }
+
+    if (btnLast) {
+        btnLast.disabled = pagination.currentPage >= pagination.totalPages;
+        btnLast.onclick = () => fetchBatches(pagination.totalPages);
     }
 }
 

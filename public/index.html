@@ -97,11 +97,13 @@
                     </table>
                 </div>
                 <!-- Pagination Controls -->
-                <div id="batchPagination"
-                    style="display: flex; justify-content: center; align-items: center; gap: 1rem; margin-top: 1rem;">
-                    <button id="btnPrevPage" class="btn-glass" disabled>◀ Anterior</button>
-                    <span id="pageIndicator" style="color: #94a3b8; font-size: 0.9rem;">Página 1</span>
-                    <button id="btnNextPage" class="btn-glass" disabled>Siguiente ▶</button>
+                <div
+                    style="display: flex; justify-content: flex-end; align-items: center; margin-top: 1rem; gap: 0.5rem; color: #94a3b8; font-size: 0.9rem;">
+                    <button id="firstPage" class="btn-icon" title="Primera Página">⏪</button>
+                    <button id="prevPage" class="btn-icon" title="Anterior">◀</button>
+                    <span id="pageIndicator">Página 1 de 1</span>
+                    <button id="nextPage" class="btn-icon" title="Siguiente">▶</button>
+                    <button id="lastPage" class="btn-icon" title="Última Página">⏩</button>
                 </div>
             </div>
 

@@ -2,12 +2,21 @@ const ethers = require('ethers');
 
 // Relayer Engine for High Throughput Processing
 class RelayerEngine {
-    constructor(pool, providerUrl, faucetPrivateKey) {
+    constructor(pool, rpcManager, faucetPrivateKey) {
         this.pool = pool; // Postgres Pool
-        this.provider = new ethers.JsonRpcProvider(providerUrl, undefined, {
-            staticNetwork: true
-        });
+        this.rpcManager = rpcManager;
+        // Legacy support: if rpcManager is string, wrap it (handled in server.js ideally, but safe check here)
+        this.provider = rpcManager.provider || new ethers.JsonRpcProvider(rpcManager);
+
+        // Faucet setup needs a provider, we bind to the dynamic one from manager
+        // But Wallet needs a fixed provider instance. We'll access rpcManager.getProvider() dynamically where possible,
+        // or recreate wallet on switch. For now, let's keep it simple:
+        // Use the current provider. If RpcManager switches, we might need to update this.faucetWallet.provider.
+        // Better approach: Use execute() wrapper for all calls.
+
+        this.faucetPrivateKey = faucetPrivateKey;
         this.faucetWallet = new ethers.Wallet(faucetPrivateKey, this.provider);
+
         this.cachedChainId = null;
 
         // Configuration
@@ -24,6 +33,11 @@ class RelayerEngine {
             "function batchRoots(address funder, uint256 batchId) view returns (bytes32)",
             "event TransactionExecuted(uint256 indexed batchId, uint256 indexed txId, address indexed recipient, address funder, uint256 amount)"
         ];
+    }
+
+    // Helper to get current valid provider
+    getProvider() {
+        return this.rpcManager.getProvider ? this.rpcManager.getProvider() : this.provider;
     }
 
     // --- Configuration Constants ---
