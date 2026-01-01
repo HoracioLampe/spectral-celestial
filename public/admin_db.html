@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <title>DB Explorer - Admin</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0f172a;
+            color: #e2e8f0;
+        }
+    </style>
+</head>
+
+<body class="p-8">
+    <div class="max-w-6xl mx-auto">
+        <h1 class="text-3xl font-bold mb-6 text-purple-400">🕵️‍♂️ Database Explorer</h1>
+
+        <div class="flex gap-4 mb-4">
+            <button onclick="setQuery('SELECT * FROM batches ORDER BY id DESC LIMIT 5')"
+                class="px-3 py-1 bg-slate-700 hover:bg-slate-600 rounded text-sm">Batches</button>
+            <button onclick="setQuery('SELECT * FROM transactions ORDER BY id DESC LIMIT 5')"
+                class="px-3 py-1 bg-slate-700 hover:bg-slate-600 rounded text-sm">Transactions</button>
+            <button onclick="setQuery('SELECT * FROM relayers ORDER BY id DESC LIMIT 5')"
+                class="px-3 py-1 bg-slate-700 hover:bg-slate-600 rounded text-sm">Relayers</button>
+            <button onclick="setQuery('SELECT * FROM faucets')"
+                class="px-3 py-1 bg-slate-700 hover:bg-slate-600 rounded text-sm">Faucets</button>
+            <button onclick="setQuery('SELECT table_name FROM information_schema.tables WHERE table_schema=\'public\'')"
+                class="px-3 py-1 bg-blue-700 hover:bg-blue-600 rounded text-sm">List Tables</button>
+        </div>
+
+        <div class="mb-4">
+            <textarea id="sqlInput"
+                class="w-full h-32 bg-slate-800 border border-slate-600 rounded p-4 font-mono text-sm text-green-400 focus:outline-none focus:border-purple-500"
+                placeholder="SELECT * FROM ..."></textarea>
+        </div>
+
+        <button onclick="runQuery()" id="btnRun"
+            class="px-6 py-2 bg-purple-600 hover:bg-purple-500 rounded font-bold text-white transition">▶ Ejecutar
+            Query</button>
+
+        <div id="status" class="mt-2 text-sm text-gray-400"></div>
+
+        <div class="mt-8 overflow-x-auto">
+            <table class="w-full text-left border-collapse" id="resultsTable">
+                <thead class="bg-slate-800 text-slate-200">
+                    <tr id="tableHeader"></tr>
+                </thead>
+                <tbody id="tableBody" class="text-slate-300"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        function setQuery(q) {
+            document.getElementById('sqlInput').value = q;
+        }
+
+        async function runQuery() {
+            const query = document.getElementById('sqlInput').value;
+            const btn = document.getElementById('btnRun');
+            const status = document.getElementById('status');
+            const thead = document.getElementById('tableHeader');
+            const tbody = document.getElementById('tableBody');
+
+            if (!query) return;
+
+            btn.disabled = true;
+            btn.textContent = "Ejecutando...";
+            status.textContent = "⏳ Consultando...";
+            thead.innerHTML = '';
+            tbody.innerHTML = '';
+
+            try {
+                const res = await fetch('/api/admin/sql', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query })
+                });
+                const data = await res.json();
+
+                if (data.error) throw new Error(data.error);
+
+                status.textContent = `✅ Éxito. Filas: ${data.rowCount !== null ? data.rowCount : data.rows.length}`;
+
+                if (data.rows && data.rows.length > 0) {
+                    // Headers
+                    const keys = Object.keys(data.rows[0]);
+                    keys.forEach(k => {
+                        const th = document.createElement('th');
+                        th.className = "p-3 border-b border-slate-700";
+                        th.textContent = k;
+                        thead.appendChild(th);
+                    });
+
+                    // Body
+                    data.rows.forEach(row => {
+                        const tr = document.createElement('tr');
+                        tr.className = "hover:bg-slate-800 border-b border-slate-700/50";
+                        keys.forEach(k => {
+                            const td = document.createElement('td');
+                            td.className = "p-3 font-mono text-sm";
+                            const val = row[k];
+                            // Format objects/dates nicely
+                            if (typeof val === 'object' && val !== null) td.textContent = JSON.stringify(val);
+                            else td.textContent = val;
+                            tr.appendChild(td);
+                        });
+                        tbody.appendChild(tr);
+                    });
+                } else {
+                    status.textContent += " (Sin resultados)";
+                }
+
+            } catch (e) {
+                status.textContent = "❌ Error: " + e.message;
+                status.classList.add("text-red-400");
+            } finally {
+                btn.disabled = false;
+                btn.textContent = "▶ Ejecutar Query";
+            }
+        }
+    </script>
+</body>
+
+</html>

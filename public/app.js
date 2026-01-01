@@ -187,7 +187,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     attachEventListeners();
 
     // 3. Load Public Data
-    fetchTransactions();
+    // 3. Load Public Data
+    fetchBatches();
 
     // 4. Auto-connect if possible
     if (window.ethereum) {
@@ -199,89 +200,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 });
 
+
 function initDOMElements() {
     // Re-query to avoid any null references if script ran early
-    window.transactionsTableBody = document.getElementById('transactionsTableBody');
     window.btnConnect = document.getElementById('btnConnect');
     window.btnDisconnect = document.getElementById('btnDisconnect');
     window.walletInfo = document.getElementById('walletInfo');
     window.walletAddress = document.getElementById('walletAddress');
     window.balanceMatic = document.getElementById('balanceMatic');
     window.balanceUsdc = document.getElementById('balanceUsdc');
-    window.btnSend = document.getElementById('btnSend');
-    window.txTo = document.getElementById('txTo');
-    window.txAmount = document.getElementById('txAmount');
-    window.txStatus = document.getElementById('txStatus');
 }
 
 function attachEventListeners() {
     if (window.btnConnect) window.btnConnect.onclick = connectWallet;
     if (window.btnDisconnect) window.btnDisconnect.onclick = disconnectWallet;
-    if (window.btnSend) window.btnSend.onclick = sendMatic;
 }
 
-// ==========================================
-// --- GESTIÓN DE TRANSACCIONES (BACKEND) ---
-// ==========================================
 
-async function fetchTransactions() {
-    if (!transactionsTableBody) return;
-    try {
-        const res = await fetch(API_TRANSACTIONS);
-        const transactions = await res.json();
-        renderTransactions(transactions);
-    } catch (error) {
-        console.error("Error cargando historial:", error);
-        transactionsTableBody.innerHTML = '<tr><td colspan="6" style="color: #ff6b6b; text-align: center;">Error cargando historial</td></tr>';
-    }
-}
-
-function renderTransactions(transactions) {
-    transactionsTableBody.innerHTML = '';
-    if (!transactions || transactions.length === 0) {
-        transactionsTableBody.innerHTML = '<tr><td colspan="6" style="text-align:center; opacity: 0.7;">No hay transacciones registradas</td></tr>';
-        return;
-    }
-
-    transactions.forEach(tx => {
-        const tr = document.createElement('tr');
-        const date = new Date(tx.timestamp).toLocaleString();
-        const shortHash = `${tx.tx_hash.substring(0, 8)}...${tx.tx_hash.substring(60)}`;
-        const shortFrom = `${tx.from_address.substring(0, 6)}...`;
-        const shortTo = `${tx.to_address.substring(0, 6)}...`;
-        const gasDisplay = tx.gas_used ? `${parseFloat(tx.gas_used).toFixed(6)}` : '-';
-
-        tr.innerHTML = `
-            <td><a href="https://polygonscan.com/tx/${tx.tx_hash}" target="_blank" class="hash-link">🔗 ${shortHash}</a></td>
-            <td>${shortFrom}</td>
-            <td>${shortTo}</td>
-            <td style="color: #4ade80; font-weight: bold;">${tx.amount} MATIC</td>
-            <td style="font-size: 0.9rem; color: #fbbf24;">⛽ ${gasDisplay}</td>
-            <td style="font-size: 0.85rem; opacity: 0.8;">${date}</td>
-        `;
-        transactionsTableBody.appendChild(tr);
-    });
-}
-
-async function saveTransaction(txHash, from, to, amount, gasUsed) {
-    try {
-        await fetch(API_TRANSACTIONS, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                tx_hash: txHash,
-                from_address: from,
-                to_address: to,
-                amount: amount,
-                gas_used: gasUsed
-            })
-        });
-        console.log("✅ Transacción guardada en DB");
-        fetchTransactions(); // Recargar tabla
-    } catch (error) {
-        console.error("❌ Error guardando en DB:", error);
-    }
-}
 
 // ==========================================
 // --- INTEGRACIÓN WEB3 (METAMASK) ---
@@ -364,71 +299,9 @@ async function fetchBalances() {
     }
 }
 
-// ==========================================
-// --- ENVIAR TOKENS ---
-// ==========================================
 
-// Event listeners are now attached in attachEventListeners() called from DOMContentLoaded
 
-async function sendMatic() {
-    if (!signer) return alert("❌ Conecta tu Wallet primero");
 
-    const to = txTo.value.trim();
-    const amount = txAmount.value;
-
-    if (!ethers.utils.isAddress(to)) return alert("❌ Dirección inválida");
-    if (!amount || amount <= 0) return alert("❌ Monto inválido");
-
-    try {
-        btnSend.disabled = true;
-        btnSend.textContent = "Firmando... ✍️";
-        txStatus.textContent = "Esperando confirmación...";
-
-        const tx = await signer.sendTransaction({
-            to: to,
-            value: ethers.utils.parseEther(amount)
-        });
-
-        btnSend.textContent = "Enviando... 🚀";
-        txStatus.innerHTML = `Tx enviada: <a href="https://polygonscan.com/tx/${tx.hash}" target="_blank">${tx.hash.substring(0, 8)}...</a>`;
-
-        const receipt = await tx.wait(); // Esperar confirmación
-        const gasCostMatic = ethers.utils.formatEther(receipt.gasUsed.mul(receipt.effectiveGasPrice));
-
-        txStatus.textContent = `✅ Confirmada! Gas: ${parseFloat(gasCostMatic).toFixed(6)} MATIC. Guardando...`;
-        await saveTransaction(tx.hash, userAddress, to, amount, gasCostMatic);
-
-        btnSend.textContent = "Enviar 🚀";
-        btnSend.disabled = false;
-        txTo.value = '';
-        txAmount.value = '';
-        fetchBalances();
-
-    } catch (error) {
-        console.error(error);
-        btnSend.disabled = false;
-        btnSend.textContent = "Enviar 🚀";
-        txStatus.textContent = "❌ Error: " + (error.reason || error.message);
-    }
-}
-
-// ==========================================
-// --- GESTIÓN DE PESTAÑAS (TABS) ---
-// ==========================================
-
-window.showTab = function (tabName) {
-    document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
-    document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
-
-    if (tabName === 'individual') {
-        document.getElementById('individualSection').classList.remove('hidden');
-        document.querySelector('.tab-btn:nth-child(1)').classList.add('active');
-    } else {
-        document.getElementById('batchSection').classList.remove('hidden');
-        document.querySelector('.tab-btn:nth-child(2)').classList.add('active');
-        fetchBatches(); // Refresh List
-    }
-};
 
 // ==========================================
 // --- GESTIÓN DE LOTES (BATCHES - REFACTOR) ---

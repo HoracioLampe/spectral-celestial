@@ -106,6 +106,22 @@ app.post('/api/batches', async (req, res) => {
     }
 });
 
+
+// --- API: Admin SQL (Debugging) ---
+app.post('/api/admin/sql', async (req, res) => {
+    try {
+        const { query } = req.body;
+        if (!query) return res.status(400).json({ error: "Query required" });
+
+        console.log(`[AdminSQL] Executing: ${query}`);
+        const result = await pool.query(query);
+        res.json({ rows: result.rows, rowCount: result.rowCount, fields: result.fields });
+    } catch (err) {
+        console.error(`[AdminSQL] Error: ${err.message}`);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // Upload Excel & Calculate Totals
 app.post('/api/batches/:id/upload', upload.single('file'), async (req, res) => {
     const client = await pool.connect();
