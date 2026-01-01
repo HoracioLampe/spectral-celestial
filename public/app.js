@@ -1892,6 +1892,12 @@ window.closeFaucetModal = () => {
 
 
 async function pollBatchProgress(batchId) {
+    // 🛡️ Safety: Stop if we are viewing a different batch
+    if (currentBatchId && parseInt(batchId) !== parseInt(currentBatchId)) {
+        console.warn(`[Poll] Ignoring poll for Batch ${batchId} (Current: ${currentBatchId})`);
+        return;
+    }
+
     // 1. Fetch Relayer Balances (Keep existing logic)
     await fetchRelayerBalances(batchId);
 
