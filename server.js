@@ -43,14 +43,15 @@ app.get('/api/batches', async (req, res) => {
         const countRes = await pool.query('SELECT COUNT(*) FROM batches');
         const totalItems = parseInt(countRes.rows[0].count);
 
-        const result = await pool.query(`
-            SELECT b.*, 
-            (SELECT COUNT(*) FROM batch_transactions WHERE batch_id = b.id AND status = 'COMPLETED') as sent_transactions,
-            (SELECT COUNT(*) FROM batch_transactions WHERE batch_id = b.id) as total_transactions
+            SELECT b.*,
+            COUNT(CASE WHEN t.status = 'COMPLETED' THEN 1 END):: int as sent_transactions,
+                COUNT(t.id):: int as total_transactions
             FROM batches b 
+            LEFT JOIN batch_transactions t ON b.id = t.batch_id
+            GROUP BY b.id
             ORDER BY b.created_at DESC
             LIMIT $1 OFFSET $2
-        `, [limit, offset]);
+            `, [limit, offset]);
 
         res.json({
             batches: result.rows,
@@ -71,11 +72,11 @@ app.get('/api/batches/:id', async (req, res) => {
     try {
         const batchId = req.params.id;
         const batchRes = await pool.query(`
-            SELECT b.*, 
+            SELECT b.*,
             (SELECT COUNT(*) FROM batch_transactions WHERE batch_id = b.id AND status = 'COMPLETED') as completed_count
             FROM batches b 
             WHERE b.id = $1
-        `, [batchId]);
+    `, [batchId]);
         const txRes = await pool.query('SELECT * FROM batch_transactions WHERE batch_id = $1 ORDER BY id ASC', [batchId]);
 
         if (batchRes.rows.length === 0) return res.status(404).json({ error: 'Batch not found' });
@@ -110,11 +111,11 @@ app.post('/api/admin/sql', async (req, res) => {
         const { query } = req.body;
         if (!query) return res.status(400).json({ error: "Query required" });
 
-        console.log(`[AdminSQL] Executing: ${query}`);
+        console.log(`[AdminSQL] Executing: ${ query } `);
         const result = await pool.query(query);
         res.json({ rows: result.rows, rowCount: result.rowCount, fields: result.fields });
     } catch (err) {
-        console.error(`[AdminSQL] Error: ${err.message}`);
+        console.error(`[AdminSQL] Error: ${ err.message } `);
         res.status(500).json({ error: err.message });
     }
 });
@@ -127,8 +128,8 @@ app.post('/api/batches/:id/upload', upload.single('file'), async (req, res) => {
         const filePath = req.file.path;
 
         // Create batch id log
-        console.log(`[UPLOAD] Starting for Batch ID: ${batchId}`);
-        console.log(`[UPLOAD] Reading file: ${filePath}`);
+        console.log(`[UPLOAD] Starting for Batch ID: ${ batchId } `);
+        console.log(`[UPLOAD] Reading file: ${ filePath } `);
 
         let workbook;
         try {
@@ -139,11 +140,11 @@ app.post('/api/batches/:id/upload', upload.single('file'), async (req, res) => {
         }
 
         const sheetName = workbook.SheetNames[0];
-        console.log(`[UPLOAD] Sheet Name: ${sheetName}`);
+        console.log(`[UPLOAD] Sheet Name: ${ sheetName } `);
 
         const sheet = workbook.Sheets[sheetName];
         const data = xlsx.utils.sheet_to_json(sheet);
-        console.log(`[UPLOAD] Rows found: ${data.length}`);
+        console.log(`[UPLOAD] Rows found: ${ data.length } `);
 
         if (data.length > 0) {
             console.log("[UPLOAD] First row keys:", Object.keys(data[0]));
@@ -173,7 +174,7 @@ app.post('/api/batches/:id/upload', upload.single('file'), async (req, res) => {
             const ref = row['reference'] || row['ref'] || row['transactionid'];
 
             if (loopIndex <= 3) {
-                console.log(`[UPLOAD] Processing Row ${loopIndex}: Wallet=${wallet}, Amount=${amount}`);
+                console.log(`[UPLOAD] Processing Row ${ loopIndex }: Wallet = ${ wallet }, Amount = ${ amount } `);
             }
 
             if (wallet && amount) {
@@ -202,38 +203,38 @@ app.post('/api/batches/:id/upload', upload.single('file'), async (req, res) => {
                             [batchId, cleanWallet, microAmount.toString(), ref, 'PENDING']
                         );
                     } catch (rowErr) {
-                        console.error(`[UPLOAD] Row ${loopIndex} Error:`, rowErr.message);
+                        console.error(`[UPLOAD] Row ${ loopIndex } Error: `, rowErr.message);
                     }
                 } else {
-                    console.warn(`[UPLOAD] Row ${loopIndex} Invalid Address: ${cleanWallet}`);
+                    console.warn(`[UPLOAD] Row ${ loopIndex } Invalid Address: ${ cleanWallet } `);
                 }
             } else {
-                console.warn(`[UPLOAD] Row ${loopIndex} Missing Data:`, row);
+                console.warn(`[UPLOAD] Row ${ loopIndex } Missing Data: `, row);
             }
         }
 
-        console.log(`[UPLOAD] Finished Loop. ValidTxs: ${validTxs}`);
+        console.log(`[UPLOAD] Finished Loop.ValidTxs: ${ validTxs } `);
 
         if (validTxs === 0) {
             const foundKeys = data.length > 0 ? Object.keys(data[0]).join(', ') : "Ninguna (Archivo vacío)";
-            throw new Error(`No se encontraron transacciones válidas. Columnas detectadas: [${foundKeys}]. Se busca: 'Wallet' y 'Amount'.`);
+            throw new Error(`No se encontraron transacciones válidas.Columnas detectadas: [${ foundKeys }].Se busca: 'Wallet' y 'Amount'.`);
         }
 
         // Update Batch Totals and FULLY RESET status/stats for new file
         const updateRes = await client.query(
-            `UPDATE batches SET 
-                total_transactions = $1, 
-                total_usdc = $2, 
-                status = $3, 
-                merkle_root = NULL, 
-                funder_address = NULL,
-                total_gas_used = NULL,
-                execution_time = NULL,
-                start_time = NULL,
-                end_time = NULL,
-                funding_amount = NULL,
-                refund_amount = NULL
-            WHERE id = $4 RETURNING *`,
+            `UPDATE batches SET
+total_transactions = $1,
+    total_usdc = $2,
+    status = $3,
+    merkle_root = NULL,
+    funder_address = NULL,
+    total_gas_used = NULL,
+    execution_time = NULL,
+    start_time = NULL,
+    end_time = NULL,
+    funding_amount = NULL,
+    refund_amount = NULL
+            WHERE id = $4 RETURNING * `,
             [validTxs, totalUSDC.toString(), 'READY', batchId]
         );
         console.log("[UPLOAD] Batch Updated successfully");
@@ -583,14 +584,14 @@ app.get('/api/setup', async (req, res) => {
         await client.query(`
             ALTER TABLE batches
             ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();
-        `);
+`);
 
         // 2. Diagnostics: List columns
         const colRes = await client.query(`
             SELECT column_name 
             FROM information_schema.columns 
             WHERE table_name = 'batches'
-        `);
+    `);
         const columns = colRes.rows.map(r => r.column_name);
 
         res.json({
@@ -621,15 +622,15 @@ app.get('/api/batches/:id/transactions', async (req, res) => {
         let paramIdx = 2;
 
         if (wallet) {
-            query += ` AND wallet_address_to ILIKE $${paramIdx}`;
-            countQuery += ` AND wallet_address_to ILIKE $${paramIdx}`;
-            params.push(`%${wallet}%`); // Partial match
+            query += ` AND wallet_address_to ILIKE $${ paramIdx } `;
+            countQuery += ` AND wallet_address_to ILIKE $${ paramIdx } `;
+            params.push(`% ${ wallet }% `); // Partial match
             paramIdx++;
         }
 
         if (status) {
-            query += ` AND status = $${paramIdx}`;
-            countQuery += ` AND status = $${paramIdx}`;
+            query += ` AND status = $${ paramIdx } `;
+            countQuery += ` AND status = $${ paramIdx } `;
             params.push(status);
             paramIdx++;
         }
@@ -637,14 +638,14 @@ app.get('/api/batches/:id/transactions', async (req, res) => {
         if (amount) {
             // Amount in database is microUSDC (integer). Input is USDC (float).
             const amountMicro = Math.round(parseFloat(amount) * 1000000);
-            query += ` AND amount_usdc = $${paramIdx}`;
-            countQuery += ` AND amount_usdc = $${paramIdx}`;
+            query += ` AND amount_usdc = $${ paramIdx } `;
+            countQuery += ` AND amount_usdc = $${ paramIdx } `;
             params.push(amountMicro);
             paramIdx++;
         }
 
         // Add sorting and pagination
-        query += ` ORDER BY id ASC LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`;
+        query += ` ORDER BY id ASC LIMIT $${ paramIdx } OFFSET $${ paramIdx + 1 } `;
 
         // Execute Queries
         const totalRes = await pool.query(countQuery, params.slice(0, paramIdx - 1)); // Exclude limit/offset params
@@ -673,9 +674,9 @@ app.get('/api/relayers/:batchId', async (req, res) => {
         // Fetch relayers from DB
         // Fetch relayers from DB with Transaction Count
         const result = await pool.query(`
-            SELECT 
-                r.id, r.address, r.private_key, r.status, r.last_activity, r.transactionhash_deposit, r.last_balance as db_balance,
-                (SELECT COUNT(*)::int FROM batch_transactions bt WHERE bt.relayer_address = r.address AND bt.batch_id = r.batch_id AND bt.tx_hash IS NOT NULL) as tx_count
+SELECT
+r.id, r.address, r.private_key, r.status, r.last_activity, r.transactionhash_deposit, r.last_balance as db_balance,
+    (SELECT COUNT(*)::int FROM batch_transactions bt WHERE bt.relayer_address = r.address AND bt.batch_id = r.batch_id AND bt.tx_hash IS NOT NULL) as tx_count
             FROM relayers r 
             WHERE r.batch_id = $1
             ORDER BY r.id ASC
@@ -702,7 +703,7 @@ app.get('/api/relayers/:batchId', async (req, res) => {
                     private_key: undefined // Don't leak PK
                 };
             } catch (e) {
-                console.warn(`Failed to sync balance for ${r.address}:`, e.message);
+                console.warn(`Failed to sync balance for ${ r.address }: `, e.message);
                 return { ...r, balance: r.db_balance || "0", private_key: undefined };
             }
         }));
@@ -731,7 +732,7 @@ app.post('/api/batches/:id/return-funds', async (req, res) => {
 
         // Call the method physically (assuming updated RelayerEngine exposes it)
         const recovered = await engine.returnFundsToFaucet(batchId);
-        res.json({ success: true, message: `Recovery process completed. Recovered: ${recovered || 0} MATIC` });
+        res.json({ success: true, message: `Recovery process completed.Recovered: ${ recovered || 0 } MATIC` });
     } catch (err) {
         console.error("[Refund] Error:", err);
         res.status(500).json({ error: err.message });
@@ -742,8 +743,8 @@ const VERSION = "2.3.0";
 const PORT_LISTEN = process.env.PORT || 3000;
 
 app.listen(PORT_LISTEN, () => {
-    console.log(`Server is running on port ${PORT_LISTEN}`);
-    console.log(`🚀 Version: ${VERSION} (Self-Healing & Performance Record)`);
+    console.log(`Server is running on port ${ PORT_LISTEN } `);
+    console.log(`🚀 Version: ${ VERSION } (Self - Healing & Performance Record)`);
 });
 
 
