@@ -1389,20 +1389,34 @@ async function runMerkleTest() {
 
                     const amountVal = ethers.BigNumber.from(tx.amount_usdc);
 
+                    // Ensure APP_CONFIG is loaded
+                    if (!APP_CONFIG.CONTRACT_ADDRESS) await getConfig();
+
+                    // Pre-Validation Check
+                    if (!tx.wallet_address_to || !ethers.utils.isAddress(tx.wallet_address_to)) {
+                        console.error(`[Verify] Invalid Wallet Address in Tx ${tx.id}:`, tx.wallet_address_to);
+                        throw new Error("Invalid Wallet Address");
+                    }
+                    if (!funder || !ethers.utils.isAddress(funder)) {
+                        console.error(`[Verify] Invalid Funder Address:`, funder);
+                        throw new Error("Invalid Funder Address");
+                    }
+
                     // Verify On-Chain (View Call)
-                    console.log(`[Verify] Testing Tx ${tx.id} | Funder: ${funder} | Amount: ${amountVal.toString()}`);
+                    console.log(`[Verify] Testing Tx ${tx.id} | Funder: ${funder} | Recipient: ${tx.wallet_address_to} | Amount: ${amountVal.toString()}`);
 
                     // Debug: Calculate Leaf locally for comparison (Ethers v5)
                     try {
+                        const network = await provider.getNetwork();
                         const encodedLeaf = ethers.utils.defaultAbiCoder.encode(
                             ["uint256", "address", "uint256", "uint256", "address", "address", "uint256"],
                             [
-                                (await provider.getNetwork()).chainId,
+                                network.chainId,
                                 APP_CONFIG.CONTRACT_ADDRESS,
                                 ethers.BigNumber.from(currentBatchId),
                                 ethers.BigNumber.from(tx.id),
                                 funder,
-                                tx.wallet_address_to,
+                                tx.wallet_address_to, // Check this!
                                 amountVal
                             ]
                         );
