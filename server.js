@@ -30,19 +30,39 @@ const pool = new Pool({
     ssl: { rejectUnauthorized: false }
 });
 
+// AUTO-CREATE SESSION TABLE (Railway/Production safety)
+const initSessionTable = async () => {
+    try {
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS "session" (
+                "sid" varchar NOT NULL COLLATE "default",
+                "sess" json NOT NULL,
+                "expire" timestamp(6) NOT NULL,
+                CONSTRAINT "session_pkey" PRIMARY KEY ("sid")
+            ) WITH (OIDS=FALSE);
+            CREATE INDEX IF NOT EXISTS "IDX_session_expire" ON "session" ("expire");
+        `);
+        console.log("📊 Session table verified/created");
+    } catch (err) {
+        console.error("❌ Error creating session table:", err);
+    }
+};
+initSessionTable();
+
 // Middleware
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(session({
     store: new pgSession({
-        pool: pool,                // Connection pool
-        tableName: 'session'       // Use another table-name than the default "session"
+        pool: pool,
+        tableName: 'session',
+        createTableIfMissing: true // Added as a secondary safeguard
     }),
     name: 'dappsfactory_session',
     secret: process.env.SESSION_SECRET || 'siwe-session-secret',
     resave: false,
     saveUninitialized: false,
-    cookie: { secure: false, httpOnly: true, maxAge: 600000 } // 10 min session for nonce
+    cookie: { secure: false, httpOnly: true, maxAge: 600000 }
 }));
 
 // --- Authentication Middleware ---

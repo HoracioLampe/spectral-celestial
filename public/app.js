@@ -276,13 +276,14 @@ function initTheme() {
 
 
 function initDOMElements() {
-    // Re-query to avoid any null references if script ran early
+    window.batchesListBody = document.getElementById('batchesListBody');
     window.btnConnect = document.getElementById('btnConnect');
     window.btnDisconnect = document.getElementById('btnDisconnect');
     window.walletInfo = document.getElementById('walletInfo');
     window.walletAddress = document.getElementById('walletAddress');
     window.balanceMatic = document.getElementById('balanceMatic');
     window.balanceUsdc = document.getElementById('balanceUsdc');
+    window.userAddressSpan = document.getElementById('userAddress'); // Added this one for top display
 }
 
 function attachEventListeners() {
@@ -377,14 +378,11 @@ async function connectWallet() {
                 }, 500);
             }
 
-            const btnConnect = document.getElementById('btnConnect');
             if (btnConnect) btnConnect.innerHTML = "🔗 Conectado";
-            const walletInfo = document.getElementById('walletInfo');
             if (walletInfo) walletInfo.classList.remove('hidden');
-            const userAddrSpan = document.getElementById('userAddress');
-            if (userAddrSpan) userAddrSpan.textContent = `${userAddress.substring(0, 6)}...${userAddress.substring(38)}`;
+            if (userAddressSpan) userAddressSpan.textContent = `${userAddress.substring(0, 6)}...${userAddress.substring(38)}`;
 
-            fetchBalances();
+            await fetchBalances();
             fetchBatches();
 
             window.ethereum.on('accountsChanged', () => location.reload());
@@ -405,26 +403,33 @@ async function connectWallet() {
 }
 
 async function checkNetwork() {
-    const network = await provider.getNetwork();
-    if (network.chainId !== 137) {
-        try {
-            await window.ethereum.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: POLYGON_CHAIN_ID }] });
-        } catch (e) {
-            alert("Cambia a Polygon Mainnet");
+    try {
+        const network = await provider.getNetwork();
+        if (network.chainId !== 137) {
+            await window.ethereum.request({
+                method: 'wallet_switchEthereumChain',
+                params: [{ chainId: POLYGON_CHAIN_ID }]
+            });
         }
+    } catch (e) {
+        console.warn("Network check error:", e);
     }
 }
 
 async function fetchBalances() {
+    if (!userAddress || !provider) return;
     try {
+        console.log("💰 Fetching balances for:", userAddress);
         const balance = await provider.getBalance(userAddress);
-        balanceMatic.textContent = parseFloat(ethers.utils.formatEther(balance)).toFixed(2);
+        if (balanceMatic) balanceMatic.textContent = parseFloat(ethers.utils.formatEther(balance)).toFixed(4);
 
         const usdcContract = new ethers.Contract(USDC_ADDRESS, USDC_ABI, provider);
         const usdcRaw = await usdcContract.balanceOf(userAddress);
-        balanceUsdc.textContent = parseFloat(ethers.utils.formatUnits(usdcRaw, 6)).toFixed(2);
+        if (balanceUsdc) balanceUsdc.textContent = parseFloat(ethers.utils.formatUnits(usdcRaw, 6)).toFixed(2);
+
+        console.log("✅ Balances updated");
     } catch (e) {
-        console.error(e);
+        console.error("Error fetching balances:", e);
     }
 }
 
