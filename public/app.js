@@ -1698,8 +1698,9 @@ async function signBatchPermit(batchId) {
 
     // 2.1 Calculate Total Required for ALL Active Batches (Concurrency Support)
     // Fetch all batches to find others that are 'SENT' or 'PROCESSING'
-    const allBatchesRes = await fetch('/api/batches');
-    const allBatches = await allBatchesRes.json();
+    const allBatchesRes = await fetch('/api/batches?limit=100'); // Increase limit to check concurrency better
+    const allBatchesData = await allBatchesRes.json();
+    const allBatches = allBatchesData.batches || [];
 
     // Sum total_usdc of active batches (excluding current if duplicates exist, though status check handles it)
     // We want the Permit to cover: This Batch + All Other Active Batches
