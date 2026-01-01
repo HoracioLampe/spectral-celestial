@@ -432,15 +432,23 @@ async function fetchBalances() {
     try {
         console.log("💰 Fetching balances for:", userAddress);
         const balance = await provider.getBalance(userAddress);
-        if (balanceMatic) balanceMatic.textContent = parseFloat(ethers.utils.formatEther(balance)).toFixed(4);
+        const maticVal = parseFloat(ethers.utils.formatEther(balance)).toFixed(4);
+        console.log("⛽ MATIC:", maticVal);
+
+        const elMatic = document.getElementById('maticBalance');
+        if (elMatic) elMatic.textContent = maticVal;
 
         const usdcContract = new ethers.Contract(USDC_ADDRESS, USDC_ABI, provider);
         const usdcRaw = await usdcContract.balanceOf(userAddress);
-        if (balanceUsdc) balanceUsdc.textContent = parseFloat(ethers.utils.formatUnits(usdcRaw, 6)).toFixed(2);
+        const usdcVal = parseFloat(ethers.utils.formatUnits(usdcRaw, 6)).toFixed(2);
+        console.log("💰 USDC:", usdcVal);
 
-        console.log("✅ Balances updated");
+        const elUsdc = document.getElementById('usdcBalance');
+        if (elUsdc) elUsdc.textContent = usdcVal;
+
+        console.log("✅ Balances updated UI");
     } catch (e) {
-        console.error("Error fetching balances:", e);
+        console.error("❌ Error fetching balances:", e);
     }
 }
 
