@@ -43,8 +43,9 @@ app.get('/api/batches', async (req, res) => {
         const countRes = await pool.query('SELECT COUNT(*) FROM batches');
         const totalItems = parseInt(countRes.rows[0].count);
 
+        const result = await pool.query(`
             SELECT b.*,
-            COUNT(CASE WHEN t.status = 'COMPLETED' THEN 1 END):: int as sent_transactions,
+            COUNT(CASE WHEN t.status = 'COMPLETED' THEN 1 END)::int as sent_transactions,
                 COUNT(t.id):: int as total_transactions
             FROM batches b 
             LEFT JOIN batch_transactions t ON b.id = t.batch_id
@@ -111,11 +112,11 @@ app.post('/api/admin/sql', async (req, res) => {
         const { query } = req.body;
         if (!query) return res.status(400).json({ error: "Query required" });
 
-        console.log(`[AdminSQL] Executing: ${ query } `);
+        console.log(`[AdminSQL] Executing: ${query} `);
         const result = await pool.query(query);
         res.json({ rows: result.rows, rowCount: result.rowCount, fields: result.fields });
     } catch (err) {
-        console.error(`[AdminSQL] Error: ${ err.message } `);
+        console.error(`[AdminSQL] Error: ${err.message} `);
         res.status(500).json({ error: err.message });
     }
 });
@@ -128,8 +129,8 @@ app.post('/api/batches/:id/upload', upload.single('file'), async (req, res) => {
         const filePath = req.file.path;
 
         // Create batch id log
-        console.log(`[UPLOAD] Starting for Batch ID: ${ batchId } `);
-        console.log(`[UPLOAD] Reading file: ${ filePath } `);
+        console.log(`[UPLOAD] Starting for Batch ID: ${batchId} `);
+        console.log(`[UPLOAD] Reading file: ${filePath} `);
 
         let workbook;
         try {
@@ -140,11 +141,11 @@ app.post('/api/batches/:id/upload', upload.single('file'), async (req, res) => {
         }
 
         const sheetName = workbook.SheetNames[0];
-        console.log(`[UPLOAD] Sheet Name: ${ sheetName } `);
+        console.log(`[UPLOAD] Sheet Name: ${sheetName} `);
 
         const sheet = workbook.Sheets[sheetName];
         const data = xlsx.utils.sheet_to_json(sheet);
-        console.log(`[UPLOAD] Rows found: ${ data.length } `);
+        console.log(`[UPLOAD] Rows found: ${data.length} `);
 
         if (data.length > 0) {
             console.log("[UPLOAD] First row keys:", Object.keys(data[0]));
@@ -174,7 +175,7 @@ app.post('/api/batches/:id/upload', upload.single('file'), async (req, res) => {
             const ref = row['reference'] || row['ref'] || row['transactionid'];
 
             if (loopIndex <= 3) {
-                console.log(`[UPLOAD] Processing Row ${ loopIndex }: Wallet = ${ wallet }, Amount = ${ amount } `);
+                console.log(`[UPLOAD] Processing Row ${loopIndex}: Wallet = ${wallet}, Amount = ${amount} `);
             }
 
             if (wallet && amount) {
@@ -203,21 +204,21 @@ app.post('/api/batches/:id/upload', upload.single('file'), async (req, res) => {
                             [batchId, cleanWallet, microAmount.toString(), ref, 'PENDING']
                         );
                     } catch (rowErr) {
-                        console.error(`[UPLOAD] Row ${ loopIndex } Error: `, rowErr.message);
+                        console.error(`[UPLOAD] Row ${loopIndex} Error: `, rowErr.message);
                     }
                 } else {
-                    console.warn(`[UPLOAD] Row ${ loopIndex } Invalid Address: ${ cleanWallet } `);
+                    console.warn(`[UPLOAD] Row ${loopIndex} Invalid Address: ${cleanWallet} `);
                 }
             } else {
-                console.warn(`[UPLOAD] Row ${ loopIndex } Missing Data: `, row);
+                console.warn(`[UPLOAD] Row ${loopIndex} Missing Data: `, row);
             }
         }
 
-        console.log(`[UPLOAD] Finished Loop.ValidTxs: ${ validTxs } `);
+        console.log(`[UPLOAD] Finished Loop.ValidTxs: ${validTxs} `);
 
         if (validTxs === 0) {
             const foundKeys = data.length > 0 ? Object.keys(data[0]).join(', ') : "Ninguna (Archivo vacío)";
-            throw new Error(`No se encontraron transacciones válidas.Columnas detectadas: [${ foundKeys }].Se busca: 'Wallet' y 'Amount'.`);
+            throw new Error(`No se encontraron transacciones válidas.Columnas detectadas: [${foundKeys}].Se busca: 'Wallet' y 'Amount'.`);
         }
 
         // Update Batch Totals and FULLY RESET status/stats for new file
@@ -622,15 +623,15 @@ app.get('/api/batches/:id/transactions', async (req, res) => {
         let paramIdx = 2;
 
         if (wallet) {
-            query += ` AND wallet_address_to ILIKE $${ paramIdx } `;
-            countQuery += ` AND wallet_address_to ILIKE $${ paramIdx } `;
-            params.push(`% ${ wallet }% `); // Partial match
+            query += ` AND wallet_address_to ILIKE $${paramIdx} `;
+            countQuery += ` AND wallet_address_to ILIKE $${paramIdx} `;
+            params.push(`% ${wallet}% `); // Partial match
             paramIdx++;
         }
 
         if (status) {
-            query += ` AND status = $${ paramIdx } `;
-            countQuery += ` AND status = $${ paramIdx } `;
+            query += ` AND status = $${paramIdx} `;
+            countQuery += ` AND status = $${paramIdx} `;
             params.push(status);
             paramIdx++;
         }
@@ -638,14 +639,14 @@ app.get('/api/batches/:id/transactions', async (req, res) => {
         if (amount) {
             // Amount in database is microUSDC (integer). Input is USDC (float).
             const amountMicro = Math.round(parseFloat(amount) * 1000000);
-            query += ` AND amount_usdc = $${ paramIdx } `;
-            countQuery += ` AND amount_usdc = $${ paramIdx } `;
+            query += ` AND amount_usdc = $${paramIdx} `;
+            countQuery += ` AND amount_usdc = $${paramIdx} `;
             params.push(amountMicro);
             paramIdx++;
         }
 
         // Add sorting and pagination
-        query += ` ORDER BY id ASC LIMIT $${ paramIdx } OFFSET $${ paramIdx + 1 } `;
+        query += ` ORDER BY id ASC LIMIT $${paramIdx} OFFSET $${paramIdx + 1} `;
 
         // Execute Queries
         const totalRes = await pool.query(countQuery, params.slice(0, paramIdx - 1)); // Exclude limit/offset params
@@ -703,7 +704,7 @@ r.id, r.address, r.private_key, r.status, r.last_activity, r.transactionhash_dep
                     private_key: undefined // Don't leak PK
                 };
             } catch (e) {
-                console.warn(`Failed to sync balance for ${ r.address }: `, e.message);
+                console.warn(`Failed to sync balance for ${r.address}: `, e.message);
                 return { ...r, balance: r.db_balance || "0", private_key: undefined };
             }
         }));
@@ -732,7 +733,7 @@ app.post('/api/batches/:id/return-funds', async (req, res) => {
 
         // Call the method physically (assuming updated RelayerEngine exposes it)
         const recovered = await engine.returnFundsToFaucet(batchId);
-        res.json({ success: true, message: `Recovery process completed.Recovered: ${ recovered || 0 } MATIC` });
+        res.json({ success: true, message: `Recovery process completed.Recovered: ${recovered || 0} MATIC` });
     } catch (err) {
         console.error("[Refund] Error:", err);
         res.status(500).json({ error: err.message });
@@ -743,8 +744,8 @@ const VERSION = "2.3.0";
 const PORT_LISTEN = process.env.PORT || 3000;
 
 app.listen(PORT_LISTEN, () => {
-    console.log(`Server is running on port ${ PORT_LISTEN } `);
-    console.log(`🚀 Version: ${ VERSION } (Self - Healing & Performance Record)`);
+    console.log(`Server is running on port ${PORT_LISTEN} `);
+    console.log(`🚀 Version: ${VERSION} (Self - Healing & Performance Record)`);
 });
 
 
