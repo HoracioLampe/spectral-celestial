@@ -35,15 +35,32 @@ const upload = multer({ dest: os.tmpdir() });
 // Get all batches
 app.get('/api/batches', async (req, res) => {
     try {
-        // Dynamic count of completed transactions for the list view
+        // Batches Pagination with Dynamic Stats
+        const limit = parseInt(req.query.limit) || 20;
+        const page = parseInt(req.query.page) || 1;
+        const offset = (page - 1) * limit;
+
+        const countRes = await pool.query('SELECT COUNT(*) FROM batches');
+        const totalItems = parseInt(countRes.rows[0].count);
+
         const result = await pool.query(`
             SELECT b.*, 
             (SELECT COUNT(*) FROM batch_transactions WHERE batch_id = b.id AND status = 'COMPLETED') as sent_transactions,
             (SELECT COUNT(*) FROM batch_transactions WHERE batch_id = b.id) as total_transactions
             FROM batches b 
             ORDER BY b.created_at DESC
-        `);
-        res.json(result.rows);
+            LIMIT $1 OFFSET $2
+        `, [limit, offset]);
+
+        res.json({
+            batches: result.rows,
+            pagination: {
+                totalItems,
+                currentPage: page,
+                totalPages: Math.ceil(totalItems / limit),
+                itemsPerPage: limit
+            }
+        });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }

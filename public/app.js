@@ -425,20 +425,47 @@ window.showBatchList = function () {
 };
 
 // Cargar lista al iniciar o cambiar tab
-async function fetchBatches() {
+// Pagination State
+let currentBatchPage = 1;
+const BATCCH_PAGE_SIZE = 10;
+
+// Cargar lista al iniciar o cambiar tab
+async function fetchBatches(page = 1) {
     try {
-        const res = await fetch('/api/batches');
-        const batches = await res.json();
+        const res = await fetch(`/api/batches?page=${page}&limit=${BATCCH_PAGE_SIZE}`);
+        const data = await res.json();
+
+        // Handle new response format { batches: [], pagination: {} }
+        const batches = data.batches || [];
+        const pagination = data.pagination || { currentPage: 1, totalPages: 1 };
+
         renderBatchesList(batches);
+        updatePaginationUI(pagination);
+        currentBatchPage = page;
     } catch (error) {
         console.error("Error fetching batches:", error);
+    }
+}
+
+function updatePaginationUI(pagination) {
+    const btnPrev = document.getElementById('btnPrevPage');
+    const btnNext = document.getElementById('btnNextPage');
+    const indicator = document.getElementById('pageIndicator');
+
+    if (btnPrev && btnNext && indicator) {
+        indicator.textContent = `Página ${pagination.currentPage} de ${pagination.totalPages}`;
+        btnPrev.disabled = pagination.currentPage <= 1;
+        btnPrev.onclick = () => fetchBatches(pagination.currentPage - 1);
+
+        btnNext.disabled = pagination.currentPage >= pagination.totalPages;
+        btnNext.onclick = () => fetchBatches(pagination.currentPage + 1);
     }
 }
 
 function renderBatchesList(batches) {
     batchesListBody.innerHTML = '';
     if (batches.length === 0) {
-        batchesListBody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding: 2rem;">No hay lotes creados. ¡Crea uno nuevo!</td></tr>';
+        batchesListBody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding: 2rem;">No hay lotes creados. ¡Crea uno nuevo!</td></tr>';
         return;
     }
 
@@ -458,10 +485,7 @@ function renderBatchesList(batches) {
             <td style="font-size: 0.8rem; opacity: 0.7;">${date}</td>
             <td>${statusBadge}</td>
             <td style="color:#4ade80;">${total}</td>
-            <td style="font-size: 0.8rem;">${b.start_time ? new Date(b.start_time).toLocaleString('es-AR', TIMEZONE_CONFIG) : '-'}</td>
-            <td style="font-size: 0.8rem;">${b.end_time ? new Date(b.end_time).toLocaleString('es-AR', TIMEZONE_CONFIG) : '-'}</td>
             <td style="color:#fbbf24; font-weight: bold;">${b.total_gas_used ? parseFloat(b.total_gas_used).toFixed(6) + ' MATIC' : '-'}</td>
-            <td style="font-family:monospace; color:#cbd5e1;">${b.execution_time || '-'}</td>
             <td>${progress}</td>
             <td>
                 <button class="btn-glass" style="padding: 0.3rem 0.8rem; font-size: 0.8rem;" onclick="openBatchDetail(${b.id})">

@@ -84,20 +84,24 @@
                                 <th>Fecha</th>
                                 <th>Estado</th>
                                 <th>Total USDC</th>
-                                <th>Inicio</th>
-                                <th>Fin</th>
                                 <th>Gas Total</th>
-                                <th>Duración</th>
                                 <th>Progreso</th>
                                 <th>Acción</th>
                             </tr>
                         </thead>
                         <tbody id="batchesListBody">
                             <tr>
-                                <td colspan="6" style="text-align:center;">Cargando lote...</td>
+                                <td colspan="9" style="text-align:center;">Cargando lote...</td>
                             </tr>
                         </tbody>
                     </table>
+                </div>
+                <!-- Pagination Controls -->
+                <div id="batchPagination"
+                    style="display: flex; justify-content: center; align-items: center; gap: 1rem; margin-top: 1rem;">
+                    <button id="btnPrevPage" class="btn-glass" disabled>◀ Anterior</button>
+                    <span id="pageIndicator" style="color: #94a3b8; font-size: 0.9rem;">Página 1</span>
+                    <button id="btnNextPage" class="btn-glass" disabled>Siguiente ▶</button>
                 </div>
             </div>
 
