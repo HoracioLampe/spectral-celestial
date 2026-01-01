@@ -30,27 +30,7 @@ const upload = multer({ dest: os.tmpdir() });
 // --- API Endpoints ---
 
 // Get Public Transactions History (Home)
-app.get('/api/transactions', async (req, res) => {
-    try {
-        const result = await pool.query('SELECT * FROM transactions ORDER BY timestamp DESC LIMIT 50');
-        res.json(result.rows);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
 
-app.post('/api/transactions', async (req, res) => {
-    try {
-        const { tx_hash, from_address, to_address, amount, gas_used } = req.body;
-        const result = await pool.query(
-            'INSERT INTO transactions (tx_hash, from_address, to_address, amount, gas_used) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-            [tx_hash, from_address, to_address, amount, gas_used]
-        );
-        res.json(result.rows[0]);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
 
 // Get all batches
 app.get('/api/batches', async (req, res) => {
