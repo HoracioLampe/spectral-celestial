@@ -18,7 +18,7 @@ async function rescueFunds() {
         ssl: { rejectUnauthorized: false }
     });
 
-    const providerUrl = "https://polygon-mainnet.core.chainstack.com/05aa9ef98aa83b585c14fa0438ed53a9";
+    const providerUrl = process.env.PROVIDER_URL || "https://polygon-mainnet.core.chainstack.com/05aa9ef98aa83b585c14fa0438ed53a9";
     const provider = new ethers.JsonRpcProvider(providerUrl, undefined, { staticNetwork: true });
 
     try {
@@ -75,7 +75,7 @@ async function rescueFunds() {
 
         let totalRescued = 0n;
         let successCount = 0;
-        const concurrency = 5;
+        const concurrency = 1; // Lowered to 1 to prevent ECONNRESET
         const queue = [...relayers];
         let processedCount = 0;
 
@@ -118,6 +118,8 @@ async function rescueFunds() {
 
                 processedCount++;
                 if (processedCount % 5 === 0) console.log(`📊 Progress: ${processedCount}/${relayers.length}`);
+
+                await new Promise(r => setTimeout(r, 1000)); // Delay to prevent RPS issues
             }
         };
 

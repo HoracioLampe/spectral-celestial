@@ -296,20 +296,36 @@ class RelayerEngine {
 
         try {
             await Promise.all(workerPromises);
+        } catch (err) {
+            console.error(`[Engine] ⚠️ Worker Swarm Error: ${err.message}`);
+        }
 
-            // 5. Retry Phase (Auto-Repair dropped txs)
+        // 5. Retry Phase (Auto-Repair dropped txs) - ALWAYS RUN
+        try {
             console.log(`[Engine] 🔄 Entering Retry Phase...`);
             await this.retryFailedTransactions(batchId, relayers);
         } catch (err) {
-            console.error(`[Engine] ⚠️ Worker Swarm Error: ${err.message}`);
-        } finally {
-            // G. Refund & Cleanup (ALWAYS RUN)
-            // G. Refund & Cleanup (ALWAYS RUN)
-            console.log(`[Engine] 🧹 Cleaning up & Returning Funds...`);
-            try {
-                await this.returnFundsToFaucet(relayers, batchId);
-            } catch (cleanupErr) {
-                console.error(`[Engine] ⚠️ Refund failed (ignoring to save metrics): ${cleanupErr.message}`);
+            console.error(`[Engine] ⚠️ Retry Phase Error: ${err.message}`);
+        }
+
+        // G. Refund & Cleanup (ALWAYS RUN)
+        try {
+            // CHECK: Only refund if ALL transactions are COMPLETED.
+            const pendingCountRes = await this.pool.query(
+                `SELECT COUNT(*) FROM batch_transactions WHERE batch_id = $1 AND status IN ('PENDING', 'FAILED', 'ENVIANDO', 'WAITING_CONFIRMATION')`,
+                [batchId]
+            );
+            const pendingCount = parseInt(pendingCountRes.rows[0].count);
+
+            if (pendingCount > 0) {
+                console.warn(`[Engine] ⚠️ Skipping Fund Recovery: ${pendingCount} transactions are still PENDING/FAILED.`);
+            } else {
+                console.log(`[Engine] 🧹 All clear. Cleaning up & Returning Funds...`);
+                try {
+                    await this.returnFundsToFaucet(relayers, batchId);
+                } catch (cleanupErr) {
+                    console.error(`[Engine] ⚠️ Refund failed (ignoring to save metrics): ${cleanupErr.message}`);
+                }
             }
 
             // --- CALCULATE FINAL METRICS ---
@@ -361,6 +377,8 @@ class RelayerEngine {
             );
 
             console.log(`✅ Batch ${batchId} Processing Complete. metrics saved.`);
+        } catch (finalErr) {
+            console.error(`[Engine] ⚠️ Final Cleanup/Metrics Error: ${finalErr.message}`);
         }
     }
 
@@ -568,7 +586,8 @@ class RelayerEngine {
                 );
             } else {
                 console.warn(`[Blockchain][Tx] FAILED ON-CHAIN: ${txResponse.hash}`);
-                await this.pool.query(`UPDATE batch_transactions SET status = 'FAILED', tx_hash = $1, updated_at = NOW() WHERE id = $2`, [txResponse.hash, txDB.id]);
+                const nextStatus = (txDB.retry_count >= 100) ? 'FAILED' : 'WAITING_CONFIRMATION';
+                await this.pool.query(`UPDATE batch_transactions SET status = $1, tx_hash = $2, updated_at = NOW() WHERE id = $3`, [nextStatus, txResponse.hash, txDB.id]);
             }
 
             await this.syncRelayerBalance(wallet.address);
@@ -589,7 +608,8 @@ class RelayerEngine {
             }
             console.error(`Tx Failed: ${txDB.id}`, e.message);
             // If it failed BEFORE receipt (e.g. estimation error, timeout), we have 0 gas
-            await this.pool.query(`UPDATE batch_transactions SET status = 'FAILED', updated_at = NOW() WHERE id = $1`, [txDB.id]);
+            const nextStatus = (txDB.retry_count >= 100) ? 'FAILED' : 'WAITING_CONFIRMATION';
+            await this.pool.query(`UPDATE batch_transactions SET status = $1, updated_at = NOW() WHERE id = $2`, [nextStatus, txDB.id]);
             return { success: false, error: e.message, gasUsed: 0n, effectiveGasPrice: 0n };
         }
     }
@@ -655,7 +675,8 @@ class RelayerEngine {
         // Reserve 0.2 MATIC for the distribution tx gas itself
         const reserveGas = ethers.parseEther("0.2");
 
-        let fundAmount = totalCostWei;
+        // DOUBLE GAS BUFFER as requested by user
+        let fundAmount = totalCostWei * 2n;
         let warningMsg = null;
 
         if (faucetBalance < (totalCostWei + reserveGas)) {
@@ -833,10 +854,10 @@ class RelayerEngine {
         const MAX_RETRIES = RelayerEngine.MAX_RETRIES || 1000;
 
         for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-            // Find FAILED/PENDING transactions
+            // Find FAILED/PENDING/WAITING transactions
             const failedRes = await this.pool.query(
-                `SELECT * FROM batch_transactions WHERE batch_id = $1 AND status IN ('FAILED', 'PENDING') AND retry_count < $2`,
-                [batchId, MAX_RETRIES]
+                `SELECT * FROM batch_transactions WHERE batch_id = $1 AND status IN ('FAILED', 'PENDING', 'WAITING_CONFIRMATION') AND retry_count < $2`,
+                [batchId, 100]
             );
 
             if (failedRes.rows.length === 0) {
@@ -858,7 +879,17 @@ class RelayerEngine {
                     const relayer = shuffledRelayers[(i + idx) % shuffledRelayers.length];
                     return (async () => {
                         await this.pool.query(`UPDATE batch_transactions SET retry_count = retry_count + 1 WHERE id = $1`, [tx.id]);
-                        await this.processTransaction(relayer, tx, true);
+                        const res = await this.processTransaction(relayer, tx, true);
+
+                        // TRACK GAS for retries
+                        if (res.gasUsed && res.effectiveGasPrice) {
+                            const cost = res.gasUsed * res.effectiveGasPrice;
+                            const costMatic = ethers.formatEther(cost);
+                            await this.pool.query(
+                                `UPDATE relayers SET gas_cost = COALESCE(gas_cost::numeric, 0) + $1 WHERE address = $2 AND batch_id = $3`,
+                                [costMatic, relayer.address, batchId]
+                            );
+                        }
                     })();
                 });
                 await Promise.all(tasks);
