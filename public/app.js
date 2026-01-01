@@ -214,7 +214,21 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (landingSection) landingSection.classList.add('hidden');
         if (appLayout) appLayout.classList.remove('hidden');
 
-        fetchBalances();
+        // Initialize Web3 if available
+        if (window.ethereum) {
+            provider = new ethers.providers.Web3Provider(window.ethereum);
+            signer = provider.getSigner();
+
+            // Update UI elements
+            const btnConnect = document.getElementById('btnConnect');
+            if (btnConnect) btnConnect.innerHTML = "🔗 Conectado";
+            const walletInfo = document.getElementById('walletInfo');
+            if (walletInfo) walletInfo.classList.remove('hidden');
+            const userAddrSpan = document.getElementById('userAddress');
+            if (userAddrSpan) userAddrSpan.textContent = `${userAddress.substring(0, 6)}...${userAddress.substring(38)}`;
+
+            fetchBalances();
+        }
         fetchBatches();
     } else {
         // Just load batches for context
@@ -272,6 +286,10 @@ function initDOMElements() {
 }
 
 function attachEventListeners() {
+    const btnLogout = document.getElementById('btnLogout');
+    if (btnLogout) btnLogout.addEventListener('click', logout);
+
+    // Filter toggle
     if (window.btnConnect) window.btnConnect.onclick = connectWallet;
     if (window.btnDisconnect) window.btnDisconnect.onclick = disconnectWallet;
 }
@@ -284,20 +302,27 @@ function attachEventListeners() {
 
 // Event listeners are now attached in attachEventListeners() called from DOMContentLoaded
 
-function disconnectWallet() {
-    walletInfo.classList.add('hidden');
-    btnConnect.style.display = 'block';
+function logout() {
+    console.log("🔌 Cerrando sesión...");
+    localStorage.removeItem('jwt_token');
+    localStorage.removeItem('user_address');
+    AUTH_TOKEN = null;
     userAddress = null;
-    signer = null;
-    provider = null;
-    localStorage.setItem('forceWalletSelect', 'true');
-    console.log("🔌 Desconectado (Simulado).");
+    location.reload(); // Simplest way to reset everything and show landing
 }
 
 async function connectWallet() {
     if (!window.ethereum) return alert("⚠️ Instala MetaMask");
 
+    const btnEnter = document.getElementById('btnEnterApp');
+    const originalText = btnEnter ? btnEnter.innerHTML : "";
+
     try {
+        if (btnEnter) {
+            btnEnter.disabled = true;
+            btnEnter.innerHTML = "<span>⏳</span> Autenticando...";
+        }
+
         const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
         userAddress = accounts[0];
         provider = new ethers.providers.Web3Provider(window.ethereum);
@@ -337,17 +362,20 @@ async function connectWallet() {
             // --- TRANSITION TO APP ---
             const landingSection = document.getElementById('landingSection');
             const appLayout = document.getElementById('appLayout');
-            if (landingSection) landingSection.style.transition = "opacity 0.5s ease";
-            if (landingSection) landingSection.style.opacity = "0";
-            setTimeout(() => {
-                if (landingSection) landingSection.classList.add('hidden');
-                if (appLayout) {
-                    appLayout.classList.remove('hidden');
-                    appLayout.style.opacity = "0";
-                    appLayout.style.transition = "opacity 0.5s ease";
-                    setTimeout(() => appLayout.style.opacity = "1", 50);
-                }
-            }, 500);
+
+            if (landingSection) {
+                landingSection.style.transition = "opacity 0.5s ease";
+                landingSection.style.opacity = "0";
+                setTimeout(() => {
+                    landingSection.classList.add('hidden');
+                    if (appLayout) {
+                        appLayout.classList.remove('hidden');
+                        appLayout.style.opacity = "0";
+                        appLayout.style.transition = "opacity 0.8s ease";
+                        setTimeout(() => appLayout.style.opacity = "1", 50);
+                    }
+                }, 500);
+            }
 
             const btnConnect = document.getElementById('btnConnect');
             if (btnConnect) btnConnect.innerHTML = "🔗 Conectado";
@@ -357,17 +385,22 @@ async function connectWallet() {
             if (userAddrSpan) userAddrSpan.textContent = `${userAddress.substring(0, 6)}...${userAddress.substring(38)}`;
 
             fetchBalances();
-            fetchBatches(); // Reload batches with filtered view
+            fetchBatches();
 
             window.ethereum.on('accountsChanged', () => location.reload());
             window.ethereum.on('chainChanged', () => location.reload());
         } else {
-            throw new Error(authData.error || "Verification failed");
+            throw new Error(authData.error || "Error de verificación SIWE");
         }
-
-    } catch (err) {
-        console.error("Connection error:", err);
-        if (err.code !== 4001) alert("Error al conectar: " + err.message);
+    } catch (error) {
+        console.error(error);
+        if (error.code !== 4001) {
+            alert("Error: " + error.message);
+        }
+        if (btnEnter) {
+            btnEnter.disabled = false;
+            btnEnter.innerHTML = originalText;
+        }
     }
 }
 
