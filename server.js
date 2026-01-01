@@ -689,25 +689,35 @@ r.id, r.address, r.private_key, r.status, r.last_activity, r.transactionhash_dep
         const providerUrl = process.env.PROVIDER_URL || "https://polygon-mainnet.core.chainstack.com/05aa9ef98aa83b585c14fa0438ed53a9";
         const provider = new ethers.JsonRpcProvider(providerUrl);
 
-        const updatedRelayers = await Promise.all(relayers.map(async (r) => {
-            try {
-                // Fetch live balance
-                const balWei = await provider.getBalance(r.address);
-                const balFormatted = ethers.formatEther(balWei);
+        // Throttled Live Balance Check (Chunk Size: 5)
+        const CHUNK_SIZE = 5;
+        const updatedRelayers = [];
 
-                // Update DB async (fire and forget)
-                pool.query('UPDATE relayers SET last_balance = $1, last_activity = NOW() WHERE id = $2', [balFormatted, r.id]).catch(console.error);
+        for (let i = 0; i < relayers.length; i += CHUNK_SIZE) {
+            const chunk = relayers.slice(i, i + CHUNK_SIZE);
+            const chunkResults = await Promise.all(chunk.map(async (r) => {
+                try {
+                    // Fetch live balance
+                    const balWei = await provider.getBalance(r.address);
+                    const balFormatted = ethers.formatEther(balWei);
 
-                return {
-                    ...r,
-                    balance: balFormatted, // Override with live data
-                    private_key: undefined // Don't leak PK
-                };
-            } catch (e) {
-                console.warn(`Failed to sync balance for ${r.address}: `, e.message);
-                return { ...r, balance: r.db_balance || "0", private_key: undefined };
-            }
-        }));
+                    // Update DB async (fire and forget)
+                    pool.query('UPDATE relayers SET last_balance = $1, last_activity = NOW() WHERE id = $2', [balFormatted, r.id]).catch(console.error);
+
+                    return {
+                        ...r,
+                        balance: balFormatted, // Override with live data
+                        private_key: undefined // Don't leak PK
+                    };
+                } catch (e) {
+                    console.warn(`Failed to sync balance for ${r.address}: `, e.message);
+                    return { ...r, balance: r.db_balance || "0", private_key: undefined };
+                }
+            }));
+            updatedRelayers.push(...chunkResults);
+            // Small delay between chunks to be nice to the RPC
+            if (i + CHUNK_SIZE < relayers.length) await new Promise(resolve => setTimeout(resolve, 200));
+        }
 
         res.json(updatedRelayers);
     } catch (err) {
