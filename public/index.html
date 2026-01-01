@@ -283,7 +283,7 @@
         </div>
         <!-- Grilla Detalle -->
         <!-- Grilla Detalle (HIDDEN as per request) -->
-        <div class="top-bar hidden" style="margin-top: 2rem; flex-wrap: wrap; gap: 1rem;">
+        <div id="txDetailSection" class="top-bar hidden" style="margin-top: 2rem; flex-wrap: wrap; gap: 1rem;">
             <h3>📋 Detalle de Transacciones</h3>
             <div style="display: flex; gap: 0.5rem; flex-grow: 1; justify-content: flex-end;">
                 <input type="text" id="filterWallet" placeholder="Filtrar por Wallet..." class="input-glass"
@@ -306,7 +306,7 @@
                     style="margin-left: 10px; align-self: center; font-size: 0.9rem; color: #a78bfa;"></span>
             </div>
         </div>
-        <div class="table-container hidden">
+        <div id="txTableContainer" class="table-container hidden">
             <table id="batchTable">
                 <thead>
                     <tr>
@@ -327,7 +327,7 @@
         </div>
 
         <!-- Relayer Balances Table (Integrated) -->
-        <div class="hidden"
+        <div id="relayerGridSection" class="hidden"
             style="margin-top: 2.5rem; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 1.5rem;">
             <div class="top-bar">
                 <h3>⚡ Balances de Relayers</h3>

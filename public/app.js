@@ -577,10 +577,19 @@ window.openBatchDetail = async function (id) {
     if (document.getElementById('batchFunderAddress')) document.getElementById('batchFunderAddress').value = "";
     if (document.getElementById('merkleFounderBalance')) document.getElementById('merkleFounderBalance').textContent = "---";
 
-    // Added: Clear Filters UI
+    // Clear Filters UI
     if (document.getElementById('filterWallet')) document.getElementById('filterWallet').value = '';
     if (document.getElementById('filterAmount')) document.getElementById('filterAmount').value = '';
     if (document.getElementById('filterStatus')) document.getElementById('filterStatus').value = '';
+
+    // SHOW DETAILS SECTIONS (Unhide)
+    const txDetail = document.getElementById('txDetailSection');
+    const txContainer = document.getElementById('txTableContainer');
+    const relayerSection = document.getElementById('relayerGridSection');
+
+    if (txDetail) txDetail.classList.remove('hidden');
+    if (txContainer) txContainer.classList.remove('hidden');
+    if (relayerSection) relayerSection.classList.remove('hidden');
 
     try {
         const res = await fetch(`/api/batches/${id}`);
@@ -1198,10 +1207,10 @@ async function runMerkleTest() {
     const verifyLabel = document.getElementById('merkleVerifyLabel');
 
     // 1. Fetch Sample if needed (Server-Side Fix)
-    let testTransactions = allBatchTransactions;
+    let testTransactions = typeof allBatchTransactions !== 'undefined' ? allBatchTransactions : [];
+
     if (!testTransactions || testTransactions.length === 0) {
-        // Fetch a small random sample from server (using existing pagination endpoint or just page 1)
-        // For robustness, let's just fetch page 1. It's enough for a test.
+        // Fetch a small random sample from server
         try {
             if (status) status.textContent = "⏳ Obteniendo muestra del servidor...";
             const res = await fetch(`/api/batches/${currentBatchId}/transactions?page=1&limit=100`);
