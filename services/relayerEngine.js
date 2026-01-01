@@ -871,7 +871,7 @@ class RelayerEngine {
             const shuffledRelayers = [...relayers].sort(() => Math.random() - 0.5);
 
             // Distribute reprocessing among relayers with THROTTLING
-            const CONCURRENCY = 5;
+            const CONCURRENCY = 50; // Increased from 5 to 50 for max speed (1 batch = 50 tx)
             for (let i = 0; i < failedRes.rows.length; i += CONCURRENCY) {
                 const chunk = failedRes.rows.slice(i, i + CONCURRENCY);
                 const tasks = chunk.map((tx, idx) => {

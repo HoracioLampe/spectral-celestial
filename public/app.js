@@ -990,23 +990,29 @@ function renderBatchTransactions() {
         let realVal = tx.amount_transferred ? parseFloat(tx.amount_transferred) : 0;
         const realDisplay = realVal > 0 ? (realVal / 1000000).toFixed(6) : '-';
 
+        let badgeColor = '#3b82f6'; // Default Blue (PENDING/SENDING_RPC)
+        if (tx.status === 'COMPLETED') badgeColor = '#059669'; // Green
+        if (tx.status === 'FAILED') badgeColor = '#ef4444'; // Red
+        if (tx.status === 'WAITING_CONFIRMATION') badgeColor = '#d97706'; // Amber/Dark Orange
+        if (tx.status === 'ENVIANDO') badgeColor = '#8b5cf6'; // Purple
+
         tr.innerHTML = `
-            <td style="opacity: 0.7;">${tx.transaction_reference || '-'}</td>
-            <td style="font-family: monospace; display: flex; align-items: center; gap: 0.5rem;">
-                <a href="${scanUrl}" target="_blank" class="hash-link" title="Ver en PolygonScan">
-                    ${shortWallet} ↗️
-                </a>
-                <button class="btn-icon" onclick="copyToClipboard('${tx.wallet_address_to}')" title="Copiar Dirección">
-                    📋
-                </button>
-            </td>
-            <td style="color: #4ade80; font-weight: bold;">$${usdcDisplay}</td>
-            <td style="color: #fbbf24; font-weight: bold;">${realDisplay !== '-' ? '$' + realDisplay : '-'}</td>
-            <td style="font-size: 0.85rem; opacity: 0.7;" title="${tx.tx_hash || ''}">
-                ${tx.tx_hash ? `<a href="https://polygonscan.com/tx/${tx.tx_hash}" target="_blank" class="hash-link">${tx.tx_hash.substring(0, 10)}...</a>` : '-'}
-            </td>
-            <td><span class="badge" style="background: #3b82f6;">${tx.status}</span></td>
-        `;
+                <td style="opacity: 0.7;">${tx.transaction_reference || '-'}</td>
+                <td style="font-family: monospace; display: flex; align-items: center; gap: 0.5rem;">
+                    <a href="${scanUrl}" target="_blank" class="hash-link" title="Ver en PolygonScan">
+                        ${shortWallet} ↗️
+                    </a>
+                    <button class="btn-icon" onclick="copyToClipboard('${tx.wallet_address_to}')" title="Copiar Dirección">
+                        📋
+                    </button>
+                </td>
+                <td style="color: #4ade80; font-weight: bold;">$${usdcDisplay}</td>
+                <td style="color: #fbbf24; font-weight: bold;">${realDisplay !== '-' ? '$' + realDisplay : '-'}</td>
+                <td style="font-size: 0.85rem; opacity: 0.7;" title="${tx.tx_hash || ''}">
+                    ${tx.tx_hash ? `<a href="https://polygonscan.com/tx/${tx.tx_hash}" target="_blank" class="hash-link">${tx.tx_hash.substring(0, 10)}...</a>` : '-'}
+                </td>
+                <td><span class="badge" style="background: ${badgeColor};">${tx.status}</span></td>
+            `;
         batchTableBody.appendChild(tr);
     });
 

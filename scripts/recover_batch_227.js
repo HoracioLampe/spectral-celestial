@@ -9,7 +9,7 @@ const pool = new Pool({
 });
 
 const RPC_URL = process.env.PROVIDER_URL || "https://polygon-mainnet.core.chainstack.com/05aa9ef98aa83b585c14fa0438ed53a9";
-const BATCH_ID = 227;
+const BATCH_ID = 229;
 
 async function recover() {
     console.log(`🚑 STARTING RECOVERY FOR BATCH ${BATCH_ID}...`);
@@ -36,7 +36,7 @@ async function recover() {
         // 4. Reset Stuck 'ENVIANDO' or 'FAILED' or 'WAITING_CONFIRMATION' to 'PENDING'
         // Reset status FIRST so that distributeGasToRelayers sees the pending work!
         console.log("🔄 Resetting any stuck 'ENVIANDO' or 'FAILED' or 'WAITING_CONFIRMATION' transactions...");
-        await pool.query(`UPDATE batch_transactions SET status = 'PENDING' WHERE batch_id = $1 AND status IN ('ENVIANDO', 'FAILED', 'WAITING_CONFIRMATION')`, [BATCH_ID]);
+        await pool.query(`UPDATE batch_transactions SET status = 'PENDING', retry_count = 0 WHERE batch_id = $1 AND status IN ('ENVIANDO', 'FAILED', 'WAITING_CONFIRMATION', 'PENDING')`, [BATCH_ID]);
 
         // 5. Force Refunding (Distribute Gas)
         // Now that status is PENDING, estimation will work.
