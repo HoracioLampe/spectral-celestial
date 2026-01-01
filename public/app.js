@@ -1681,7 +1681,7 @@ async function executeDistribution() {
             if (window.balanceInterval) clearInterval(window.balanceInterval);
             window.balanceInterval = setInterval(() => {
                 pollBatchProgress(currentBatchId);
-            }, 15000);
+            }, 3000);
         } else {
             throw new Error(res.error || "Error en ejecución");
         }
@@ -2145,10 +2145,10 @@ setInterval(() => {
     // Only poll here if we are NOT in "active processing" mode (window.balanceInterval)
     // to avoid double-polling.
     if (currentBatchId && !window.balanceInterval) {
-        console.log("[Auto-Refresh] Updating Relayer Grid (15s)...");
+        console.log("[Auto-Refresh] Updating Relayer Grid (5s)...");
         refreshRelayerBalances();
     }
-}, 15000);
+}, 5000);
 
 // Initial calls
 checkFaucetStatus();

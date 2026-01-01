@@ -203,9 +203,24 @@ app.post('/api/batches/:id/upload', upload.single('file'), async (req, res) => {
             throw new Error(`No se encontraron transacciones válidas. Columnas detectadas: [${foundKeys}]. Se busca: 'Wallet' y 'Amount'.`);
         }
 
-        // Update Batch Totals and RESET status/merkle for new file
+        // CLEAR OLD TRANSACTIONS (Fix for "Reset" issue)
+        await client.query('DELETE FROM batch_transactions WHERE batch_id = $1', [batchId]);
+
+        // Update Batch Totals and FULLY RESET status/stats for new file
         const updateRes = await client.query(
-            'UPDATE batches SET total_transactions = $1, total_usdc = $2, status = $3, merkle_root = NULL, funder_address = NULL WHERE id = $4 RETURNING *',
+            `UPDATE batches SET 
+                total_transactions = $1, 
+                total_usdc = $2, 
+                status = $3, 
+                merkle_root = NULL, 
+                funder_address = NULL,
+                total_gas_used = NULL,
+                execution_time = NULL,
+                start_time = NULL,
+                end_time = NULL,
+                funding_amount = NULL,
+                refund_amount = NULL
+            WHERE id = $4 RETURNING *`,
             [validTxs, totalUSDC.toString(), 'READY', batchId]
         );
         console.log("[UPLOAD] Batch Updated successfully");
@@ -421,26 +436,7 @@ app.post('/api/batches/:id/process', async (req, res) => {
     }
 });
 
-// Get relayer balances for a batch
-app.get('/api/relayers/:batchId', async (req, res) => {
-    try {
-        const batchId = parseInt(req.params.batchId);
-        const relayerRes = await pool.query('SELECT id, address, last_activity, last_balance, transactionhash_deposit FROM relayers WHERE batch_id = $1 ORDER BY id ASC', [batchId]);
 
-        const balances = relayerRes.rows.map(r => ({
-            id: r.id,
-            address: r.address,
-            balance: r.last_balance || "0",
-            lastActivity: r.last_activity,
-            transactionHashDeposit: r.transactionhash_deposit
-        }));
-
-        res.json(balances);
-    } catch (err) {
-        console.error('Error fetching relayer balances:', err);
-        res.status(500).json({ error: err.message });
-    }
-});
 
 const QUICKNODE_URL = "https://polygon-mainnet.core.chainstack.com/05aa9ef98aa83b585c14fa0438ed53a9";
 
