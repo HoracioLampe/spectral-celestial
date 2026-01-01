@@ -476,6 +476,57 @@ const merkleResultFunder = document.getElementById('merkleResultFunder');
 
 const batchTableBody = document.getElementById('batchTableBody');
 
+// Upload Excel Logic
+async function uploadBatchFile() {
+    const fileInput = document.getElementById('batchFile');
+    const file = fileInput.files[0];
+    const status = document.getElementById('uploadStatus');
+
+    if (!file) {
+        alert("Por favor selecciona un archivo Excel (.xlsx)");
+        return;
+    }
+
+    if (!currentBatchId) {
+        alert("No hay lote seleccionado.");
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    if (status) {
+        status.textContent = "Subiendo y procesando...";
+        status.style.color = "#fbbf24";
+    }
+
+    try {
+        const res = await fetch(`/api/batches/${currentBatchId}/upload`, {
+            method: 'POST',
+            body: formData
+        });
+
+        const data = await res.json();
+
+        if (res.ok) {
+            if (status) {
+                status.textContent = "✅ Subida exitosa. Recargando...";
+                status.style.color = "#4ade80";
+            }
+            // Refresh details
+            await openBatchDetail(currentBatchId);
+        } else {
+            throw new Error(data.error || "Error al subir");
+        }
+    } catch (err) {
+        console.error(err);
+        if (status) {
+            status.textContent = `❌ Error: ${err.message}`;
+            status.style.color = "#ef4444";
+        }
+    }
+}
+
 // Event Listeners
 if (btnOpenBatchModal) btnOpenBatchModal.onclick = () => batchModal.classList.add('active');
 if (btnSaveBatch) btnSaveBatch.onclick = createBatch;
