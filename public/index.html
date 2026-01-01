@@ -40,330 +40,389 @@
         <div class="orb orb-3"></div>
     </div>
 
-    <header>
-        <div class="header-content">
-            <div class="logo-nav-group">
+    <!-- LANDING PAGE SECTION -->
+    <section id="landingSection" class="landing-page">
+        <div class="landing-content">
+            <header class="landing-header">
+                <img src="assets/logo_dappsfactory.png" alt="DappsFactory" class="logo-hero">
+            </header>
+
+            <main class="hero-section">
+                <div class="hero-text">
+                    <h1 class="glitch-text" data-text="Next-Gen Distro">Next-Gen USDC Distribution</h1>
+                    <p class="hero-subtitle">Gestión masiva de pagos con seguridad Merkle Tree y autenticación SIWE.
+                        Transparente, rápido y ultra-seguro.</p>
+
+                    <div class="hero-features">
+                        <div class="feature-tag"><span>🛡️</span> Merkle Proofs</div>
+                        <div class="feature-tag"><span>⚡</span> Global Payroll</div>
+                        <div class="feature-tag"><span>🦊</span> SIWE Auth</div>
+                    </div>
+
+                    <div class="hero-actions">
+                        <button id="btnEnterApp" class="btn btn-primary btn-hero">
+                            <span>🚀</span> Ingresar al Sistema
+                        </button>
+                    </div>
+                </div>
+
+                <div class="hero-visual">
+                    <div class="visual-card">
+                        <div class="card-glow"></div>
+                        <img src="assets/logo_dappsfactory.png" alt="Card" class="visual-img">
+                    </div>
+                </div>
+            </main>
+
+            <footer class="landing-footer">
+                <p>© 2026 DappsFactory IO. Protocolo de Distribución Descentralizada.</p>
+            </footer>
+        </div>
+    </section>
+
+    <!-- MAIN APP LAYOUT (Hidden until Auth) -->
+    <div id="appLayout" class="app-layout hidden">
+        <!-- SIDEBAR -->
+        <aside class="sidebar">
+            <div class="sidebar-top">
                 <div class="logo-container">
                     <img src="assets/logo_dappsfactory.png" alt="DappsFactory" class="logo-img">
                 </div>
-                <nav class="main-nav">
-                    <a href="#" class="nav-link">Dashboard</a>
-                    <a href="#" class="nav-link active">Transacciones</a>
+                <nav class="side-nav">
+                    <a href="#" class="nav-link">
+                        <span class="nav-icon">📊</span> Dashboard
+                    </a>
+                    <a href="#" class="nav-link active">
+                        <span class="nav-icon">📤</span> Transacciones
+                    </a>
                 </nav>
             </div>
 
-            <div class="wallet-controls">
+            <div class="sidebar-bottom">
                 <button id="themeToggle" class="theme-toggle" title="Cambiar Tema">
                     <span id="themeIcon">🌙</span>
                 </button>
                 <div id="walletInfo" class="wallet-info hidden">
-                    <span id="userAddress" class="badge-address">0x...</span>
+                    <div id="userAddress" class="badge-address">0x...</div>
                     <div class="balances">
-                        <span class="balance-item">💰 <span id="usdcBalance">0.00</span> USDC</span>
-                        <span class="balance-item">⛽ <span id="maticBalance">0.00</span> POL</span>
+                        <div class="balance-item">💰 <span id="usdcBalance">0.00</span></div>
+                        <div class="balance-item">⛽ <span id="maticBalance">0.00</span></div>
                     </div>
                 </div>
-                <button id="btnConnect" class="btn btn-glass">
-                    🦊 Conectar Wallet
+                <button id="btnConnect" class="btn btn-glass w-full">
+                    🦊 Conectar
                 </button>
             </div>
-        </div>
-    </header>
+        </aside>
 
-    <!-- MAIN CONTAINER -->
-    <main class="glass-panel">
+        <!-- CONTENT AREA -->
+        <div class="content-wrapper">
+            <header class="mobile-header">
+                <img src="assets/logo_dappsfactory.png" alt="Logo" class="logo-img-sm">
+                <button id="mobileMenuToggle" class="btn-icon">☰</button>
+            </header>
 
-        <!-- SECCIÓN LOTES (DEFAULT) -->
-        <div id="batchSection">
+            <!-- MAIN CONTAINER -->
+            <main class="glass-panel">
 
-            <!-- VISTA: LISTA DE LOTES -->
-            <div id="batchListView">
-                <div class="top-bar">
-                    <h2>📦 Mis Lotes de Envío</h2>
-                    <button id="btnOpenBatchModal" class="btn btn-primary">➕ Nuevo Lote</button>
+                <!-- SECCIÓN LOTES (DEFAULT) -->
+                <div id="batchSection">
+
+                    <!-- VISTA: LISTA DE LOTES -->
+                    <div id="batchListView">
+                        <div class="top-bar">
+                            <h2>📦 Mis Lotes de Envío</h2>
+                            <button id="btnOpenBatchModal" class="btn btn-primary">➕ Nuevo Lote</button>
+                        </div>
+                        <div class="table-container">
+                            <table id="batchesListTable">
+                                <thead>
+                                    <tr>
+                                        <th>Lote</th>
+                                        <th>Detalle</th>
+                                        <th>Descripción</th>
+                                        <th>Fecha</th>
+                                        <th>Estado</th>
+                                        <th>Total USDC</th>
+                                        <th>Gas Total</th>
+                                        <th>Progreso</th>
+                                        <th>Acción</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="batchesListBody">
+                                    <tr>
+                                        <td colspan="9" style="text-align:center;">Cargando lote...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <!-- Pagination Controls -->
+                        <div
+                            style="display: flex; justify-content: flex-end; align-items: center; margin-top: 1rem; gap: 0.5rem; color: #94a3b8; font-size: 0.9rem;">
+                            <button id="firstPage" class="btn-icon" title="Primera Página">⏪</button>
+                            <button id="prevPage" class="btn-icon" title="Anterior">◀</button>
+                            <span id="pageIndicator">Página 1 de 1</span>
+                            <button id="nextPage" class="btn-icon" title="Siguiente">▶</button>
+                            <button id="lastPage" class="btn-icon" title="Última Página">⏩</button>
+                        </div>
+                    </div>
+
+                    <!-- VISTA: DETALLE DE LOTE -->
+                    <div id="batchDetailView" class="hidden">
+                        <button class="btn-glass mb-3" onclick="showBatchList()">⬅️ Volver a Lista</button>
+
+                        <h2 id="detailBatchTitle">Lote #...</h2>
+                        <p id="detailBatchDesc" style="opacity: 0.8; margin-bottom: 1.5rem;">...</p>
+
+                        <!-- Stats Grid removido a pedido del usuario -->
+                        <!-- Stats Grid -->
+                        <div id="batchStatsContainer" class="stats-grid hidden"
+                            style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 2rem;">
+                            <div class="glass-panel"
+                                style="padding: 1.5rem; text-align: center; border: 1px solid rgba(255,255,255,0.1);">
+                                <h3 style="margin: 0 0 0.5rem 0; font-size: 1rem; opacity: 0.8;">💰 Monto Total</h3>
+                                <p id="detailTotalAmount"
+                                    style="font-size: 2rem; font-weight: bold; color: #4ade80; margin: 0;">$0.00</p>
+                            </div>
+                            <div class="glass-panel"
+                                style="padding: 1.5rem; text-align: center; border: 1px solid rgba(255,255,255,0.1);">
+                                <h3 style="margin: 0 0 0.5rem 0; font-size: 1rem; opacity: 0.8;">🔢 Total Transacciones
+                                </h3>
+                                <p id="detailTotalTx"
+                                    style="font-size: 2rem; font-weight: bold; color: #f472b6; margin: 0;">0
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- Carga Archivo (Solo si PREPARING) -->
+                        <div id="detailUploadContainer" class="transfer-board mb-3 hidden">
+                            <h3>📂 Cargar Excel (Detalle)</h3>
+                            <div style="display: flex; gap: 1rem; align-items: center;">
+                                <input type="file" id="batchFile" accept=".xlsx, .xls" class="input-glass">
+                                <button id="btnUploadBatch" class="btn btn-primary">Subir y Calcular 📤</button>
+                            </div>
+                            <p id="uploadStatus" class="status-text"></p>
+                        </div>
+
+                        <!-- Merkle Tree Section (Ready/Sent) -->
+                        <div id="merkleContainer" class="transfer-board mb-3 hidden"
+                            style="border-color: rgba(139, 92, 246, 0.3);">
+                            <h3>🌳 Merkle Tree Verification</h3>
+
+                            <div id="merkleInputZone">
+                                <label>Funder Wallet (Origen de Fondos)</label>
+                                <div class="funder-display-card"
+                                    style="margin-top: 0.75rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; background: var(--bg-card-hover); padding: 1rem; border-radius: var(--radius-md); border: 1px dashed var(--border-color);">
+                                    <div style="display: flex; align-items: center; gap: 0.75rem;">
+                                        <div class="avatar-circle"
+                                            style="width: 32px; height: 32px; border-radius: 50%; background: var(--accent-gradient); display: flex; align-items: center; justify-content: center; font-size: 1rem;">
+                                            🛡️</div>
+                                        <div>
+                                            <span id="displayFunderAddress"
+                                                style="font-family: monospace; font-weight: 600; color: var(--text-primary);">0x...</span>
+                                            <div style="font-size: 0.8rem; color: var(--text-secondary);">Balance: <span
+                                                    id="displayFunderBalance"
+                                                    style="color: var(--success); font-weight: 700;">0.00 USDC</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <button id="btnGenerateMerkle" class="btn btn-primary"
+                                        style="white-space: nowrap; height: 42px;">Generar Merkle Tree ⚡</button>
+                                </div>
+                            </div>
+
+                            <div id="merkleResultZone" class="hidden" style="margin-top: 1rem;">
+                                <label>Resumen de Funder y Lote:</label>
+                                <div
+                                    style="background: rgba(0,0,0,0.3); padding: 1rem; border-radius: 8px; border: 1px solid rgba(139, 92, 246, 0.3); font-size: 0.9rem;">
+                                    <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                                        <span style="color: #94a3b8;">Funder Wallet:</span>
+                                        <span id="merkleResultFunder"
+                                            style="color: #cbd5e1; font-family: monospace;">---</span>
+                                    </div>
+                                    <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                                        <span style="color: #94a3b8;">Balance Disponible:</span>
+                                        <span id="merkleResultBalance" style="color: #4ade80; font-weight: bold;">$0.00
+                                            USDC</span>
+                                    </div>
+                                    <div style="display: flex; justify-content: space-between;">
+                                        <span style="color: #94a3b8;">Allowance (Aprobado):</span>
+                                        <span id="merkleResultAllowance"
+                                            style="color: #fbbf24; font-weight: bold;">$0.00
+                                            USDC</span>
+                                    </div>
+                                </div>
+                                <div id="paymentTriggerZone" class="hidden"
+                                    style="margin-top: 1rem; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 1rem;">
+                                    <button id="btnExecuteBatch" class="btn btn-primary"
+                                        style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); width: 100%; font-size: 0.9rem; padding: 0.6rem;">
+                                        Disparar Pagos 🚀
+                                    </button>
+                                    <p id="signStatusHint"
+                                        style="font-size: 0.75rem; color: #94a3b8; margin-top: 0.4rem; text-align: center;">
+                                        Requiere firma EIP-712 del Funder
+                                    </p>
+
+                                    <!-- Progress Tracking UI -->
+                                    <div id="batchProgressZone" class="hidden" style="margin-top: 1rem;">
+                                        <div class="progress-container">
+                                            <div id="batchProgressBar" class="progress-bar"></div>
+                                        </div>
+                                        <div class="progress-stats">
+                                            <span id="batchProgressText">Procesando: 0 / 0</span>
+                                            <span id="batchProgressPercent">0%</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div style="margin-top: 1rem;">
+                                <label style="font-size: 0.8rem; opacity: 0.7;">Merkle Root:</label>
+                                <div
+                                    style="background: rgba(0,0,0,0.2); padding: 0.5rem; border-radius: 4px; font-family: monospace; font-size: 0.8rem; word-break: break-all; color: #a78bfa; border: 1px dashed rgba(167, 139, 250, 0.3);">
+                                    <span id="displayMerkleRoot">Not Generated</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Merkle Verification Tool -->
+                        <div id="merkleVerifyZone" class="hidden"
+                            style="margin-top: 1rem; padding: 1rem; border: 1px dashed rgba(167, 139, 250, 0.3); border-radius: 8px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <label id="merkleVerifyLabel" style="font-size: 0.9rem; color: #a78bfa;">🔬 Verificación
+                                    On-Chain (Muestreo
+                                    ---)</label>
+                                <button id="btnTestMerkle" class="btn-glass"
+                                    style="font-size: 0.8rem; border: 1px solid #a78bfa; color: #a78bfa;">
+                                    Ejecutar Test
+                                </button>
+                            </div>
+                            <p id="merkleTestStatus"
+                                style="font-size: 0.8rem; margin-top: 0.5rem; color: #94a3b8; min-height: 1.2em;"></p>
+                        </div>
+
+                        <!-- Relayer Controls (Execution Zone) - Hidden until Merkle is ready -->
+                        <div id="executionZone" class="hidden"
+                            style="margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid rgba(255,255,255,0.1);">
+                            <label style="color: #fcd34d;">🚀 Ejecución (Relayer System)</label>
+                            <div style="display: flex; gap: 1rem; align-items: flex-end; margin-top: 0.5rem;">
+                                <div>
+                                    <span style="font-size: 0.8rem; color: #94a3b8;">Potencia (Relayers):</span>
+                                    <select id="relayerCount" class="input-glass" style="width: 100px;">
+                                        <option value="1">1 (Safe)</option>
+                                        <option value="5" selected>5 (Default)</option>
+                                        <option value="10">10 (Fast)</option>
+                                        <option value="20">20 (Turbo)</option>
+                                        <option value="50">50 (High)</option>
+                                        <option value="100">100 (Máximo Absoluto)</option>
+                                    </select>
+                                </div>
+                                <button id="btnSetupRelayers" class="btn btn-primary"
+                                    style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);">
+                                    1. Preparar Relayers 🏗️
+                                </button>
+                                <div style="flex-grow: 1;"></div>
+                                <button onclick="openFaucetModal()" class="btn-glass"
+                                    style="border: 1px solid rgba(255,255,255,0.1); white-space: nowrap;">⚙️
+                                    Faucet</button>
+                            </div>
+                            <!-- Faucet Info Summary (Visible on Main Page) -->
+                            <div id="mainFaucetInfo" class="glass"
+                                style="margin-top: 0.75rem; padding: 0.5rem 1rem; border-radius: 8px; font-size: 0.85rem; display: flex; justify-content: space-between; align-items: center; border: 1px solid rgba(255,255,255,0.05);">
+                                <div style="display: flex; gap: 0.75rem; align-items: center;">
+                                    <span style="color: #94a3b8;">Faucet:</span>
+                                    <a id="mainFaucetLink" href="#" target="_blank" class="hash-link"
+                                        style="color: #60a5fa; font-family: monospace;">Cargando...</a>
+                                    <button onclick="copyFaucetAddress()" class="btn-icon"
+                                        title="Copiar Dirección">📋</button>
+                                </div>
+                                <div style="display: flex; gap: 0.75rem;">
+                                    <span style="color: #94a3b8;">Balance:</span>
+                                    <span id="mainFaucetBalance" style="color: #4ade80; font-weight: bold;">---</span>
+                                </div>
+                            </div>
+                            <div
+                                style="display: flex; align-items: center; justify-content: space-between; margin-top: 0.5rem;">
+                                <p id="processStatus" style="font-size: 0.85rem; color: #cbd5e1; margin: 0;"></p>
+                                <span id="processTimer"
+                                    style="font-family: monospace; font-size: 0.9rem; color: #f59e0b; font-weight: bold; background: rgba(0,0,0,0.2); padding: 2px 6px; border-radius: 4px; display: none;">00:00:00</span>
+                            </div>
+                        </div>
+                    </div>
+                    <p id="merkleStatus" class="status-text"></p>
                 </div>
-                <div class="table-container">
-                    <table id="batchesListTable">
+                <!-- Grilla Detalle -->
+                <!-- Grilla Detalle (HIDDEN as per request) -->
+                <div id="txDetailSection" class="top-bar hidden" style="margin-top: 2rem; flex-wrap: wrap; gap: 1rem;">
+                    <h3>📋 Detalle de Transacciones</h3>
+                    <div style="display: flex; gap: 0.5rem; flex-grow: 1; justify-content: flex-end;">
+                        <input type="text" id="filterWallet" placeholder="Filtrar por Wallet..." class="input-glass"
+                            style="font-size: 0.8rem; padding: 0.4rem; width: 150px;">
+                        <input type="number" id="filterAmount" placeholder="Monto USDC..." class="input-glass"
+                            style="font-size: 0.8rem; padding: 0.4rem; width: 100px;">
+                        <select id="filterStatus" class="input-glass" style="font-size: 0.8rem; padding: 0.4rem;">
+                            <option value="">Todos los Estados</option>
+                            <option value="PENDING">PENDING</option>
+                            <option value="ENVIANDO">ENVIANDO</option>
+                            <option value="COMPLETED">COMPLETED</option>
+                            <option value="FAILED">FAILED</option>
+                            <option value="WAITING_CONFIRMATION">WAITING_CONFIRMATION</option>
+                        </select>
+                        <button onclick="applyFilters()" class="btn-primary"
+                            style="font-size: 0.8rem; padding: 0.4rem 0.8rem;">🔍 Filtrar</button>
+                        <button onclick="clearFilters()" class="btn-glass"
+                            style="font-size: 0.8rem; padding: 0.4rem 0.8rem;">✖️</button>
+                        <span id="filterResultCount"
+                            style="margin-left: 10px; align-self: center; font-size: 0.9rem; color: #a78bfa;"></span>
+                    </div>
+                </div>
+                <div id="txTableContainer" class="table-container hidden">
+                    <table id="batchTable">
                         <thead>
                             <tr>
-                                <th>Lote</th>
-                                <th>Detalle</th>
-                                <th>Descripción</th>
-                                <th>Fecha</th>
+                                <th>ID Ref</th>
+                                <th>Wallet</th>
+                                <th>USDC (Plan)</th>
+                                <th>Enviado</th>
+                                <th>Hash (Ref)</th>
                                 <th>Estado</th>
-                                <th>Total USDC</th>
-                                <th>Gas Total</th>
-                                <th>Progreso</th>
-                                <th>Acción</th>
                             </tr>
                         </thead>
-                        <tbody id="batchesListBody">
+                        <tbody id="batchTableBody">
                             <tr>
-                                <td colspan="9" style="text-align:center;">Cargando lote...</td>
+                                <td colspan="5" style="text-align: center;">Carga un Excel para ver el detalle</td>
                             </tr>
                         </tbody>
                     </table>
                 </div>
-                <!-- Pagination Controls -->
-                <div
-                    style="display: flex; justify-content: flex-end; align-items: center; margin-top: 1rem; gap: 0.5rem; color: #94a3b8; font-size: 0.9rem;">
-                    <button id="firstPage" class="btn-icon" title="Primera Página">⏪</button>
-                    <button id="prevPage" class="btn-icon" title="Anterior">◀</button>
-                    <span id="pageIndicator">Página 1 de 1</span>
-                    <button id="nextPage" class="btn-icon" title="Siguiente">▶</button>
-                    <button id="lastPage" class="btn-icon" title="Última Página">⏩</button>
+
+                <!-- Relayer Balances Table (Integrated) -->
+                <div id="relayerGridSection" class="hidden"
+                    style="margin-top: 2.5rem; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 1.5rem;">
+                    <div class="top-bar">
+                        <h3>⚡ Balances de Relayers</h3>
+                    </div>
+                    <div id="relayerGridInfo" style="margin-bottom: 0.5rem;"></div>
+                    <table id="relayerBalancesTable" class="glass-panel"
+                        style="width:100%; border-collapse: collapse; background: rgba(0,0,0,0.2);">
+                        <thead>
+                            <tr style="border-bottom: 1px solid rgba(255,255,255,0.1);">
+                                <th style="text-align:left; padding:0.75rem; width: 50px;">ID</th>
+                                <th style="text-align:left; padding:0.75rem;">Dirección Relayer</th>
+                                <th style="text-align:left; padding:0.75rem;">Balance MATIC</th>
+                                <th style="text-align:left; padding:0.75rem;">Última Actividad</th>
+                                <th style="text-align:center; padding:0.75rem;">Cant. Txs</th>
+                            </tr>
+                        </thead>
+                        <tbody id="relayerBalancesTableBody">
+                            <tr>
+                                <td colspan="4" style="text-align:center; padding:1.5rem; opacity: 0.6;">Cargando
+                                    balances...</td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
-            </div>
-
-            <!-- VISTA: DETALLE DE LOTE -->
-            <div id="batchDetailView" class="hidden">
-                <button class="btn-glass mb-3" onclick="showBatchList()">⬅️ Volver a Lista</button>
-
-                <h2 id="detailBatchTitle">Lote #...</h2>
-                <p id="detailBatchDesc" style="opacity: 0.8; margin-bottom: 1.5rem;">...</p>
-
-                <!-- Stats Grid removido a pedido del usuario -->
-                <!-- Stats Grid -->
-                <div id="batchStatsContainer" class="stats-grid hidden"
-                    style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 2rem;">
-                    <div class="glass-panel"
-                        style="padding: 1.5rem; text-align: center; border: 1px solid rgba(255,255,255,0.1);">
-                        <h3 style="margin: 0 0 0.5rem 0; font-size: 1rem; opacity: 0.8;">💰 Monto Total</h3>
-                        <p id="detailTotalAmount"
-                            style="font-size: 2rem; font-weight: bold; color: #4ade80; margin: 0;">$0.00</p>
-                    </div>
-                    <div class="glass-panel"
-                        style="padding: 1.5rem; text-align: center; border: 1px solid rgba(255,255,255,0.1);">
-                        <h3 style="margin: 0 0 0.5rem 0; font-size: 1rem; opacity: 0.8;">🔢 Total Transacciones</h3>
-                        <p id="detailTotalTx" style="font-size: 2rem; font-weight: bold; color: #f472b6; margin: 0;">0
-                        </p>
-                    </div>
-                </div>
-
-                <!-- Carga Archivo (Solo si PREPARING) -->
-                <div id="detailUploadContainer" class="transfer-board mb-3 hidden">
-                    <h3>📂 Cargar Excel (Detalle)</h3>
-                    <div style="display: flex; gap: 1rem; align-items: center;">
-                        <input type="file" id="batchFile" accept=".xlsx, .xls" class="input-glass">
-                        <button id="btnUploadBatch" class="btn btn-primary">Subir y Calcular 📤</button>
-                    </div>
-                    <p id="uploadStatus" class="status-text"></p>
-                </div>
-
-                <!-- Merkle Tree Section (Ready/Sent) -->
-                <div id="merkleContainer" class="transfer-board mb-3 hidden"
-                    style="border-color: rgba(139, 92, 246, 0.3);">
-                    <h3>🌳 Merkle Tree Verification</h3>
-
-                    <div id="merkleInputZone">
-                        <label>Funder Wallet (Origen de Fondos)</label>
-                        <div class="funder-display-card"
-                            style="margin-top: 0.75rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; background: var(--bg-card-hover); padding: 1rem; border-radius: var(--radius-md); border: 1px dashed var(--border-color);">
-                            <div style="display: flex; align-items: center; gap: 0.75rem;">
-                                <div class="avatar-circle"
-                                    style="width: 32px; height: 32px; border-radius: 50%; background: var(--accent-gradient); display: flex; align-items: center; justify-content: center; font-size: 1rem;">
-                                    🛡️</div>
-                                <div>
-                                    <span id="displayFunderAddress"
-                                        style="font-family: monospace; font-weight: 600; color: var(--text-primary);">0x...</span>
-                                    <div style="font-size: 0.8rem; color: var(--text-secondary);">Balance: <span
-                                            id="displayFunderBalance"
-                                            style="color: var(--success); font-weight: 700;">0.00 USDC</span></div>
-                                </div>
-                            </div>
-                            <button id="btnGenerateMerkle" class="btn btn-primary"
-                                style="white-space: nowrap; height: 42px;">Generar Merkle Tree ⚡</button>
-                        </div>
-                    </div>
-
-                    <div id="merkleResultZone" class="hidden" style="margin-top: 1rem;">
-                        <label>Resumen de Funder y Lote:</label>
-                        <div
-                            style="background: rgba(0,0,0,0.3); padding: 1rem; border-radius: 8px; border: 1px solid rgba(139, 92, 246, 0.3); font-size: 0.9rem;">
-                            <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
-                                <span style="color: #94a3b8;">Funder Wallet:</span>
-                                <span id="merkleResultFunder" style="color: #cbd5e1; font-family: monospace;">---</span>
-                            </div>
-                            <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
-                                <span style="color: #94a3b8;">Balance Disponible:</span>
-                                <span id="merkleResultBalance" style="color: #4ade80; font-weight: bold;">$0.00
-                                    USDC</span>
-                            </div>
-                            <div style="display: flex; justify-content: space-between;">
-                                <span style="color: #94a3b8;">Allowance (Aprobado):</span>
-                                <span id="merkleResultAllowance" style="color: #fbbf24; font-weight: bold;">$0.00
-                                    USDC</span>
-                            </div>
-                        </div>
-                        <div id="paymentTriggerZone" class="hidden"
-                            style="margin-top: 1rem; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 1rem;">
-                            <button id="btnExecuteBatch" class="btn btn-primary"
-                                style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); width: 100%; font-size: 0.9rem; padding: 0.6rem;">
-                                Disparar Pagos 🚀
-                            </button>
-                            <p id="signStatusHint"
-                                style="font-size: 0.75rem; color: #94a3b8; margin-top: 0.4rem; text-align: center;">
-                                Requiere firma EIP-712 del Funder
-                            </p>
-
-                            <!-- Progress Tracking UI -->
-                            <div id="batchProgressZone" class="hidden" style="margin-top: 1rem;">
-                                <div class="progress-container">
-                                    <div id="batchProgressBar" class="progress-bar"></div>
-                                </div>
-                                <div class="progress-stats">
-                                    <span id="batchProgressText">Procesando: 0 / 0</span>
-                                    <span id="batchProgressPercent">0%</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div style="margin-top: 1rem;">
-                        <label style="font-size: 0.8rem; opacity: 0.7;">Merkle Root:</label>
-                        <div
-                            style="background: rgba(0,0,0,0.2); padding: 0.5rem; border-radius: 4px; font-family: monospace; font-size: 0.8rem; word-break: break-all; color: #a78bfa; border: 1px dashed rgba(167, 139, 250, 0.3);">
-                            <span id="displayMerkleRoot">Not Generated</span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Merkle Verification Tool -->
-                <div id="merkleVerifyZone" class="hidden"
-                    style="margin-top: 1rem; padding: 1rem; border: 1px dashed rgba(167, 139, 250, 0.3); border-radius: 8px;">
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <label id="merkleVerifyLabel" style="font-size: 0.9rem; color: #a78bfa;">🔬 Verificación
-                            On-Chain (Muestreo
-                            ---)</label>
-                        <button id="btnTestMerkle" class="btn-glass"
-                            style="font-size: 0.8rem; border: 1px solid #a78bfa; color: #a78bfa;">
-                            Ejecutar Test
-                        </button>
-                    </div>
-                    <p id="merkleTestStatus"
-                        style="font-size: 0.8rem; margin-top: 0.5rem; color: #94a3b8; min-height: 1.2em;"></p>
-                </div>
-
-                <!-- Relayer Controls (Execution Zone) - Hidden until Merkle is ready -->
-                <div id="executionZone" class="hidden"
-                    style="margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid rgba(255,255,255,0.1);">
-                    <label style="color: #fcd34d;">🚀 Ejecución (Relayer System)</label>
-                    <div style="display: flex; gap: 1rem; align-items: flex-end; margin-top: 0.5rem;">
-                        <div>
-                            <span style="font-size: 0.8rem; color: #94a3b8;">Potencia (Relayers):</span>
-                            <select id="relayerCount" class="input-glass" style="width: 100px;">
-                                <option value="1">1 (Safe)</option>
-                                <option value="5" selected>5 (Default)</option>
-                                <option value="10">10 (Fast)</option>
-                                <option value="20">20 (Turbo)</option>
-                                <option value="50">50 (High)</option>
-                                <option value="100">100 (Máximo Absoluto)</option>
-                            </select>
-                        </div>
-                        <button id="btnSetupRelayers" class="btn btn-primary"
-                            style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);">
-                            1. Preparar Relayers 🏗️
-                        </button>
-                        <div style="flex-grow: 1;"></div>
-                        <button onclick="openFaucetModal()" class="btn-glass"
-                            style="border: 1px solid rgba(255,255,255,0.1); white-space: nowrap;">⚙️ Faucet</button>
-                    </div>
-                    <!-- Faucet Info Summary (Visible on Main Page) -->
-                    <div id="mainFaucetInfo" class="glass"
-                        style="margin-top: 0.75rem; padding: 0.5rem 1rem; border-radius: 8px; font-size: 0.85rem; display: flex; justify-content: space-between; align-items: center; border: 1px solid rgba(255,255,255,0.05);">
-                        <div style="display: flex; gap: 0.75rem; align-items: center;">
-                            <span style="color: #94a3b8;">Faucet:</span>
-                            <a id="mainFaucetLink" href="#" target="_blank" class="hash-link"
-                                style="color: #60a5fa; font-family: monospace;">Cargando...</a>
-                            <button onclick="copyFaucetAddress()" class="btn-icon" title="Copiar Dirección">📋</button>
-                        </div>
-                        <div style="display: flex; gap: 0.75rem;">
-                            <span style="color: #94a3b8;">Balance:</span>
-                            <span id="mainFaucetBalance" style="color: #4ade80; font-weight: bold;">---</span>
-                        </div>
-                    </div>
-                    <div
-                        style="display: flex; align-items: center; justify-content: space-between; margin-top: 0.5rem;">
-                        <p id="processStatus" style="font-size: 0.85rem; color: #cbd5e1; margin: 0;"></p>
-                        <span id="processTimer"
-                            style="font-family: monospace; font-size: 0.9rem; color: #f59e0b; font-weight: bold; background: rgba(0,0,0,0.2); padding: 2px 6px; border-radius: 4px; display: none;">00:00:00</span>
-                    </div>
-                </div>
-            </div>
-            <p id="merkleStatus" class="status-text"></p>
-        </div>
-        <!-- Grilla Detalle -->
-        <!-- Grilla Detalle (HIDDEN as per request) -->
-        <div id="txDetailSection" class="top-bar hidden" style="margin-top: 2rem; flex-wrap: wrap; gap: 1rem;">
-            <h3>📋 Detalle de Transacciones</h3>
-            <div style="display: flex; gap: 0.5rem; flex-grow: 1; justify-content: flex-end;">
-                <input type="text" id="filterWallet" placeholder="Filtrar por Wallet..." class="input-glass"
-                    style="font-size: 0.8rem; padding: 0.4rem; width: 150px;">
-                <input type="number" id="filterAmount" placeholder="Monto USDC..." class="input-glass"
-                    style="font-size: 0.8rem; padding: 0.4rem; width: 100px;">
-                <select id="filterStatus" class="input-glass" style="font-size: 0.8rem; padding: 0.4rem;">
-                    <option value="">Todos los Estados</option>
-                    <option value="PENDING">PENDING</option>
-                    <option value="ENVIANDO">ENVIANDO</option>
-                    <option value="COMPLETED">COMPLETED</option>
-                    <option value="FAILED">FAILED</option>
-                    <option value="WAITING_CONFIRMATION">WAITING_CONFIRMATION</option>
-                </select>
-                <button onclick="applyFilters()" class="btn-primary"
-                    style="font-size: 0.8rem; padding: 0.4rem 0.8rem;">🔍 Filtrar</button>
-                <button onclick="clearFilters()" class="btn-glass"
-                    style="font-size: 0.8rem; padding: 0.4rem 0.8rem;">✖️</button>
-                <span id="filterResultCount"
-                    style="margin-left: 10px; align-self: center; font-size: 0.9rem; color: #a78bfa;"></span>
-            </div>
-        </div>
-        <div id="txTableContainer" class="table-container hidden">
-            <table id="batchTable">
-                <thead>
-                    <tr>
-                        <th>ID Ref</th>
-                        <th>Wallet</th>
-                        <th>USDC (Plan)</th>
-                        <th>Enviado</th>
-                        <th>Hash (Ref)</th>
-                        <th>Estado</th>
-                    </tr>
-                </thead>
-                <tbody id="batchTableBody">
-                    <tr>
-                        <td colspan="5" style="text-align: center;">Carga un Excel para ver el detalle</td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
-
-        <!-- Relayer Balances Table (Integrated) -->
-        <div id="relayerGridSection" class="hidden"
-            style="margin-top: 2.5rem; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 1.5rem;">
-            <div class="top-bar">
-                <h3>⚡ Balances de Relayers</h3>
-            </div>
-            <div id="relayerGridInfo" style="margin-bottom: 0.5rem;"></div>
-            <table id="relayerBalancesTable" class="glass-panel"
-                style="width:100%; border-collapse: collapse; background: rgba(0,0,0,0.2);">
-                <thead>
-                    <tr style="border-bottom: 1px solid rgba(255,255,255,0.1);">
-                        <th style="text-align:left; padding:0.75rem; width: 50px;">ID</th>
-                        <th style="text-align:left; padding:0.75rem;">Dirección Relayer</th>
-                        <th style="text-align:left; padding:0.75rem;">Balance MATIC</th>
-                        <th style="text-align:left; padding:0.75rem;">Última Actividad</th>
-                        <th style="text-align:center; padding:0.75rem;">Cant. Txs</th>
-                    </tr>
-                </thead>
-                <tbody id="relayerBalancesTableBody">
-                    <tr>
-                        <td colspan="4" style="text-align:center; padding:1.5rem; opacity: 0.6;">Cargando
-                            balances...</td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
         </div> <!-- Fin de batchDetailView -->
-        </div>
+    </div>
 
     </main>
 
@@ -438,7 +497,9 @@
             <p id="modalFaucetStatus"></p>
         </div>
     </div>
-    <!-- End Relayer Balances Table -->
+    </main>
+    </div> <!-- content-wrapper -->
+    </div> <!-- app-layout -->
 
     <script src="app.js?v=3.0.0"></script>
 </body>

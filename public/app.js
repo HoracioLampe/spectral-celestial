@@ -190,26 +190,44 @@ let currentBatchTotalUSDC = 0n; // Use BigInt for precision checking
 document.addEventListener('DOMContentLoaded', async () => {
     console.log("🚀 Wallet App Iniciada");
 
-    // 1. Re-initialize DOM Elements (Ensure they are fresh)
     initDOMElements();
-
-    // 2. Attach Global Event Listeners
     attachEventListeners();
+    initTheme();
 
-    // 3. Load Public Data
-    // 3. Load Public Data
-    fetchBatches();
-
-    // 4. Auto-connect if possible
-    if (window.ethereum) {
-        const accounts = await window.ethereum.request({ method: 'eth_accounts' });
-        if (accounts.length > 0) {
-            console.log("🔗 Auto-connecting wallet...");
-            connectWallet();
-        }
+    // Landing Page Trigger
+    const btnEnterApp = document.getElementById('btnEnterApp');
+    if (btnEnterApp) {
+        btnEnterApp.addEventListener('click', connectWallet);
     }
 
-    initTheme();
+    // SESSION RESTORE
+    const savedToken = localStorage.getItem('jwt_token');
+    const savedAddress = localStorage.getItem('user_address');
+
+    if (savedToken && savedAddress) {
+        console.log("🔑 Restoring existing session...");
+        AUTH_TOKEN = savedToken;
+        userAddress = savedAddress;
+
+        const landingSection = document.getElementById('landingSection');
+        const appLayout = document.getElementById('appLayout');
+        if (landingSection) landingSection.classList.add('hidden');
+        if (appLayout) appLayout.classList.remove('hidden');
+
+        fetchBalances();
+        fetchBatches();
+    } else {
+        // Just load batches for context
+        fetchBatches();
+    }
+
+    // Auto-connect wallet if injected
+    if (window.ethereum && !savedToken) {
+        const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+        if (accounts.length > 0) {
+            console.log("🔗 Injected wallet found, ready for login.");
+        }
+    }
 });
 
 function initTheme() {
@@ -296,7 +314,10 @@ async function connectWallet() {
         const chainId = "137"; // Polygon
         const issuedAt = new Date().toISOString();
 
-        const message = `${domain} wants you to sign in with your Ethereum account:\n${userAddress}\n\n${statement}\n\nURI: ${origin}\nVersion: ${version}\nChain ID: ${chainId}\nNonce: ${nonce}\nIssued At: ${issuedAt}`;
+        // CRITICAL: SIWE requires EIP-55 checksummed address
+        const checksummedAddress = ethers.utils.getAddress(userAddress);
+
+        const message = `${domain} wants you to sign in with your Ethereum account:\n${checksummedAddress}\n\n${statement}\n\nURI: ${origin}\nVersion: ${version}\nChain ID: ${chainId}\nNonce: ${nonce}\nIssued At: ${issuedAt}`;
         const signature = await signer.signMessage(message);
 
         const verifyRes = await fetch('/api/auth/verify', {
@@ -312,6 +333,21 @@ async function connectWallet() {
             localStorage.setItem('user_address', authData.address);
 
             console.log("✅ Authenticated via SIWE");
+
+            // --- TRANSITION TO APP ---
+            const landingSection = document.getElementById('landingSection');
+            const appLayout = document.getElementById('appLayout');
+            if (landingSection) landingSection.style.transition = "opacity 0.5s ease";
+            if (landingSection) landingSection.style.opacity = "0";
+            setTimeout(() => {
+                if (landingSection) landingSection.classList.add('hidden');
+                if (appLayout) {
+                    appLayout.classList.remove('hidden');
+                    appLayout.style.opacity = "0";
+                    appLayout.style.transition = "opacity 0.5s ease";
+                    setTimeout(() => appLayout.style.opacity = "1", 50);
+                }
+            }, 500);
 
             const btnConnect = document.getElementById('btnConnect');
             if (btnConnect) btnConnect.innerHTML = "🔗 Conectado";
