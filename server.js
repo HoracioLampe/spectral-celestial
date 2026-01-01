@@ -9,6 +9,7 @@ const RelayerEngine = require('./services/relayerEngine');
 const RpcManager = require('./services/rpcManager');
 const fs = require('fs');
 const session = require('express-session');
+const pgSession = require('connect-pg-simple')(session);
 const { generateNonce, SiweMessage } = require('siwe');
 const jwt = require('jsonwebtoken');
 require('dotenv').config();
@@ -23,14 +24,24 @@ const globalRpcManager = new RpcManager(RPC_PRIMARY, RPC_FALLBACK);
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Database Connection
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false }
+});
+
 // Middleware
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(session({
+    store: new pgSession({
+        pool: pool,                // Connection pool
+        tableName: 'session'       // Use another table-name than the default "session"
+    }),
     name: 'dappsfactory_session',
     secret: process.env.SESSION_SECRET || 'siwe-session-secret',
     resave: false,
-    saveUninitialized: true,
+    saveUninitialized: false,
     cookie: { secure: false, httpOnly: true, maxAge: 600000 } // 10 min session for nonce
 }));
 
@@ -48,11 +59,7 @@ const authenticateToken = (req, res, next) => {
     });
 };
 
-// Database Connection
-const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false }
-});
+
 
 const os = require('os');
 
