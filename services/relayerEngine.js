@@ -1026,7 +1026,7 @@ class RelayerEngine {
 
         // Save Refund Total to Batch
         await this.pool.query(
-            `UPDATE batches SET refund_amount = $1, status = 'COMPLETED', last_activity = NOW() WHERE id = $2`,
+            `UPDATE batches SET refund_amount = $1, status = 'COMPLETED', updated_at = NOW() WHERE id = $2`,
             [totalRecovered.toFixed(6), batchId]
         );
 
