@@ -2492,7 +2492,7 @@ function renderRelayerBalances(explicitData) {
 
     // --- Header Info: Funding Tx (Shared) ---
     // Assuming all relayers share the same funding tx, we take the first one.
-    const fundingTx = data[0]?.transactionHashDeposit;
+    const fundingTx = data[0]?.transactionhash_deposit;
     const fundingTxLink = fundingTx ? `<a href="https://polygonscan.com/tx/${fundingTx}" target="_blank" class="hash-link" style="color: #60a5fa; font-family: monospace;">${fundingTx} ↗️</a>` : '<span style="color:#94a3b8">Pendiente...</span>';
 
     const infoDiv = document.getElementById('relayerGridInfo');
