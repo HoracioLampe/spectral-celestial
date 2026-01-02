@@ -4,6 +4,8 @@ const BATCCH_PAGE_SIZE = 10;
 const TIMEZONE_CONFIG = { timeZone: 'America/Argentina/Buenos_Aires' };
 let currentBatchPage = 1;
 // Global UI Elements (Moved to correct scope later if needed)
+let AUTH_TOKEN = localStorage.getItem('jwt_token');
+
 
 
 async function authenticatedFetch(url, options = {}) {
@@ -469,6 +471,10 @@ function attachEventListeners() {
 
     // Filter toggle
     if (window.btnConnect) window.btnConnect.onclick = connectWallet;
+
+    // Call Batch and Merkle listeners safely
+    setupBatchEventListeners();
+    setupMerkleTestListener();
 }
 
 
@@ -725,14 +731,27 @@ const merkleResultFunder = document.getElementById('merkleResultFunder');
 const batchTableBody = document.getElementById('batchTableBody');
 
 // Event Listeners
-if (btnOpenBatchModal) btnOpenBatchModal.onclick = () => batchModal.classList.add('active');
-if (btnSaveBatch) btnSaveBatch.onclick = createBatch;
-if (btnUploadBatch) btnUploadBatch.onclick = uploadBatchFile;
-if (btnGenerateMerkle) btnGenerateMerkle.onclick = generateMerkleTree;
+// Wrappers for Event Listeners (Called after DOM Load)
+function setupBatchEventListeners() {
+    // These variables must be accessed via DOM or global scope if defined later
+    const btnOpenBatchModal = document.getElementById('btnOpenBatchModal');
+    const btnSaveBatch = document.getElementById('btnSaveBatch');
+    const btnUploadBatch = document.getElementById('btnUploadBatch');
+    const btnGenerateMerkle = document.getElementById('btnGenerateMerkle');
+    const batchModal = document.getElementById('batchModal');
+
+    if (btnOpenBatchModal && batchModal) btnOpenBatchModal.onclick = () => batchModal.classList.add('active');
+    if (btnSaveBatch) btnSaveBatch.onclick = createBatch;
+    if (btnUploadBatch) btnUploadBatch.onclick = uploadBatchFile;
+    if (btnGenerateMerkle) btnGenerateMerkle.onclick = generateMerkleTree;
+}
 
 // Merkle Test Listener
-const btnTestMerkle = document.getElementById('btnTestMerkle');
-if (btnTestMerkle) btnTestMerkle.onclick = runMerkleTest;
+function setupMerkleTestListener() {
+    const btnTestMerkle = document.getElementById('btnTestMerkle');
+    if (btnTestMerkle) btnTestMerkle.onclick = runMerkleTest;
+}
+
 
 // Global functions for HTML access
 window.closeBatchModal = function () {
