@@ -1764,12 +1764,16 @@ async function runMerkleTest() {
 
     try {
         // Setup Provider (Read-Only is fine)
-        let testProvider = provider;
-        if (!testProvider) {
-            const configRes = await fetch('/api/config');
-            const config = await configRes.json();
-            testProvider = new ethers.JsonRpcProvider(config.RPC_URL || "https://polygon-rpc.com");
+        let testProvider;
+        if (typeof provider !== 'undefined' && provider) {
+            testProvider = provider;
+        } else {
+            console.log("[Verify] Local provider missing, creating new JsonRpcProvider...");
+            if (!APP_CONFIG.RPC_URL) await getConfig();
+            testProvider = new ethers.JsonRpcProvider(APP_CONFIG.RPC_URL || "https://polygon-rpc.com");
         }
+
+        if (!testProvider) throw new Error("Could not initialize RPC Provider");
 
         const abi = ["function validateMerkleProofDetails(uint256, uint256, address, address, uint256, bytes32, bytes32[]) external view returns (bool)"];
 
@@ -2416,15 +2420,14 @@ async function pollBatchProgress(batchId) {
             if (progressText) progressText.textContent = `Procesando: ${completed} / ${total}`;
             if (progressPercent) progressPercent.textContent = `${progressPct}%`;
 
-            // Update Speedometer Gauge
+            // Update Speedometer Gauge (Premium)
             if (typeof updateProgressGauge === 'function') {
+                // Ensure the gauge zone is visible if we have transactions
+                const gaugeZone = document.getElementById('batchProgressGauge');
+                if (gaugeZone && total > 0) gaugeZone.classList.remove('hidden');
+
                 updateProgressGauge(completed, pending, failed, total);
             }
-
-            // Check Completion
-            // STOP if: Counts match OR Status is COMPLETED (Backend source of truth) OR No Pending transactions
-            const pending = data.stats ? parseInt(data.stats.pending || 0) : -1;
-            const failed = data.stats ? parseInt(data.stats.failed || 0) : 0;
 
             // If we have stats, use strict Pending check
             // FIX: Also check if status is COMPLETED or FAILED (backend stopped processing)

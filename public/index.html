@@ -242,6 +242,159 @@
                         <h2 id="detailBatchTitle">Lote #...</h2>
                         <p id="detailBatchDesc" style="opacity: 0.8; margin-bottom: 1.5rem;">...</p>
 
+                        <!-- Gauge Speedometer Visualization (Premium Segmented Design) -->
+                        <div id="batchProgressGauge" class="hidden"
+                            style="margin: 0 auto 2rem auto; max-width: 340px; filter: drop-shadow(0 15px 25px rgba(0,0,0,0.4)); background: rgba(15, 23, 42, 0.2); padding: 1.5rem; border-radius: 20px; border: 1px solid rgba(255,255,255,0.05); backdrop-filter: blur(5px);">
+                            <svg viewBox="0 0 200 120" style="width: 100%; display: block;">
+                                <defs>
+                                    <filter id="segmentGlow" x="-20%" y="-20%" width="140%" height="140%">
+                                        <feGaussianBlur stdDeviation="2.5" result="blur" />
+                                        <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                                    </filter>
+                                    <linearGradient id="needleGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                                        <stop offset="0%" style="stop-color:#60a5fa" />
+                                        <stop offset="100%" style="stop-color:#2563eb" />
+                                    </linearGradient>
+                                </defs>
+
+                                <!-- Markers (Small Ticks) -->
+                                <g stroke="rgba(255,255,255,0.2)" stroke-width="1">
+                                    <line x1="20" y1="100" x2="15" y2="100" />
+                                    <line x1="180" y1="100" x2="185" y2="100" />
+                                    <line x1="100" y1="20" x2="100" y2="15" />
+                                    <line x1="43" y1="43" x2="38" y2="38" />
+                                    <line x1="157" y1="43" x2="162" y2="38" />
+                                </g>
+
+                                <!-- Background Segments (Glass Effect) -->
+                                <g opacity="0.1">
+                                    <path d="M 20 100 A 80 80 0 0 1 42.5 45 L 53.5 58 A 65 65 0 0 0 35 100 Z"
+                                        fill="#fff" />
+                                    <path d="M 45 42 A 80 80 0 0 1 95 20 L 96 35 A 65 65 0 0 0 56 55 Z" fill="#fff" />
+                                    <path d="M 105 20 A 80 80 0 0 1 155 42 L 144 55 A 65 65 0 0 0 104 35 Z"
+                                        fill="#fff" />
+                                    <path d="M 157.5 45 A 80 80 0 0 1 180 100 L 165 100 A 65 65 0 0 0 146.5 58 Z"
+                                        fill="#fff" />
+                                </g>
+
+                                <!-- Active Segments (Colored) -->
+                                <path id="seg1" d="M 20 100 A 80 80 0 0 1 42.5 45 L 53.5 58 A 65 65 0 0 0 35 100 Z"
+                                    fill="#ef4444" opacity="0.3" class="gauge-seg" />
+                                <path id="seg2" d="M 45 42 A 80 80 0 0 1 95 20 L 96 35 A 65 65 0 0 0 56 55 Z"
+                                    fill="#fbbf24" opacity="0.3" class="gauge-seg" />
+                                <path id="seg3" d="M 105 20 A 80 80 0 0 1 155 42 L 144 55 A 65 65 0 0 0 104 35 Z"
+                                    fill="#fbbf24" opacity="0.3" class="gauge-seg" />
+                                <path id="seg4" d="M 157.5 45 A 80 80 0 0 1 180 100 L 165 100 A 65 65 0 0 0 146.5 58 Z"
+                                    fill="#10b981" opacity="0.3" class="gauge-seg" />
+
+                                <!-- Inner Ring Shadow -->
+                                <path d="M 40 100 A 60 60 0 0 1 160 100" fill="none" stroke="rgba(255,255,255,0.03)"
+                                    stroke-width="2" stroke-dasharray="2,4" />
+
+                                <!-- Needle -->
+                                <g id="gaugeNeedleGroup"
+                                    style="transform-origin: 100px 100px; transform: rotate(-90deg); transition: transform 1.2s cubic-bezier(0.34, 1.56, 0.64, 1);">
+                                    <path d="M 98 100 L 100 25 L 102 100 Z" fill="url(#needleGradient)"
+                                        filter="url(#segmentGlow)" />
+                                    <circle cx="100" cy="100" r="10" fill="#1e293b" stroke="#60a5fa"
+                                        stroke-width="2.5" />
+                                    <circle cx="100" cy="100" r="4" fill="#60a5fa" />
+                                </g>
+                            </svg>
+
+                            <div style="text-align: center; margin-top: -15px; position: relative; z-index: 10;">
+                                <div id="gaugePercentage"
+                                    style="font-size: 3rem; font-weight: 900; color: #fff; text-shadow: 0 0 30px rgba(96, 165, 250, 0.6); font-family: 'Outfit', sans-serif; letter-spacing: -2px;">
+                                    0%</div>
+                                <div id="gaugeStatus"
+                                    style="font-size: 0.8rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 3px; font-weight: 800; opacity: 0.8;">
+                                    Iniciando Lote</div>
+                            </div>
+
+                            <!-- Mini Stats Grid -->
+                            <div
+                                style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem; margin-top: 1.5rem; padding: 1rem; background: rgba(15, 23, 42, 0.6); border-radius: 15px; border: 1px solid rgba(255,255,255,0.08); box-shadow: inset 0 2px 10px rgba(0,0,0,0.2);">
+                                <div style="text-align: center;">
+                                    <div style="font-size: 1.1rem; font-weight: 900; color: #10b981;"
+                                        id="gaugeCompletedText">0</div>
+                                    <div
+                                        style="font-size: 0.65rem; color: #64748b; font-weight: 900; letter-spacing: 1px;">
+                                        OK</div>
+                                </div>
+                                <div
+                                    style="text-align: center; border-left: 1px solid rgba(255,255,255,0.1); border-right: 1px solid rgba(255,255,255,0.1);">
+                                    <div style="font-size: 1.1rem; font-weight: 900; color: #fbbf24;"
+                                        id="gaugePendingText">0</div>
+                                    <div
+                                        style="font-size: 0.65rem; color: #64748b; font-weight: 900; letter-spacing: 1px;">
+                                        WAIT</div>
+                                </div>
+                                <div style="text-align: center;">
+                                    <div style="font-size: 1.1rem; font-weight: 900; color: #ef4444;"
+                                        id="gaugeFailedText">0</div>
+                                    <div
+                                        style="font-size: 0.65rem; color: #64748b; font-weight: 900; letter-spacing: 1px;">
+                                        FAIL</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <script>
+                            function updateProgressGauge(completed, pending, failed, total) {
+                                const gauge = document.getElementById('batchProgressGauge');
+                                if (!gauge) return;
+                                gauge.classList.remove('hidden');
+
+                                const percentage = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+                                document.getElementById('gaugeCompletedText').textContent = completed;
+                                document.getElementById('gaugePendingText').textContent = pending;
+                                document.getElementById('gaugeFailedText').textContent = failed;
+                                document.getElementById('gaugePercentage').textContent = percentage + '%';
+
+                                const statusEl = document.getElementById('gaugeStatus');
+                                if (pending > 0) {
+                                    statusEl.textContent = 'Procesando Envío...';
+                                    statusEl.style.color = '#fbbf24';
+                                } else if (failed > 0) {
+                                    statusEl.textContent = 'Terminado con Alertas';
+                                    statusEl.style.color = '#ef4444';
+                                } else if (completed === total && total > 0) {
+                                    statusEl.textContent = '¡Distribución Exitosa!';
+                                    statusEl.style.color = '#10b981';
+                                } else {
+                                    statusEl.textContent = 'Listo para Iniciar';
+                                    statusEl.style.color = '#94a3b8';
+                                }
+
+                                // Needle rotation (-90deg = 0% to 90deg = 100%)
+                                const needle = document.getElementById('gaugeNeedleGroup');
+                                if (needle) {
+                                    const rotation = -90 + (percentage / 100) * 180;
+                                    needle.style.transform = `rotate(${rotation}deg)`;
+                                }
+
+                                // Update segments opacity based on progress
+                                for (let i = 1; i <= 4; i++) {
+                                    const seg = document.getElementById(`seg${i}`);
+                                    if (!seg) continue;
+                                    const threshold = (i - 1) * 25;
+                                    if (percentage > threshold) {
+                                        seg.style.opacity = "1";
+                                        seg.style.filter = "url(#segmentGlow)";
+                                    } else {
+                                        seg.style.opacity = "0.2";
+                                        seg.style.filter = "none";
+                                    }
+                                }
+                            }
+
+                            function hideProgressGauge() {
+                                const gauge = document.getElementById('batchProgressGauge');
+                                if (gauge) gauge.classList.add('hidden');
+                            }
+                        </script>
+
                         <!-- Stats Grid removido a pedido del usuario -->
                         <!-- Stats Grid -->
                         <div id="batchStatsContainer" class="stats-grid hidden"
@@ -333,148 +486,6 @@
 
                                     <!-- Progress Tracking UI -->
                                     <div id="batchProgressZone" class="hidden" style="margin-top: 1rem;">
-
-                                        <!-- Gauge Speedometer Visualization (Premium Segmented Design) -->
-                                        <div id="batchProgressGauge" class="hidden"
-                                            style="margin: 1.5rem auto; max-width: 320px; filter: drop-shadow(0 10px 15px rgba(0,0,0,0.3));">
-                                            <svg viewBox="0 0 200 120" style="width: 100%; display: block;">
-                                                <defs>
-                                                    <filter id="segmentGlow" x="-20%" y="-20%" width="140%"
-                                                        height="140%">
-                                                        <feGaussianBlur stdDeviation="2" result="blur" />
-                                                        <feComposite in="SourceGraphic" in2="blur" operator="over" />
-                                                    </filter>
-                                                    <linearGradient id="needleGradient" x1="0%" y1="0%" x2="0%"
-                                                        y2="100%">
-                                                        <stop offset="0%" style="stop-color:#60a5fa" />
-                                                        <stop offset="100%" style="stop-color:#2563eb" />
-                                                    </linearGradient>
-                                                </defs>
-
-                                                <!-- Background Segments (Glass Effect) -->
-                                                <g opacity="0.1">
-                                                    <path
-                                                        d="M 20 100 A 80 80 0 0 1 42.5 45 L 53.5 58 A 65 65 0 0 0 35 100 Z"
-                                                        fill="#fff" />
-                                                    <path d="M 45 42 A 80 80 0 0 1 95 20 L 96 35 A 65 65 0 0 0 56 55 Z"
-                                                        fill="#fff" />
-                                                    <path
-                                                        d="M 105 20 A 80 80 0 0 1 155 42 L 144 55 A 65 65 0 0 0 104 35 Z"
-                                                        fill="#fff" />
-                                                    <path
-                                                        d="M 157.5 45 A 80 80 0 0 1 180 100 L 165 100 A 65 65 0 0 0 146.5 58 Z"
-                                                        fill="#fff" />
-                                                </g>
-
-                                                <!-- Active Segments (Colored) -->
-                                                <path id="seg1"
-                                                    d="M 20 100 A 80 80 0 0 1 42.5 45 L 53.5 58 A 65 65 0 0 0 35 100 Z"
-                                                    fill="#ef4444" opacity="0.3" class="gauge-seg" />
-                                                <path id="seg2"
-                                                    d="M 45 42 A 80 80 0 0 1 95 20 L 96 35 A 65 65 0 0 0 56 55 Z"
-                                                    fill="#fbbf24" opacity="0.3" class="gauge-seg" />
-                                                <path id="seg3"
-                                                    d="M 105 20 A 80 80 0 0 1 155 42 L 144 55 A 65 65 0 0 0 104 35 Z"
-                                                    fill="#fbbf24" opacity="0.3" class="gauge-seg" />
-                                                <path id="seg4"
-                                                    d="M 157.5 45 A 80 80 0 0 1 180 100 L 165 100 A 65 65 0 0 0 146.5 58 Z"
-                                                    fill="#10b981" opacity="0.3" class="gauge-seg" />
-
-                                                <!-- Inner Ring Shadow -->
-                                                <path d="M 40 100 A 60 60 0 0 1 160 100" fill="none"
-                                                    stroke="rgba(255,255,255,0.03)" stroke-width="2"
-                                                    stroke-dasharray="2,4" />
-
-                                                <!-- Needle -->
-                                                <g id="gaugeNeedleGroup"
-                                                    style="transform-origin: 100px 100px; transform: rotate(-90deg); transition: transform 0.8s cubic-bezier(0.34, 1.56, 0.64, 1);">
-                                                    <path d="M 98 100 L 100 25 L 102 100 Z" fill="url(#needleGradient)"
-                                                        filter="url(#segmentGlow)" />
-                                                    <circle cx="100" cy="100" r="8" fill="#1e293b" stroke="#60a5fa"
-                                                        stroke-width="2" />
-                                                    <circle cx="100" cy="100" r="3" fill="#60a5fa" />
-                                                </g>
-                                            </svg>
-
-                                            <div
-                                                style="text-align: center; margin-top: -15px; position: relative; z-index: 10;">
-                                                <div id="gaugePercentage"
-                                                    style="font-size: 2.5rem; font-weight: 900; color: #fff; text-shadow: 0 0 20px rgba(96, 165, 250, 0.5); font-family: 'Outfit', sans-serif;">
-                                                    0%</div>
-                                                <div id="gaugeStatus"
-                                                    style="font-size: 0.75rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 2px; font-weight: bold;">
-                                                    Iniciando Lote</div>
-                                            </div>
-
-                                            <!-- Mini Stats Grid -->
-                                            <div
-                                                style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.5rem; margin-top: 1.5rem; padding: 0.75rem; background: rgba(15, 23, 42, 0.4); border-radius: 12px; border: 1px solid rgba(255,255,255,0.05); backdrop-filter: blur(10px);">
-                                                <div style="text-align: center;">
-                                                    <div style="font-size: 1rem; font-weight: bold; color: #10b981;"
-                                                        id="gaugeCompletedText">0</div>
-                                                    <div style="font-size: 0.6rem; color: #64748b; font-weight: bold;">
-                                                        EXITOSOS</div>
-                                                </div>
-                                                <div
-                                                    style="text-align: center; border-left: 1px solid rgba(255,255,255,0.05); border-right: 1px solid rgba(255,255,255,0.05);">
-                                                    <div style="font-size: 1rem; font-weight: bold; color: #fbbf24;"
-                                                        id="gaugePendingText">0</div>
-                                                    <div style="font-size: 0.6rem; color: #64748b; font-weight: bold;">
-                                                        EN ESPERA</div>
-                                                </div>
-                                                <div style="text-align: center;">
-                                                    <div style="font-size: 1rem; font-weight: bold; color: #ef4444;"
-                                                        id="gaugeFailedText">0</div>
-                                                    <div style="font-size: 0.6rem; color: #64748b; font-weight: bold;">
-                                                        FALLIDOS</div>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        <script>
-                                            function updateProgressGauge(completed, pending, failed, total) {
-                                                const gauge = document.getElementById('batchProgressGauge');
-                                                if (!gauge) return;
-                                                gauge.classList.remove('hidden');
-
-                                                const percentage = total > 0 ? Math.round((completed / total) * 100) : 0;
-
-                                                document.getElementById('gaugeCompletedText').textContent = completed;
-                                                document.getElementById('gaugePendingText').textContent = pending;
-                                                document.getElementById('gaugeFailedText').textContent = failed;
-                                                document.getElementById('gaugePercentage').textContent = percentage + '%';
-
-                                                const statusEl = document.getElementById('gaugeStatus');
-                                                if (pending > 0) statusEl.textContent = 'Procesando Envío...';
-                                                else if (failed > 0) statusEl.textContent = 'Terminado con Alertas';
-                                                else if (completed === total && total > 0) {
-                                                    statusEl.textContent = '¡Distribución Exitosa!';
-                                                    statusEl.style.color = '#10b981';
-                                                }
-
-                                                // Needle rotation (-90deg = 0% to 90deg = 100%)
-                                                const needle = document.getElementById('gaugeNeedleGroup');
-                                                const rotation = -90 + (percentage / 100) * 180;
-                                                needle.style.transform = `rotate(${rotation}deg)`;
-
-                                                // Update segments opacity based on progress
-                                                for (let i = 1; i <= 4; i++) {
-                                                    const seg = document.getElementById(`seg${i}`);
-                                                    const threshold = (i - 1) * 25;
-                                                    if (percentage > threshold) {
-                                                        seg.style.opacity = "1";
-                                                    } else {
-                                                        seg.style.opacity = "0.3";
-                                                    }
-                                                }
-                                            }
-
-                                            function hideProgressGauge() {
-                                                const gauge = document.getElementById('batchProgressGauge');
-                                                if (gauge) gauge.classList.add('hidden');
-                                            }
-                                        </script>
-
                                         <div class="progress-container">
                                             <div id="batchProgressBar" class="progress-bar"></div>
                                         </div>
