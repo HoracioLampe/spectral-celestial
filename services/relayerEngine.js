@@ -257,6 +257,28 @@ class RelayerEngine {
                 console.log(`         Balance:   ${balance.toString()} raw | ${ethers.formatUnits(balance, 6)} USDC`);
                 console.log(`         Allowance: ${allowance.toString()} raw | ${ethers.formatUnits(allowance, 6)} USDC`);
 
+                // --- CRITICAL: Validate USDC Balance ---
+                const batchTotalRes = await this.pool.query('SELECT total_usdc FROM batches WHERE id = $1', [batchId]);
+                const batchTotalUsdc = BigInt(batchTotalRes.rows[0]?.total_usdc || 0);
+
+                console.log(`[Validation] Batch requires: ${ethers.formatUnits(batchTotalUsdc, 6)} USDC`);
+
+                if (balance < batchTotalUsdc) {
+                    const shortfall = batchTotalUsdc - balance;
+                    console.error(`[Validation] ❌ INSUFFICIENT USDC BALANCE`);
+                    console.error(`   Required: ${ethers.formatUnits(batchTotalUsdc, 6)} USDC`);
+                    console.error(`   Available: ${ethers.formatUnits(balance, 6)} USDC`);
+                    console.error(`   Shortfall: ${ethers.formatUnits(shortfall, 6)} USDC`);
+
+                    throw new Error(
+                        `Fondos insuficientes. ` +
+                        `Necesitas ${ethers.formatUnits(batchTotalUsdc, 6)} USDC pero solo tienes ${ethers.formatUnits(balance, 6)} USDC. ` +
+                        `Faltan ${ethers.formatUnits(shortfall, 6)} USDC.`
+                    );
+                }
+
+                console.log(`[Validation] ✅ Sufficient USDC balance confirmed`);
+
                 if (allowance === 0n && !externalPermit) {
                     console.warn(`[Permit] ⚠️ Zero allowance and no permit provided. Transactions will fail unless a permit or manual approval is executed.`);
                 }
