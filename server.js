@@ -793,14 +793,45 @@ app.post('/api/batches/:id/execute', authenticateToken, async (req, res) => {
         const batchId = parseInt(req.params.id);
         const userAddress = req.user.address.toLowerCase();
 
+        console.log('\n========================================');
+        console.log('🚀 BATCH EXECUTION REQUEST RECEIVED');
+        console.log('========================================');
+        console.log(`📦 Batch ID:          ${batchId}`);
+        console.log(`👤 User Address:      ${userAddress}`);
+        console.log(`🔐 User Role:         ${req.user.role}`);
+        console.log(`⏰ Timestamp:         ${new Date().toISOString()}`);
+
         // Verify Ownership
-        const ownerRes = await pool.query('SELECT funder_address FROM batches WHERE id = $1', [batchId]);
-        if (ownerRes.rows.length === 0) return res.status(404).json({ error: 'Batch not found' });
-        const batchOwner = ownerRes.rows[0].funder_address?.toLowerCase();
+        const ownerRes = await pool.query('SELECT funder_address, merkle_root, total_transactions, status FROM batches WHERE id = $1', [batchId]);
+        if (ownerRes.rows.length === 0) {
+            console.log('❌ Batch not found');
+            console.log('========================================\n');
+            return res.status(404).json({ error: 'Batch not found' });
+        }
+
+        const batch = ownerRes.rows[0];
+        const batchOwner = batch.funder_address?.toLowerCase();
+
+        console.log(`📊 Batch Status:      ${batch.status}`);
+        console.log(`🌲 Merkle Root:       ${batch.merkle_root || 'NOT SET ❌'}`);
+        console.log(`📨 Total Txs:         ${batch.total_transactions}`);
+        console.log(`👑 Batch Owner:       ${batchOwner}`);
 
         if (req.user.role !== 'SUPER_ADMIN' && batchOwner !== userAddress) {
+            console.log('❌ Access denied - User is not owner');
+            console.log('========================================\n');
             return res.status(403).json({ error: 'Access denied' });
         }
+
+        if (!batch.merkle_root) {
+            console.log('❌ CRITICAL: Merkle Root not generated!');
+            console.log('   → User must generate Merkle Tree first');
+            console.log('========================================\n');
+            return res.status(400).json({ error: 'Merkle Root not generated. Please generate the Merkle Tree first.' });
+        }
+
+        console.log('✅ Prerequisites check passed');
+        console.log('🔧 Initializing RelayerEngine...');
 
         const { permitData, rootSignatureData } = req.body;
 
@@ -809,10 +840,14 @@ app.post('/api/batches/:id/execute', authenticateToken, async (req, res) => {
 
         const engine = new RelayerEngine(pool, globalRpcManager, faucetPk);
 
+        console.log('🎬 Starting execution in background...');
+        console.log('========================================\n');
+
         const result = await engine.startExecution(batchId, permitData, rootSignatureData);
         res.json(result);
     } catch (err) {
-        console.error("[Execute] Error:", err);
+        console.error("❌ [Execute] Error:", err);
+        console.log('========================================\n');
         res.status(500).json({ error: err.message });
     }
 });
