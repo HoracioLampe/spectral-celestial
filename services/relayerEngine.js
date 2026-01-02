@@ -428,8 +428,10 @@ class RelayerEngine {
                 totalGasWei += (res.gasUsed * res.effectiveGasPrice);
             }
             processedCount++;
-            // Throttle worker to avoid smashing RPC (RPS Limit Protection)
-            await new Promise(r => setTimeout(r, 1000));
+            // Throttle worker (Aggressive: 100ms)
+            // User requested 100ms.
+            // This allows ~10 TPS per relayer (theoretical) limited by network latency.
+            await new Promise(r => setTimeout(r, 100));
         }
 
         // Save total gas spent by this worker

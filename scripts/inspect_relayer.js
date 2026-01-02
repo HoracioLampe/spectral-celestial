@@ -7,9 +7,24 @@ async function inspect() {
         ssl: { rejectUnauthorized: false }
     });
 
-    const target = '0x6b83b40904Fe6708Ea69E3e9e9f03Ec5F23F3792';
-    const res = await pool.query("SELECT address, last_balance, transactionhash_deposit FROM relayers WHERE address = $1", [target]);
-    console.log(res.rows[0]);
+    const target = process.argv[2];
+    if (!target) {
+        console.error("Please provide an address");
+        return;
+    }
+    console.log(`Inspecting Relayer: ${target}`);
+    const res = await pool.query(`
+        SELECT r.*, b.status as batch_status, b.batch_number, b.description 
+        FROM relayers r
+        JOIN batches b ON r.batch_id = b.id 
+        WHERE r.address = $1
+    `, [target]);
+
+    if (res.rows.length === 0) {
+        console.log("Relayer NOT FOUND in database.");
+    } else {
+        console.log(res.rows[0]);
+    }
     await pool.end();
 }
 

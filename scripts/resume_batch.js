@@ -11,15 +11,31 @@ const pool = new Pool({
 });
 
 const RPC_URL = "https://polygon-mainnet.core.chainstack.com/05aa9ef98aa83b585c14fa0438ed53a9";
-const BATCH_ID = 170;
+const BATCH_ID = process.argv[2] || 170;
 
 async function resume() {
     console.log(`🚀 RESUMIENDO BATCH #${BATCH_ID}...`);
 
     try {
-        // 1. Fetch Faucet
-        const faucetRes = await pool.query('SELECT private_key FROM faucets ORDER BY id DESC LIMIT 1');
-        const faucetKey = faucetRes.rows[0]?.private_key;
+        // 1. Determine Correct Faucet for Batch Owner
+        const batchRes = await pool.query('SELECT funder_address FROM batches WHERE id = $1', [BATCH_ID]);
+        if (batchRes.rows.length === 0) throw new Error("Batch not found");
+
+        const funderAddress = batchRes.rows[0].funder_address;
+
+        let faucetKey;
+        // Try precise match
+        const faucetRes = await pool.query('SELECT private_key FROM faucets WHERE LOWER(funder_address) = LOWER($1)', [funderAddress]);
+        if (faucetRes.rows.length > 0) {
+            faucetKey = faucetRes.rows[0].private_key;
+            console.log(`🎯 Usando Faucet Específica para ${funderAddress}`);
+        } else {
+            // Fallback
+            const fallbackRes = await pool.query('SELECT private_key FROM faucets ORDER BY id ASC LIMIT 1');
+            faucetKey = fallbackRes.rows[0]?.private_key;
+            console.log("⚠️ Usando Faucet Fallback (Global)");
+        }
+
         if (!faucetKey) throw new Error("No Faucet Private Key found in DB.");
 
         // 2. Instantiate Engine
