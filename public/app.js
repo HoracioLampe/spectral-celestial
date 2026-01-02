@@ -4,6 +4,16 @@ const BATCCH_PAGE_SIZE = 10;
 const TIMEZONE_CONFIG = { timeZone: 'America/Argentina/Buenos_Aires' };
 let currentBatchPage = 1;
 
+// Global Error Handler for debugging
+window.onerror = function (msg, url, line, col, error) {
+    console.error(`[Global Error] ${msg} at ${url}:${line}:${col}`, error);
+    alert(`Error detectado: ${msg}\n\nRevisa la consola para más detalles.`);
+    return false;
+};
+window.onunhandledrejection = function (event) {
+    console.error('[Unhandled Rejection]', event.reason);
+};
+
 let AUTH_TOKEN = localStorage.getItem('jwt_token');
 
 
@@ -241,16 +251,18 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         // Restore Provider
         if (window.ethereum) {
-            provider = new ethers.providers.Web3Provider(window.ethereum);
+            console.log("📡 Initializing Ethers v6 BrowserProvider (Session Restore)");
+            provider = new ethers.BrowserProvider(window.ethereum);
             try {
                 // Background network check
                 provider.getNetwork().then(network => {
-                    if (network.chainId !== 137) {
+                    console.log("🌐 Network detected (restore):", network.name, network.chainId.toString());
+                    if (network.chainId !== 137n) {
                         console.warn("User on wrong network (restore)");
                     }
                 });
             } catch (e) {
-                console.error("Provider init error", e);
+                console.error("❌ Provider init error during restore", e);
             }
         }
 
@@ -454,6 +466,9 @@ window.logout = function () {
     location.reload(); // Simplest way to reset everything and show landing
 }
 
+// Export to window to ensure reachability from HTML attributes
+window.connectWallet = connectWallet;
+
 async function connectWallet() {
     console.log("🚀 connectWallet called!");
     if (!window.ethereum) {
@@ -475,9 +490,10 @@ async function connectWallet() {
         console.log("👤 Account found:", accounts[0]);
         userAddress = accounts[0];
 
-        console.log("📡 Initializing provider (Ethers v", (ethers.version || "???"), ")");
-        provider = new ethers.providers.Web3Provider(window.ethereum);
-        signer = provider.getSigner();
+        console.log("📡 Initializing BrowserProvider (Ethers v6)");
+        provider = new ethers.BrowserProvider(window.ethereum);
+        signer = await provider.getSigner();
+        console.log("📝 Signer obtained:", await signer.getAddress());
 
         // --- SIWE LOGIN FLOW ---
         const nonceRes = await fetch('/api/auth/nonce');
@@ -500,10 +516,13 @@ async function connectWallet() {
         const issuedAt = new Date().toISOString();
 
         // CRITICAL: SIWE requires EIP-55 checksummed address
-        const checksummedAddress = ethers.utils.getAddress(userAddress);
+        const checksummedAddress = ethers.getAddress(userAddress);
+        console.log("🔍 Checksummed address for SIWE:", checksummedAddress);
 
         const message = `${domain} wants you to sign in with your Ethereum account:\n${checksummedAddress}\n\n${statement}\n\nURI: ${origin}\nVersion: ${version}\nChain ID: ${chainId}\nNonce: ${nonce}\nIssued At: ${issuedAt}`;
+        console.log("✍️ Requesting signature...");
         const signature = await signer.signMessage(message);
+        console.log("✅ Signature obtained");
 
         const verifyRes = await fetch('/api/auth/verify', {
             method: 'POST',
@@ -584,16 +603,19 @@ async function connectWallet() {
 }
 
 async function checkNetwork() {
+    if (!provider) return;
     try {
         const network = await provider.getNetwork();
-        if (network.chainId !== 137) {
+        console.log("🌐 Current Network ID:", network.chainId.toString());
+        if (network.chainId !== 137n) {
+            console.log("🔄 Requesting network switch to Polygon...");
             await window.ethereum.request({
                 method: 'wallet_switchEthereumChain',
                 params: [{ chainId: POLYGON_CHAIN_ID }]
             });
         }
     } catch (e) {
-        console.warn("Network check error:", e);
+        console.warn("⚠️ Network check/switch error:", e);
     }
 }
 
@@ -623,18 +645,23 @@ function updateUI() {
 }
 
 async function fetchBalances() {
-    if (!userAddress || !provider) return;
+    if (!userAddress || !provider) {
+        console.log("🌑 fetchBalances skipped: No userAddress or provider ready yet.");
+        return;
+    }
     try {
         console.log("💰 Fetching balances for:", userAddress);
         const balance = await provider.getBalance(userAddress);
-        const maticVal = parseFloat(ethers.utils.formatEther(balance)).toFixed(4);
+        const maticVal = parseFloat(ethers.formatEther(balance)).toFixed(4);
+        console.log("💎 MATIC Balance:", maticVal);
 
         const elMatic = document.getElementById('maticBalance');
         if (elMatic) elMatic.textContent = maticVal;
 
         const usdcContract = new ethers.Contract(USDC_ADDRESS, USDC_ABI, provider);
         const usdcRaw = await usdcContract.balanceOf(userAddress);
-        const usdcVal = parseFloat(ethers.utils.formatUnits(usdcRaw, 6)).toFixed(2);
+        const usdcVal = parseFloat(ethers.formatUnits(usdcRaw, 6)).toFixed(2);
+        console.log("💵 USDC Balance:", usdcVal);
 
         const elUsdc = document.getElementById('usdcBalance');
         if (elUsdc) elUsdc.textContent = usdcVal;
