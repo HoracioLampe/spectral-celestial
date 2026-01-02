@@ -3,7 +3,8 @@ let APP_CONFIG = { RPC_URL: '', WS_RPC_URL: '' };
 const BATCCH_PAGE_SIZE = 10;
 const TIMEZONE_CONFIG = { timeZone: 'America/Argentina/Buenos_Aires' };
 let currentBatchPage = 1;
-let AUTH_TOKEN = localStorage.getItem('jwt_token');
+// Global UI Elements (Moved to correct scope later if needed)
+
 
 async function authenticatedFetch(url, options = {}) {
     const token = AUTH_TOKEN || localStorage.getItem('jwt_token');
@@ -882,7 +883,7 @@ async function createBatch() {
         }
 
         // Éxito
-        closeBatchModal();
+        if (window.closeBatchModal) window.closeBatchModal();
         // Limpiar form
         document.getElementById('newBatchNumber').value = '';
         document.getElementById('newBatchDetail').value = '';
@@ -905,6 +906,18 @@ async function createBatch() {
 
 // Global para poder llamarla desde el HTML onclick
 window.openBatchDetail = async function (id) {
+    console.log(`[UI] openBatchDetail clicked for id: ${id}`);
+
+    // Explicitly fetch elements to avoid scope issues
+    const batchListView = document.getElementById('batchListView');
+    const batchDetailView = document.getElementById('batchDetailView');
+
+    if (!batchListView || !batchDetailView) {
+        console.error("Critical UI Error: Views not found", { batchListView, batchDetailView });
+        alert("Error interno: Vistas de interfaz no encontradas. Recarga la página.");
+        return;
+    }
+
     if (window.balanceInterval) {
         clearInterval(window.balanceInterval);
         window.balanceInterval = null;
