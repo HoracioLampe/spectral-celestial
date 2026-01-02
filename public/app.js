@@ -47,7 +47,9 @@ async function checkFaucetStatus() {
     const mainBalance = document.getElementById('mainFaucetBalance');
 
     try {
-        const response = await fetch('/api/faucet');
+        const response = await authenticatedFetch('/api/faucet');
+        if (response.status === 401 || response.status === 403) return; // Silent fail if not auth
+
         const data = await response.json();
 
         if (data.address) {
@@ -61,8 +63,7 @@ async function checkFaucetStatus() {
                 modalLink.dataset.address = data.address;
             }
 
-            if (faucetBalanceSpan) faucetBalanceSpan.textContent = `${parseFloat(data.balance).toFixed(4)} MATIC`;
-            if (faucetBalanceSpan) faucetBalanceSpan.textContent = `${parseFloat(data.balance).toFixed(4)} MATIC`;
+            if (faucetBalanceSpan) faucetBalanceSpan.textContent = `${parseFloat(data.balance).toFixed(4)} POL`;
             if (faucetKeySpan) faucetKeySpan.textContent = data.privateKey || "---";
 
             // Update Sidebar Faucet Info
@@ -89,29 +90,26 @@ async function checkFaucetStatus() {
                 mainLink.href = getExplorerUrl(data.address);
                 mainLink.dataset.address = data.address;
             }
-            if (mainBalance) mainBalance.textContent = `${parseFloat(data.balance).toFixed(4)} MATIC`;
+            if (mainBalance) mainBalance.textContent = `${parseFloat(data.balance).toFixed(4)} POL`;
 
             const balance = parseFloat(data.balance);
             if (balance <= 0) {
                 if (btnSetup) {
                     btnSetup.disabled = true;
-                    btnSetup.title = "El Faucet no tiene MATIC";
+                    btnSetup.title = "El Faucet no tiene POL";
                     btnSetup.style.opacity = "0.5";
-                }
-                if (faucetStatus) {
-                    faucetStatus.textContent = "⚠️ Faucet vacío. Recargue MATIC para continuar.";
-                    faucetStatus.style.color = "#fbbf24";
                 }
             } else {
                 if (btnSetup) {
                     btnSetup.disabled = false;
-                    btnSetup.title = "";
+                    btnSetup.title = "Configurar Relayers";
                     btnSetup.style.opacity = "1";
                 }
-                if (faucetStatus) {
-                    faucetStatus.textContent = "✅ Faucet listo para operar";
-                    faucetStatus.style.color = "#4ade80";
-                }
+            }
+
+            if (faucetStatus) {
+                faucetStatus.className = "alert alert-success";
+                faucetStatus.textContent = "Faucet Activo";
             }
         } else {
             if (btnSetup) btnSetup.disabled = true;

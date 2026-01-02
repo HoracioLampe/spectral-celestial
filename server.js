@@ -176,12 +176,12 @@ app.get('/api/batches', authenticateToken, async (req, res) => {
         const page = parseInt(req.query.page) || 1;
         const offset = (page - 1) * limit;
 
-        // Data Isolation Logic
+        // Data Isolation Logic (Case Insensitive)
         let whereClause = 'WHERE 1=1';
         let queryParams = [];
 
         if (userRole !== 'SUPER_ADMIN') {
-            whereClause = 'WHERE b.funder_address = $1';
+            whereClause = 'WHERE LOWER(b.funder_address) = $1';
             queryParams.push(userAddress);
         }
 
@@ -222,28 +222,34 @@ app.get('/api/batches', authenticateToken, async (req, res) => {
 // Get batch details + transactions (Secure & Isolated)
 app.get('/api/batches/:id', authenticateToken, async (req, res) => {
     try {
-        const batchId = req.params.id;
-        const userAddress = req.user.address.toLowerCase();
+        const batchId = parseInt(req.params.id);
+        const userAddress = req.user.address.toLowerCase().trim();
 
+        // Use Case Insensitive Owner Check
         const batchRes = await pool.query(`
-            SELECT b.*,
-            (SELECT COUNT(*) FROM batch_transactions WHERE batch_id = b.id AND status = 'COMPLETED') as completed_count
+            SELECT b.* 
             FROM batches b 
-            WHERE b.id = $1
-    `, [batchId]);
+            WHERE b.id = $1 ${req.user.role !== 'SUPER_ADMIN' ? 'AND LOWER(b.funder_address) = $2' : ''}
+        `, req.user.role !== 'SUPER_ADMIN' ? [batchId, userAddress] : [batchId]);
 
-        // Ownership Check (Case-insensitive)
-        const batchFunder = batchRes.rows[0].funder_address ? batchRes.rows[0].funder_address.toLowerCase().trim() : null;
-        if (req.user.role !== 'SUPER_ADMIN' && batchFunder !== userAddress) {
-            return res.status(403).json({ error: 'Access denied: You do not own this batch' });
+        if (batchRes.rows.length === 0) {
+            return res.status(404).json({ error: 'Batch not found or access denied' });
         }
 
-        const txRes = await pool.query('SELECT * FROM batch_transactions WHERE batch_id = $1 ORDER BY id ASC', [batchId]);
+        const batch = batchRes.rows[0];
 
-        res.json({
-            batch: batchRes.rows[0],
-            transactions: txRes.rows
-        });
+        // Stats
+        const statsRes = await pool.query(`
+            SELECT 
+                COUNT(*) as total,
+                COUNT(CASE WHEN status = 'COMPLETED' THEN 1 END) as completed,
+                COUNT(CASE WHEN status = 'FAILED' THEN 1 END) as failed,
+                COUNT(CASE WHEN status = 'PENDING' THEN 1 END) as pending
+            FROM batch_transactions 
+            WHERE batch_id = $1
+        `, [batchId]);
+
+        res.json({ batch, stats: statsRes.rows[0] });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -810,9 +816,24 @@ app.get('/api/setup', async (req, res) => {
 });
 
 // 8. Get Transactions for a Batch (Server-Side Pagination & Filtering)
-app.get('/api/batches/:id/transactions', async (req, res) => {
+app.get('/api/batches/:id/transactions', authenticateToken, async (req, res) => {
     try {
         const batchId = parseInt(req.params.id);
+        const userAddress = req.user.address.toLowerCase().trim();
+
+        // 1. Verify Ownership / Access
+        const batchRes = await pool.query('SELECT funder_address FROM batches WHERE id = $1', [batchId]);
+
+        if (batchRes.rows.length === 0) {
+            return res.status(404).json({ error: 'Batch not found' });
+        }
+
+        const batchFunder = batchRes.rows[0].funder_address?.toLowerCase();
+
+        if (req.user.role !== 'SUPER_ADMIN' && batchFunder !== userAddress) {
+            return res.status(403).json({ error: 'Access denied' });
+        }
+
         const { page = 1, limit = 10, wallet, amount, status } = req.query;
         const offset = (page - 1) * limit;
 
@@ -823,15 +844,16 @@ app.get('/api/batches/:id/transactions', async (req, res) => {
         let paramIdx = 2;
 
         if (wallet) {
-            query += ` AND wallet_address_to ILIKE $${paramIdx} `;
-            countQuery += ` AND wallet_address_to ILIKE $${paramIdx} `;
-            params.push(`% ${wallet}% `); // Partial match
+            query += ` AND wallet_address_to ILIKE $${paramIdx}`;
+            countQuery += ` AND wallet_address_to ILIKE $${paramIdx}`;
+            // Correct wildcard placement without spaces
+            params.push(`%${wallet}%`);
             paramIdx++;
         }
 
         if (status) {
-            query += ` AND status = $${paramIdx} `;
-            countQuery += ` AND status = $${paramIdx} `;
+            query += ` AND status = $${paramIdx}`;
+            countQuery += ` AND status = $${paramIdx}`;
             params.push(status);
             paramIdx++;
         }
@@ -839,31 +861,30 @@ app.get('/api/batches/:id/transactions', async (req, res) => {
         if (amount) {
             // Amount in database is microUSDC (integer). Input is USDC (float).
             const amountMicro = Math.round(parseFloat(amount) * 1000000);
-            query += ` AND amount_usdc = $${paramIdx} `;
-            countQuery += ` AND amount_usdc = $${paramIdx} `;
+            query += ` AND amount_usdc = $${paramIdx}`;
+            countQuery += ` AND amount_usdc = $${paramIdx}`;
             params.push(amountMicro);
             paramIdx++;
         }
 
-        // Add sorting and pagination
-        query += ` ORDER BY id ASC LIMIT $${paramIdx} OFFSET $${paramIdx + 1} `;
+        // Query execution
+        query += ` ORDER BY id ASC LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`;
+        params.push(limit, offset);
 
-        // Execute Queries
-        const totalRes = await pool.query(countQuery, params.slice(0, paramIdx - 1)); // Exclude limit/offset params
-        const totalItems = parseInt(totalRes.rows[0].count);
+        const countRes = await pool.query(countQuery, params.slice(0, paramIdx - 1));
+        const totalItems = parseInt(countRes.rows[0].count);
 
-        const dataRes = await pool.query(query, [...params, limit, offset]);
+        const result = await pool.query(query, params);
 
         res.json({
-            transactions: dataRes.rows,
+            transactions: result.rows,
             total: totalItems,
             page: parseInt(page),
-            limit: parseInt(limit),
             totalPages: Math.ceil(totalItems / limit)
         });
 
     } catch (err) {
-        console.error(err);
+        console.error("Tx Search Error:", err);
         res.status(500).json({ error: err.message });
     }
 });
