@@ -85,103 +85,64 @@ class RpcManager {
             errorStr.includes("exceeded");
     }
 
-    /**
-     * Executes a function with automatic retry on fallback provider if the first one fails.
-     * @param {Function} attemptFn - Async function (provider) => Promise<T>
-     * @param {number} maxRetries - Maximum number of retries (default: 3)
-     */
-    async execute(attemptFn, maxRetries = 3) {
-        let lastError;
+/**
+ * Executes a function with automatic retry on fallback provider if the first one fails.
+    return this.usingFallback && this.fallbackProvider ? this.fallbackProvider : this.currentProvider;
+}
 
-        for (let attempt = 0; attempt <= maxRetries; attempt++) {
-            try {
-                // Apply rate limiting before each call
-                await this.applyRateLimit();
+async execute(operation, maxRetries = 3) {
+    let lastError;
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            const provider = this.getProvider();
+            const result = await operation(provider);
+            
+            // Success - reset rate limit counter
+            if (this.rateLimitCount > 0) {
+                console.log(`[RpcManager] ✅ Request successful, resetting rate limit counter`);
+                this.rateLimitCount = 0;
+            }
+            
+            return result;
+                this.switchToFallback();
 
-                const result = await attemptFn(this.provider);
-
-                // Success - decrease delay gradually
-                this.decreaseDelay();
-
-                return result;
-
-            } catch (err) {
-                lastError = err;
-
-                // Check for RPS/Rate Limit Error
-                if (this.isRateLimitError(err)) {
-                    this.increaseDelay();
-
-                    // Extract suggested wait time from error if available
-                    const tryAgainMatch = err.error?.data?.try_again_in;
-                    if (tryAgainMatch) {
-                        const waitMs = parseFloat(tryAgainMatch) || this.currentDelay;
-                        console.log(`[RpcManager] Waiting ${waitMs.toFixed(0)}ms as suggested by RPC...`);
-                        await new Promise(resolve => setTimeout(resolve, waitMs));
-                    }
-
-                    // If we've hit too many RPS errors, try fallback
-                    if (this.rpsErrorCount >= 3 && this.fallbackUrl && !this.isFallback) {
-                        console.warn(`[RpcManager] 🔄 Too many RPS errors (${this.rpsErrorCount}). Switching to Fallback...`);
-                        this.switchToFallback();
-                        this.rpsErrorCount = 0; // Reset counter for fallback
-                    }
-
-                    // Retry with exponential backoff
-                    if (attempt < maxRetries) {
-                        const backoffDelay = Math.min(500 * Math.pow(2, attempt), 5000);
-                        console.log(`[RpcManager] Retry ${attempt + 1}/${maxRetries} after ${backoffDelay}ms...`);
-                        await new Promise(resolve => setTimeout(resolve, backoffDelay));
-                        continue;
-                    }
-                }
-
-                // Check for other network errors
-                const isNetworkError = err.message.includes("network") ||
-                    err.message.includes("timeout") ||
-                    err.message.includes("connection reset") ||
-                    err.code === 'NETWORK_ERROR';
-
-                if (isNetworkError && this.fallbackUrl && !this.isFallback) {
-                    console.warn(`[RpcManager] ⚠️ Network error (${err.message}). Switching to Fallback...`);
-                    this.switchToFallback();
-
-                    // Retry with fallback
-                    if (attempt < maxRetries) {
-                        await new Promise(resolve => setTimeout(resolve, 1000));
-                        continue;
-                    }
-                }
-
-                // If last attempt, throw error
-                if (attempt === maxRetries) {
-                    throw err;
+                // Retry with fallback
+                if (attempt < maxRetries) {
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    continue;
                 }
             }
-        }
 
-        throw lastError;
+            // If last attempt, throw error
+            if (attempt === maxRetries) {
+                throw err;
+            }
+        }
     }
 
-    switchToFallback() {
-        this.isFallback = true;
-        this.currentUrl = this.fallbackUrl;
-        this.provider = new ethers.JsonRpcProvider(this.fallbackUrl);
-        this.currentDelay = this.minDelay; // Reset delay for new provider
+    throw lastError;
+}
+
+switchToFallback() {
+    this.isFallback = true;
+    this.currentUrl = this.fallbackUrl;
+    this.provider = new ethers.JsonRpcProvider(this.fallbackUrl);
+    this.currentDelay = this.minDelay; // Reset delay for new provider
+    this.rpsErrorCount = 0;
+    console.log(`[RpcManager] 🔄 Switched to Fallback RPC: ${this.obfuscate(this.fallbackUrl)}`);
+}
+
+resetToPrimary() {
+    if (this.isFallback) {
+        this.isFallback = false;
+        this.currentUrl = this.primaryUrl;
+        this.provider = new ethers.JsonRpcProvider(this.primaryUrl);
+        this.currentDelay = this.minDelay;
         this.rpsErrorCount = 0;
-        console.log(`[RpcManager] 🔄 Switched to Fallback RPC: ${this.obfuscate(this.fallbackUrl)}`);
+        console.log(`[RpcManager] 🔙 Reset to Primary RPC`);
     }
-
-    resetToPrimary() {
-        if (this.isFallback) {
-            this.isFallback = false;
-            this.currentUrl = this.primaryUrl;
-            this.provider = new ethers.JsonRpcProvider(this.primaryUrl);
-            this.currentDelay = this.minDelay;
-            this.rpsErrorCount = 0;
-            console.log(`[RpcManager] 🔙 Reset to Primary RPC`);
-        }
-    }
+}
 }
 
 module.exports = RpcManager;
