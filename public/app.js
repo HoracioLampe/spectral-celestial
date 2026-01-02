@@ -221,8 +221,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     attachEventListeners();
     initTheme();
 
-    // Landing Page Trigger
-    initVerificationSlider();
+    // Landing Page Trigger - REMOVED SLIDER
+    // initVerificationSlider();
 
     const btnEnterApp = document.getElementById('btnEnterApp');
     if (btnEnterApp) {
@@ -366,59 +366,11 @@ function initTheme() {
 }
 
 
+/* 
 function initVerificationSlider() {
-    const container = document.getElementById('verifyContainer');
-    const slider = document.getElementById('verifySlider');
-    const btnEnter = document.getElementById('btnEnterApp');
-    if (!container || !slider || !btnEnter) return;
-
-    let isDragging = false;
-    let startX = 0;
-    const maxSlide = container.offsetWidth - slider.offsetWidth - 10;
-
-    const onStart = (e) => {
-        if (container.classList.contains('success')) return;
-        isDragging = true;
-        startX = (e.type === 'touchstart' ? e.touches[0].clientX : e.clientX) - slider.offsetLeft;
-        slider.style.transition = 'none';
-    };
-
-    const onMove = (e) => {
-        if (!isDragging) return;
-        let x = (e.type === 'touchmove' ? e.touches[0].clientX : e.clientX) - startX;
-
-        if (x < 5) x = 5;
-        if (x > maxSlide) x = maxSlide;
-
-        slider.style.left = x + 'px';
-
-        // Check for success
-        if (x >= maxSlide - 5) {
-            isDragging = false;
-            slider.style.left = maxSlide + 'px';
-            container.classList.add('success');
-            slider.querySelector('.verify-icon').textContent = '✅';
-            btnEnter.disabled = false;
-            console.log("🔒 Human verification successful");
-        }
-    };
-
-    const onEnd = () => {
-        if (!isDragging) return;
-        isDragging = false;
-        if (!container.classList.contains('success')) {
-            slider.style.transition = 'left 0.3s ease';
-            slider.style.left = '5px';
-        }
-    };
-
-    slider.addEventListener('mousedown', onStart);
-    slider.addEventListener('touchstart', onStart);
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('touchmove', onMove);
-    window.addEventListener('mouseup', onEnd);
-    window.addEventListener('touchend', onEnd);
+    // ... logic removed ...
 }
+*/
 
 function initDOMElements() {
     window.batchesListBody = document.getElementById('batchesListBody');
