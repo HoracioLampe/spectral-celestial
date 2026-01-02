@@ -378,8 +378,12 @@ function initVerificationSlider() {
     }
 
     let isDragging = false;
-    let startX = 0;
-    const maxSlide = container.offsetWidth - slider.offsetWidth - 10;
+    // Fallback if offsetWidth is 0 (e.g. element hidden or not rendered)
+    const maxSlide = (container.offsetWidth && container.offsetWidth > 100)
+        ? container.offsetWidth - slider.offsetWidth - 10
+        : 260; // 320 - 50 - 10
+
+    console.log(`🔒 Slider Config: MaxSlide=${maxSlide}px (Container=${container.offsetWidth}px)`);
 
     const onStart = (e) => {
         if (container.classList.contains('success')) return;
