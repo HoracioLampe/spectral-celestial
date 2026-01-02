@@ -1010,9 +1010,14 @@ tr:hover td {
     font-weight: 500;
 }
 
-.btn-glow:hover {
-    box-shadow: 0 0 20px rgba(59, 130, 246, 0.4);
-    transform: translateY(-2px);
+/* Sidebar Wallet Labels */
+.wallet-label {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
+    font-weight: 600;
 }
 
 .restricted-footer {

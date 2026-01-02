@@ -115,17 +115,40 @@
                 <button id="themeToggle" class="theme-toggle" title="Cambiar Tema">
                     <span id="themeIcon">🌙</span>
                 </button>
-                <div id="walletInfo" class="wallet-info hidden">
-                    <div class="address-container-sidebar">
-                        <a id="userAddressLink" href="#" target="_blank" class="badge-address-link">0x...</a>
-                        <button id="btnCopyAddress" class="btn-icon-copy" title="Copiar Address">📋</button>
+                <div id="walletInfo" class="wallet-info hidden"
+                    style="display: flex; flex-direction: column; gap: 1rem;">
+
+                    <!-- Funder Wallet Section -->
+                    <div class="wallet-section">
+                        <div class="wallet-label">Address Funder</div>
+                        <div class="address-container-sidebar">
+                            <a id="userAddressLink" href="#" target="_blank" class="badge-address-link">0x...</a>
+                            <button id="btnCopyAddress" class="btn-icon-copy" title="Copiar Address">📋</button>
+                        </div>
+                        <div class="balances">
+                            <div class="balance-item">💰 <span class="unit-label">USDC</span> <span
+                                    id="usdcBalance">0.00</span></div>
+                            <div class="balance-item">⛽ <span class="unit-label">MATIC</span> <span
+                                    id="maticBalance">0.00</span></div>
+                        </div>
                     </div>
-                    <div class="balances">
-                        <div class="balance-item">💰 <span class="unit-label">USDC</span> <span
-                                id="usdcBalance">0.00</span></div>
-                        <div class="balance-item">⛽ <span class="unit-label">MATIC</span> <span
-                                id="maticBalance">0.00</span></div>
+
+                    <!-- Faucet Wallet Section -->
+                    <div class="wallet-section"
+                        style="border-top: 1px solid rgba(255,255,255,0.1); padding-top: 0.5rem;">
+                        <div class="wallet-label">Address Faucet</div>
+                        <div class="address-container-sidebar">
+                            <a id="sidebarFaucetLink" href="#" target="_blank"
+                                class="badge-address-link">Cargando...</a>
+                            <button id="btnCopyFaucetSidebar" class="btn-icon-copy"
+                                title="Copiar Faucet Address">📋</button>
+                        </div>
+                        <div class="balances">
+                            <div class="balance-item">⛽ <span class="unit-label">MATIC</span> <span
+                                    id="sidebarFaucetBalance">0.00</span></div>
+                        </div>
                     </div>
+
                 </div>
                 <button id="btnConnect" class="btn btn-glass w-full">
                     🦊 Conectar

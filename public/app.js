@@ -277,11 +277,13 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (walletInfo) walletInfo.classList.remove('hidden');
 
             // Update Address Link & Text
-            const userAddrLink = document.getElementById('userAddressLink');
             if (userAddrLink) {
-                userAddrLink.textContent = `${userAddress.substring(0, 6)}...${userAddress.substring(38)}`;
+                userAddrLink.textContent = `${userAddress.substring(0, 14)}...${userAddress.substring(30)}`;
                 userAddrLink.href = `https://polygonscan.com/address/${userAddress}`;
             }
+
+            // Check Faucet Status to populate sidebar
+            checkFaucetStatus();
 
             // Copy Button Logic
             const btnCopy = document.getElementById('btnCopyAddress');
