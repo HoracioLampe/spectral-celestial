@@ -660,12 +660,12 @@ const statTotalTx = document.getElementById('statTotalTx');
 const statSentTx = document.getElementById('statSentTx');
 const statStatus = document.getElementById('statStatus');
 const detailUploadContainer = document.getElementById('detailUploadContainer');
-const btnUploadBatch = document.getElementById('btnUploadBatch');
 const uploadStatus = document.getElementById('uploadStatus');
 const batchStatsContainer = document.getElementById('batchStatsContainer');
 const detailTotalAmount = document.getElementById('detailTotalAmount');
 const detailTotalTx = document.getElementById('detailTotalTx');
 
+// Merkle Elements
 // Merkle Elements
 const merkleContainer = document.getElementById('merkleContainer');
 const merkleInputZone = document.getElementById('merkleInputZone');
@@ -681,49 +681,6 @@ const merkleResultBalance = document.getElementById('merkleResultBalance');
 const merkleResultFunder = document.getElementById('merkleResultFunder');
 
 const batchTableBody = document.getElementById('batchTableBody');
-
-// Upload Excel Logic
-async function uploadBatchFile() {
-    const fileInput = document.getElementById('batchFile');
-    if (!fileInput || !fileInput.files[0]) return alert("Selecciona un archivo Excel");
-    if (!currentBatchId) return alert("No hay lote activo");
-
-    const formData = new FormData();
-    formData.append('file', fileInput.files[0]);
-
-    try {
-        btnUploadBatch.textContent = "Procesando...";
-        btnUploadBatch.disabled = true;
-        const status = document.getElementById('uploadStatus');
-        if (status) status.textContent = "Leyendo Excel y Calculando...";
-
-        const res = await authenticatedFetch(`/api/batches/${currentBatchId}/upload`, {
-            method: 'POST',
-            body: formData
-        });
-        const result = await res.json();
-
-        if (result.batch) {
-            if (status) status.textContent = "✅ Carga exitosa. Generando Merkle Tree automáticamente...";
-            // Refresh grid
-            currentTxPage = 1;
-            await fetchBatchTransactions(currentBatchId);
-
-            // AUTO-GENERATE MERKLE (Pass authenticated)
-            await generateMerkleTree();
-        } else {
-            throw new Error(result.error || "Error en respuesta");
-        }
-
-    } catch (error) {
-        console.error(error);
-        const status = document.getElementById('uploadStatus');
-        if (status) status.textContent = "❌ Error: " + error.message;
-    } finally {
-        btnUploadBatch.textContent = "Subir y Calcular 📤";
-        btnUploadBatch.disabled = false;
-    }
-}
 
 // Event Listeners
 if (btnOpenBatchModal) btnOpenBatchModal.onclick = () => batchModal.classList.add('active');
@@ -746,10 +703,16 @@ window.showBatchList = function () {
     }
     batchDetailView.classList.add('hidden');
     batchListView.classList.remove('hidden');
+    // Force Hide Details Sections
+    document.getElementById('txDetailSection')?.classList.add('hidden');
+    document.getElementById('txTableContainer')?.classList.add('hidden');
+    document.getElementById('relayerGridSection')?.classList.add('hidden');
+    // Explicitly hide filters just in case
+    document.querySelector('.filter-bar')?.classList.add('hidden');
+
     fetchBatches(); // Refresh list
 };
 
-// Cargar lista al iniciar o cambiar tab
 // Pagination State
 let currentBatchPage = 1;
 const BATCCH_PAGE_SIZE = 10;
@@ -797,7 +760,6 @@ function updatePaginationUI(pagination) {
         btnNext.disabled = pagination.currentPage >= pagination.totalPages;
         btnNext.onclick = () => fetchBatches(pagination.currentPage + 1);
     }
-
     if (btnLast) {
         btnLast.disabled = pagination.currentPage >= pagination.totalPages;
         btnLast.onclick = () => fetchBatches(pagination.totalPages);
@@ -877,7 +839,11 @@ async function createBatch() {
         document.getElementById('newBatchDesc').value = '';
 
         fetchBatches(); // Recargar lista
-        alert("Lote creado exitosamente ✅");
+
+        // Wrap alert in setTimeout to ensure modal closes visually first 
+        setTimeout(() => {
+            alert("Lote creado exitosamente ✅");
+        }, 100);
 
     } catch (error) {
         console.error(error);
@@ -1414,7 +1380,62 @@ window.changePage = function (direction) {
 };
 
 // Merkle Tree Logic defined below
-// Deleted duplicated uploadBatchFile implementation from here
+
+// --- UPLOAD HANDLER ---
+const btnUploadBatch = document.getElementById('btnUploadBatch');
+if (btnUploadBatch) {
+    btnUploadBatch.onclick = async () => {
+        const fileInput = document.getElementById('batchFile');
+        const status = document.getElementById('uploadStatus');
+
+        if (!currentBatchId) return alert("No batch selected");
+        if (!fileInput.files[0]) return alert("Selecciona un archivo Excel");
+
+        const formData = new FormData();
+        formData.append('file', fileInput.files[0]);
+
+        try {
+            btnUploadBatch.disabled = true;
+            btnUploadBatch.textContent = "Subiendo...";
+            if (status) status.textContent = "Procesando archivo...";
+
+            const res = await authenticatedFetch(`/api/batches/${currentBatchId}/upload`, {
+                method: 'POST',
+                body: formData
+                // Don't set Content-Type header manually for FormData, browser does it with boundary
+            });
+            const data = await res.json();
+
+            if (data.error) throw new Error(data.error);
+
+            // Upload Success
+            if (status) {
+                status.textContent = `✅ Éxito! ${data.count} transacciones cargadas. Monto Total: $${(data.total_usdc / 1000000).toFixed(6)}`;
+                status.style.color = "#4ade80";
+            }
+
+            // Auto-trigger Merkle Generation
+            console.log("[Upload] Success. Triggering Merkle Generation...");
+            await generateMerkleTree();
+
+            // Refresh Batch Data to update UI
+            startProgressPolling(currentBatchId);
+
+        } catch (e) {
+            console.error(e);
+            if (status) {
+                status.textContent = "❌ Error: " + e.message;
+                status.style.color = "#ef4444";
+            }
+            alert("Error subiendo archivo: " + e.message);
+        } finally {
+            btnUploadBatch.disabled = false;
+            btnUploadBatch.textContent = "Subir y Calcular 📤";
+            // Clear input
+            fileInput.value = '';
+        }
+    };
+}
 
 async function generateMerkleTree() {
     if (!currentBatchId) return;

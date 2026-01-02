@@ -533,17 +533,24 @@ app.post('/api/batches/:id/register-merkle', authenticateToken, async (req, res)
     }
 });
 
-// GET Faucet Helper (internal)
-async function getFaucetCredentials() {
-    const faucetRes = await pool.query('SELECT private_key FROM faucets ORDER BY id DESC LIMIT 1');
-    let faucetPk = process.env.FAUCET_PRIVATE_KEY;
+// GET Faucet Helper (User-Specific)
+async function getFaucetCredentials(userAddress) {
+    if (!userAddress) throw new Error("Faucet lookup requires User Address");
+
+    const normalizedUser = userAddress.toLowerCase();
+
+    // 1. Try finding specific faucet for this user (Case Insensitive)
+    const faucetRes = await pool.query('SELECT private_key FROM faucets WHERE LOWER(funder_address) = $1 LIMIT 1', [normalizedUser]);
+
     if (faucetRes.rows.length > 0) {
-        faucetPk = faucetRes.rows[0].private_key;
+        return faucetRes.rows[0].private_key;
     }
-    if (!faucetPk) {
-        throw new Error("No Faucet configured. Generate one in Faucet Management.");
-    }
-    return faucetPk;
+
+    // 2. Fallback or Create
+    console.log(`[Faucet] No faucet found for ${normalizedUser}. Generating new one...`);
+    const wallet = ethers.Wallet.createRandom();
+    await pool.query('INSERT INTO faucets (address, private_key, funder_address) VALUES ($1, $2, $3)', [wallet.address, wallet.privateKey, normalizedUser]);
+    return wallet.privateKey;
 }
 
 // Phase 1: Setup & Fund Relayers (Secure)
@@ -555,7 +562,9 @@ app.post('/api/batches/:id/setup', authenticateToken, async (req, res) => {
         // Verify Ownership
         const ownerRes = await pool.query('SELECT funder_address FROM batches WHERE id = $1', [batchId]);
         if (ownerRes.rows.length === 0) return res.status(404).json({ error: 'Batch not found' });
-        if (req.user.role !== 'SUPER_ADMIN' && ownerRes.rows[0].funder_address?.toLowerCase() !== userAddress) {
+        const batchOwner = ownerRes.rows[0].funder_address?.toLowerCase();
+
+        if (req.user.role !== 'SUPER_ADMIN' && batchOwner !== userAddress) {
             return res.status(403).json({ error: 'Access denied' });
         }
 
@@ -565,9 +574,10 @@ app.post('/api/batches/:id/setup', authenticateToken, async (req, res) => {
             throw new Error("Maximum Relayer limit is 100 (Safe). 1000 causes Block Gas Limit errors.");
         }
 
-        const faucetPk = await getFaucetCredentials();
-        // const providerUrl = process.env.PROVIDER_URL || "https://polygon-mainnet.core.chainstack.com/05aa9ef98aa83b585c14fa0438ed53a9"; // OLD
-        const engine = new RelayerEngine(pool, globalRpcManager, faucetPk); // Pass Manager
+        // Use BATCH OWNER'S faucet (usually same as user, but for Admin overriding, use Batch Owner)
+        const faucetPk = await getFaucetCredentials(batchOwner);
+
+        const engine = new RelayerEngine(pool, globalRpcManager, faucetPk);
 
         const result = await engine.prepareRelayers(batchId, safeRelayerCount);
         res.json({ message: "Relayers created and funded", count: result.count });
@@ -586,14 +596,17 @@ app.post('/api/batches/:id/execute', authenticateToken, async (req, res) => {
         // Verify Ownership
         const ownerRes = await pool.query('SELECT funder_address FROM batches WHERE id = $1', [batchId]);
         if (ownerRes.rows.length === 0) return res.status(404).json({ error: 'Batch not found' });
-        if (req.user.role !== 'SUPER_ADMIN' && ownerRes.rows[0].funder_address?.toLowerCase() !== userAddress) {
+        const batchOwner = ownerRes.rows[0].funder_address?.toLowerCase();
+
+        if (req.user.role !== 'SUPER_ADMIN' && batchOwner !== userAddress) {
             return res.status(403).json({ error: 'Access denied' });
         }
 
         const { permitData, rootSignatureData } = req.body;
 
-        const faucetPk = await getFaucetCredentials();
-        // const providerUrl = process.env.PROVIDER_URL || "https://polygon-mainnet.core.chainstack.com/05aa9ef98aa83b585c14fa0438ed53a9"; // OLD
+        // Use BATCH OWNER'S faucet
+        const faucetPk = await getFaucetCredentials(batchOwner);
+
         const engine = new RelayerEngine(pool, globalRpcManager, faucetPk);
 
         const result = await engine.startExecution(batchId, permitData, rootSignatureData);
@@ -606,27 +619,20 @@ app.post('/api/batches/:id/execute', authenticateToken, async (req, res) => {
 
 // Keep /process alias for backwards compatibility or rename it
 app.post('/api/batches/:id/process', async (req, res) => {
-    // Redirecting legacy calls to execute
-    try {
-        const batchId = parseInt(req.params.id);
-        const faucetPk = await getFaucetCredentials();
-        const engine = new RelayerEngine(pool, process.env.PROVIDER_URL, faucetPk);
-        const result = await engine.startExecution(batchId, req.body.permitData, req.body.rootSignatureData);
-        res.json(result);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+    res.status(410).json({ error: "Deprecated. Use /execute" });
 });
 
 
 
 const QUICKNODE_URL = "https://polygon-mainnet.core.chainstack.com/05aa9ef98aa83b585c14fa0438ed53a9";
 
-// Faucet Management API
-app.get('/api/faucet', async (req, res) => {
+// Faucet Management API (User Specific)
+app.get('/api/faucet', authenticateToken, async (req, res) => {
     try {
-        // 1. Check existing faucet in DB
-        const result = await pool.query('SELECT * FROM faucets LIMIT 1');
+        const userAddress = req.user.address.toLowerCase();
+
+        // 1. Check existing faucet for THIS user (Case Insensitive)
+        const result = await pool.query('SELECT * FROM faucets WHERE LOWER(funder_address) = $1 LIMIT 1', [userAddress]);
 
         if (result.rows.length > 0) {
             const row = result.rows[0];
@@ -635,14 +641,14 @@ app.get('/api/faucet', async (req, res) => {
             const balance = await provider.getBalance(row.address);
             res.json({
                 address: row.address,
-                privateKey: row.private_key,
+                privateKey: row.private_key, // Admin/Owner view only
                 balance: ethers.formatEther(balance)
             });
         } else {
-            // AUTO-GENERATE if missing (Security Rotation)
-            console.log("🔍 No Faucet found, generating new one...");
+            // AUTO-GENERATE for this user
+            console.log(`🔍 No Faucet found for ${userAddress}, generating new one...`);
             const wallet = ethers.Wallet.createRandom();
-            await pool.query('INSERT INTO faucets (address, private_key) VALUES ($1, $2)', [wallet.address, wallet.privateKey]);
+            await pool.query('INSERT INTO faucets (address, private_key, funder_address) VALUES ($1, $2, $3)', [wallet.address, wallet.privateKey, userAddress]);
             res.json({
                 address: wallet.address,
                 privateKey: wallet.privateKey,
@@ -655,12 +661,15 @@ app.get('/api/faucet', async (req, res) => {
     }
 });
 
-app.post('/api/faucet/generate', async (req, res) => {
+app.post('/api/faucet/generate', authenticateToken, async (req, res) => {
     try {
+        const userAddress = req.user.address.toLowerCase();
         const wallet = ethers.Wallet.createRandom();
 
-        await pool.query('DELETE FROM faucets'); // Ensure only one exists
-        await pool.query('INSERT INTO faucets (address, private_key) VALUES ($1, $2)', [wallet.address, wallet.privateKey]);
+        // Ensure we don't have multiple (Delete old ones for this user)
+        await pool.query('DELETE FROM faucets WHERE LOWER(funder_address) = $1', [userAddress]);
+
+        await pool.query('INSERT INTO faucets (address, private_key, funder_address) VALUES ($1, $2, $3)', [wallet.address, wallet.privateKey, userAddress]);
 
         res.json({ address: wallet.address });
     } catch (err) {
@@ -903,10 +912,22 @@ app.get('*', (req, res) => {
 
 
 // Manual Fund Recovery Endpoint
-app.post('/api/batches/:id/return-funds', async (req, res) => {
+app.post('/api/batches/:id/return-funds', authenticateToken, async (req, res) => {
     try {
         const batchId = parseInt(req.params.id);
-        const faucetPk = await getFaucetCredentials();
+        const userAddress = req.user.address.toLowerCase();
+
+        // Verify Ownership to get owner address
+        const ownerRes = await pool.query('SELECT funder_address FROM batches WHERE id = $1', [batchId]);
+        if (ownerRes.rows.length === 0) return res.status(404).json({ error: 'Batch not found' });
+        const batchOwner = ownerRes.rows[0].funder_address?.toLowerCase();
+
+        if (req.user.role !== 'SUPER_ADMIN' && batchOwner !== userAddress) {
+            return res.status(403).json({ error: 'Access denied' });
+        }
+
+        // Use BATCH OWNER'S faucet
+        const faucetPk = await getFaucetCredentials(batchOwner);
         // const providerUrl = process.env.PROVIDER_URL || "https://polygon-mainnet.core.chainstack.com/05aa9ef98aa83b585c14fa0438ed53a9";
         const engine = new RelayerEngine(pool, globalRpcManager, faucetPk);
 
