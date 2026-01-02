@@ -1,6 +1,7 @@
 const API_TRANSACTIONS = '/api/transactions';
 let APP_CONFIG = { RPC_URL: '', WS_RPC_URL: '' };
 const BATCCH_PAGE_SIZE = 10;
+const TIMEZONE_CONFIG = { timeZone: 'America/Argentina/Buenos_Aires' };
 let AUTH_TOKEN = localStorage.getItem('jwt_token');
 
 async function authenticatedFetch(url, options = {}) {
@@ -976,7 +977,8 @@ window.openBatchDetail = async function (id) {
 // Pagination State
 const txPerPage = 10; // Updated to 10 as requested
 console.log("[UI] Version 2.4.1-FIX: Filters, UI Bugs & Refund Logic");
-const TIMEZONE_CONFIG = { timeZone: 'America/Argentina/Buenos_Aires' };
+// TIMEZONE_CONFIG moved to top
+
 let allBatchTransactions = []; // Store full list
 let filteredTransactions = []; // Store filtered list for rendering
 let currentTxPage = 1;
