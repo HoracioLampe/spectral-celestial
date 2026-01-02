@@ -252,8 +252,24 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (btnConnect) btnConnect.innerHTML = "🔗 Conectado";
             const walletInfo = document.getElementById('walletInfo');
             if (walletInfo) walletInfo.classList.remove('hidden');
-            const userAddrSpan = document.getElementById('userAddress');
-            if (userAddrSpan) userAddrSpan.textContent = `${userAddress.substring(0, 6)}...${userAddress.substring(38)}`;
+
+            // Update Address Link & Text
+            const userAddrLink = document.getElementById('userAddressLink');
+            if (userAddrLink) {
+                userAddrLink.textContent = `${userAddress.substring(0, 6)}...${userAddress.substring(38)}`;
+                userAddrLink.href = `https://polygonscan.com/address/${userAddress}`;
+            }
+
+            // Copy Button Logic
+            const btnCopy = document.getElementById('btnCopyAddress');
+            if (btnCopy) {
+                btnCopy.onclick = () => {
+                    navigator.clipboard.writeText(userAddress);
+                    const original = btnCopy.innerHTML;
+                    btnCopy.innerHTML = "✅";
+                    setTimeout(() => btnCopy.innerHTML = original, 2000);
+                };
+            }
 
             fetchBalances();
         }
@@ -366,6 +382,7 @@ function initDOMElements() {
     window.balanceMatic = document.getElementById('maticBalance');
     window.balanceUsdc = document.getElementById('usdcBalance');
     window.userAddressSpan = document.getElementById('userAddress');
+    window.batchTableBody = document.getElementById('batchTableBody');
 }
 
 function attachEventListeners() {
@@ -377,6 +394,33 @@ function attachEventListeners() {
 
     const btnRestrictedLogout = document.getElementById('btnRestrictedLogout');
     if (btnRestrictedLogout) btnRestrictedLogout.addEventListener('click', logout);
+
+    // Modal Events
+    const btnOpenBatchModal = document.getElementById('btnOpenBatchModal');
+    const batchModal = document.getElementById('batchModal');
+    const closeBatchModalBtn = document.querySelector('.close-modal');
+
+    if (btnOpenBatchModal && batchModal) {
+        btnOpenBatchModal.addEventListener('click', () => {
+            batchModal.classList.add('visible'); // Use class for visibility
+            batchModal.style.display = 'block'; // Fallback
+        });
+    }
+
+    if (closeBatchModalBtn && batchModal) {
+        closeBatchModalBtn.addEventListener('click', () => {
+            batchModal.classList.remove('visible');
+            batchModal.style.display = 'none';
+        });
+    }
+
+    // Close on click outside
+    window.onclick = (event) => {
+        if (event.target == batchModal) {
+            batchModal.classList.remove('visible');
+            batchModal.style.display = 'none';
+        }
+    };
 
     // Filter toggle
     if (window.btnConnect) window.btnConnect.onclick = connectWallet;

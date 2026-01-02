@@ -116,10 +116,15 @@
                     <span id="themeIcon">🌙</span>
                 </button>
                 <div id="walletInfo" class="wallet-info hidden">
-                    <div id="userAddress" class="badge-address">0x...</div>
+                    <div class="address-container-sidebar">
+                        <a id="userAddressLink" href="#" target="_blank" class="badge-address-link">0x...</a>
+                        <button id="btnCopyAddress" class="btn-icon-copy" title="Copiar Address">📋</button>
+                    </div>
                     <div class="balances">
-                        <div class="balance-item">💰 <span id="usdcBalance">0.00</span> USDC</div>
-                        <div class="balance-item">⛽ <span id="maticBalance">0.00</span> Polygon</div>
+                        <div class="balance-item">💰 <span class="unit-label">USDC</span> <span
+                                id="usdcBalance">0.00</span></div>
+                        <div class="balance-item">⛽ <span class="unit-label">MATIC</span> <span
+                                id="maticBalance">0.00</span></div>
                     </div>
                 </div>
                 <button id="btnConnect" class="btn btn-glass w-full">
