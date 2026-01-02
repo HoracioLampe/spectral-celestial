@@ -430,6 +430,9 @@ function initDOMElements() {
     window.balanceUsdc = document.getElementById('usdcBalance');
     window.userAddressSpan = document.getElementById('userAddress');
     window.batchTableBody = document.getElementById('batchTableBody');
+
+    // Initialize Batch UI Elements (Safe Pattern)
+    initBatchUI();
 }
 
 function attachEventListeners() {
@@ -690,45 +693,50 @@ async function fetchBalances() {
 
 let currentBatchId = null;
 
-// Elementos UI Lotes
-const batchListView = document.getElementById('batchListView');
-const batchDetailView = document.getElementById('batchDetailView');
-const batchesListBody = document.getElementById('batchesListBody');
+// DOM Elements (Initialized in initBatchUI)
+let batchListView, batchDetailView, batchesListBody, batchModal, btnOpenBatchModal, btnSaveBatch;
+let detailBatchTitle, detailBatchDesc, statTotalUSDC, statTotalTx, statSentTx, statStatus;
+let detailUploadContainer, uploadStatus, batchStatsContainer, detailTotalAmount, detailTotalTx;
+let merkleContainer, merkleInputZone, merkleResultZone, batchFunderAddress, btnGenerateMerkle;
+let displayMerkleRoot, merkleStatus, merkleTotalAmount, merkleFounderBalance, merkleResultBalance, merkleResultFunder;
+let batchTableBody;
 
-// Modal Elements
-const batchModal = document.getElementById('batchModal');
-const btnOpenBatchModal = document.getElementById('btnOpenBatchModal');
-const btnSaveBatch = document.getElementById('btnSaveBatch');
+function initBatchUI() {
+    batchListView = document.getElementById('batchListView');
+    batchDetailView = document.getElementById('batchDetailView');
+    batchesListBody = document.getElementById('batchesListBody');
+    batchModal = document.getElementById('batchModal');
+    btnOpenBatchModal = document.getElementById('btnOpenBatchModal');
+    btnSaveBatch = document.getElementById('btnSaveBatch');
 
-// Detail Elements
-const detailBatchTitle = document.getElementById('detailBatchTitle');
-const detailBatchDesc = document.getElementById('detailBatchDesc');
-const statTotalUSDC = document.getElementById('statTotalUSDC');
-const statTotalTx = document.getElementById('statTotalTx');
-const statSentTx = document.getElementById('statSentTx');
-const statStatus = document.getElementById('statStatus');
-const detailUploadContainer = document.getElementById('detailUploadContainer');
-const uploadStatus = document.getElementById('uploadStatus');
-const batchStatsContainer = document.getElementById('batchStatsContainer');
-const detailTotalAmount = document.getElementById('detailTotalAmount');
-const detailTotalTx = document.getElementById('detailTotalTx');
+    detailBatchTitle = document.getElementById('detailBatchTitle');
+    detailBatchDesc = document.getElementById('detailBatchDesc');
+    statTotalUSDC = document.getElementById('statTotalUSDC');
+    statTotalTx = document.getElementById('statTotalTx');
+    statSentTx = document.getElementById('statSentTx');
+    statStatus = document.getElementById('statStatus');
+    detailUploadContainer = document.getElementById('detailUploadContainer');
+    uploadStatus = document.getElementById('uploadStatus');
+    batchStatsContainer = document.getElementById('batchStatsContainer');
+    detailTotalAmount = document.getElementById('detailTotalAmount');
+    detailTotalTx = document.getElementById('detailTotalTx');
 
-// Merkle Elements
-// Merkle Elements
-const merkleContainer = document.getElementById('merkleContainer');
-const merkleInputZone = document.getElementById('merkleInputZone');
-const merkleResultZone = document.getElementById('merkleResultZone');
-const batchFunderAddress = document.getElementById('batchFunderAddress');
-const btnGenerateMerkle = document.getElementById('btnGenerateMerkle');
-const displayMerkleRoot = document.getElementById('displayMerkleRoot');
-const merkleStatus = document.getElementById('merkleStatus');
-// New Stats elements
-const merkleTotalAmount = document.getElementById('merkleTotalAmount');
-const merkleFounderBalance = document.getElementById('merkleFounderBalance');
-const merkleResultBalance = document.getElementById('merkleResultBalance');
-const merkleResultFunder = document.getElementById('merkleResultFunder');
+    merkleContainer = document.getElementById('merkleContainer');
+    merkleInputZone = document.getElementById('merkleInputZone');
+    merkleResultZone = document.getElementById('merkleResultZone');
+    batchFunderAddress = document.getElementById('batchFunderAddress');
+    btnGenerateMerkle = document.getElementById('btnGenerateMerkle');
+    displayMerkleRoot = document.getElementById('displayMerkleRoot');
+    merkleStatus = document.getElementById('merkleStatus');
 
-const batchTableBody = document.getElementById('batchTableBody');
+    merkleTotalAmount = document.getElementById('merkleTotalAmount');
+    merkleFounderBalance = document.getElementById('merkleFounderBalance');
+    merkleResultBalance = document.getElementById('merkleResultBalance');
+    merkleResultFunder = document.getElementById('merkleResultFunder');
+
+    batchTableBody = document.getElementById('batchTableBody');
+}
+
 
 // Event Listeners
 // Wrappers for Event Listeners (Called after DOM Load)
