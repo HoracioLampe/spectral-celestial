@@ -1098,6 +1098,18 @@ function updateDetailView(batch) {
             // Update Relayer Options Limit (Use batch.total_transactions since we don't have full tx array here)
             updateRelayerCountOptions(batch.total_transactions || 100);
 
+            // Populate Funder Info in Merkle Zone
+            const funderAddrEl = document.getElementById('displayFunderAddress');
+            const funderBalEl = document.getElementById('displayFunderBalance');
+
+            if (funderAddrEl && userAddress) {
+                funderAddrEl.textContent = `${userAddress.substring(0, 6)}...${userAddress.substring(38)}`;
+                // Also update balance if available in global UI
+                if (funderBalEl && window.balanceUsdc) {
+                    funderBalEl.textContent = window.balanceUsdc.textContent;
+                }
+            }
+
             // Update Verification Label with fixed 100 cap or actual count
             const verifyLabel = document.getElementById('merkleVerifyLabel');
             if (verifyLabel) {
@@ -1188,7 +1200,7 @@ function startProgressPolling(batchId) {
     console.log(`[UI] Starting progress polling for Batch ${batchId}`);
     batchProgressInterval = setInterval(async () => {
         try {
-            const res = await fetch(`/api/batches/${batchId}`);
+            const res = await authenticatedFetch(`/api/batches/${batchId}`);
             const data = await res.json();
             if (data.batch) {
                 updateProgressBar(data.batch);
