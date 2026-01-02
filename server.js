@@ -17,7 +17,7 @@ require('dotenv').config();
 const JWT_SECRET = process.env.JWT_SECRET || 'dappsfactory-secret-key-2026';
 
 // RPC Configuration (Failover)
-const RPC_PRIMARY = process.env.RPC_URL || "https://polygon-mainnet.core.chainstack.com/05aa9ef98aa83b585c14fa0438ed53a9";
+const RPC_PRIMARY = process.env.PROVIDER_URL || process.env.RPC_URL || "https://polygon-mainnet.core.chainstack.com/05aa9ef98aa83b585c14fa0438ed53a9";
 const RPC_FALLBACK = process.env.RPC_FALLBACK_URL || "https://polygon-bor-rpc.publicnode.com"; // Public Fallback
 const globalRpcManager = new RpcManager(RPC_PRIMARY, RPC_FALLBACK);
 

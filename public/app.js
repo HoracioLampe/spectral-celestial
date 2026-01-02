@@ -2,6 +2,7 @@ const API_TRANSACTIONS = '/api/transactions';
 let APP_CONFIG = { RPC_URL: '', WS_RPC_URL: '' };
 const BATCCH_PAGE_SIZE = 10;
 const TIMEZONE_CONFIG = { timeZone: 'America/Argentina/Buenos_Aires' };
+let currentBatchPage = 1;
 let AUTH_TOKEN = localStorage.getItem('jwt_token');
 
 async function authenticatedFetch(url, options = {}) {
@@ -754,7 +755,8 @@ window.showBatchList = function () {
 };
 
 // Pagination State
-let currentBatchPage = 1;
+// let currentBatchPage = 1; // Moved to top
+
 // Pagination State
 // const BATCCH_PAGE_SIZE = 10; // Moved to top
 
