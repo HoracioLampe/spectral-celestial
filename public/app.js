@@ -366,71 +366,85 @@ function initTheme() {
 }
 
 
+// RADICAL FIX: Pointer Events API (Modern & Robust)
 function initVerificationSlider() {
-    console.log("🔒 Init Verification Slider");
+    console.log("🔒 Init Verification Slider (Radical Fix)");
     const container = document.getElementById('verifyContainer');
     const slider = document.getElementById('verifySlider');
     const btnEnter = document.getElementById('btnEnterApp');
 
     if (!container || !slider || !btnEnter) {
-        console.error("❌ Verification elements missing", { container, slider, btnEnter });
+        console.error("❌ Verification elements missing");
         return;
     }
 
+    // Disable native drag (prevents ghost image)
+    slider.ondragstart = () => false;
+
     let isDragging = false;
-    // Fallback if offsetWidth is 0 (e.g. element hidden or not rendered)
-    const maxSlide = (container.offsetWidth && container.offsetWidth > 100)
-        ? container.offsetWidth - slider.offsetWidth - 10
-        : 260; // 320 - 50 - 10
+    const maxSlide = 260; // Hardcoded safety width based on CSS (320px container - 50px slider - 10px padding)
 
-    console.log(`🔒 Slider Config: MaxSlide=${maxSlide}px (Container=${container.offsetWidth}px)`);
+    const unlock = () => {
+        isDragging = false;
+        slider.style.left = maxSlide + 'px';
+        container.classList.add('success');
+        slider.querySelector('.verify-icon').textContent = '✅';
+        btnEnter.disabled = false;
+        btnEnter.classList.remove('btn-disabled');
+        console.log("🔓 Unlocked!");
+    };
 
-    const onStart = (e) => {
+    const reset = () => {
+        if (!container.classList.contains('success')) {
+            isDragging = false;
+            slider.style.transition = 'left 0.3s cubic-bezier(0.4, 0.0, 0.2, 1)';
+            slider.style.left = '5px';
+        }
+    };
+
+    // POINTER EVENTS (Unifies Mouse & Touch)
+    slider.onpointerdown = (e) => {
         if (container.classList.contains('success')) return;
         isDragging = true;
-        startX = (e.type === 'touchstart' ? e.touches[0].clientX : e.clientX) - slider.offsetLeft;
+        slider.setPointerCapture(e.pointerId); // CRITICAL: Keeps focus even if moving fast
         slider.style.transition = 'none';
-        console.log("🔒 Drag start");
+        console.log("⬇️ Pointer Down");
     };
 
-    const onMove = (e) => {
+    slider.onpointermove = (e) => {
         if (!isDragging) return;
-        e.preventDefault(); // Stop scrolling while dragging
-        let x = (e.type === 'touchmove' ? e.touches[0].clientX : e.clientX) - startX;
+        e.preventDefault();
 
-        if (x < 5) x = 5;
-        if (x > maxSlide) x = maxSlide;
+        // Relative calculation relative to CONTAINER
+        const containerRect = container.getBoundingClientRect();
+        let newX = e.clientX - containerRect.left - (slider.offsetWidth / 2);
 
-        slider.style.left = x + 'px';
+        // Clamping
+        if (newX < 5) newX = 5;
+        if (newX > maxSlide) newX = maxSlide;
 
-        // Check for success
-        if (x >= maxSlide - 5) {
-            isDragging = false;
-            slider.style.left = maxSlide + 'px';
-            container.classList.add('success');
-            slider.querySelector('.verify-icon').textContent = '✅';
-            btnEnter.disabled = false;
-            btnEnter.classList.remove('btn-disabled'); // If used in CSS
-            console.log("🔒 Human verification successful");
+        slider.style.left = newX + 'px';
+
+        // Trigger Success at 90%
+        if (newX >= maxSlide * 0.9) {
+            slider.releasePointerCapture(e.pointerId);
+            unlock();
         }
     };
 
-    const onEnd = () => {
+    slider.onpointerup = (e) => {
         if (!isDragging) return;
         isDragging = false;
-        if (!container.classList.contains('success')) {
-            slider.style.transition = 'left 0.3s ease';
-            slider.style.left = '5px';
-            console.log("🔒 Drag reset");
-        }
+        slider.releasePointerCapture(e.pointerId);
+        reset();
+        console.log("⬆️ Pointer Up");
     };
 
-    slider.addEventListener('mousedown', onStart);
-    slider.addEventListener('touchstart', onStart, { passive: false });
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('touchmove', onMove, { passive: false });
-    window.addEventListener('mouseup', onEnd);
-    window.addEventListener('touchend', onEnd);
+    // Safety: Also unlock on Double Click
+    slider.ondblclick = () => {
+        console.log("⚡ Emergency Unlock Triggered");
+        unlock();
+    };
 }
 
 function initDOMElements() {
