@@ -224,9 +224,19 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (payload.role === 'REGISTERED') {
                 if (restrictedView) restrictedView.classList.remove('hidden');
                 if (sidebar) sidebar.classList.add('hidden');
+                if (appLayout) appLayout.classList.remove('hidden');
+                const addrSpan = document.getElementById('restrictedUserAddress');
+                if (addrSpan) addrSpan.textContent = userAddress;
             } else {
                 if (appLayout) appLayout.classList.remove('hidden');
                 if (sidebar) sidebar.classList.remove('hidden');
+
+                // Show Admin Menu only for SUPER_ADMIN
+                const navAdmin = document.getElementById('navAdmin');
+                if (navAdmin) {
+                    navAdmin.classList.toggle('hidden', payload.role !== 'SUPER_ADMIN');
+                }
+
                 fetchBalances();
             }
         } catch (e) {
@@ -469,9 +479,19 @@ async function connectWallet() {
                     if (role === 'REGISTERED') {
                         if (restrictedView) restrictedView.classList.remove('hidden');
                         if (sidebar) sidebar.classList.add('hidden'); // Hide navigation
+                        if (appLayout) appLayout.classList.remove('hidden');
+                        const addrSpan = document.getElementById('restrictedUserAddress');
+                        if (addrSpan) addrSpan.textContent = authData.address;
                     } else if (appLayout) {
                         appLayout.classList.remove('hidden');
                         if (sidebar) sidebar.classList.remove('hidden');
+
+                        // Show Admin Menu only for SUPER_ADMIN
+                        const navAdmin = document.getElementById('navAdmin');
+                        if (navAdmin) {
+                            navAdmin.classList.toggle('hidden', role !== 'SUPER_ADMIN');
+                        }
+
                         appLayout.style.opacity = "0";
                         appLayout.style.transition = "opacity 0.8s ease";
                         setTimeout(() => appLayout.style.opacity = "1", 50);

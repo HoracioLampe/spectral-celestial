@@ -935,6 +935,19 @@ tr:hover td {
     line-height: 1.6;
 }
 
+.badge-address-restricted {
+    background: rgba(59, 130, 246, 0.1);
+    border: 1px solid rgba(59, 130, 246, 0.3);
+    color: var(--primary);
+    padding: 0.5rem 1rem;
+    border-radius: 99px;
+    font-family: monospace;
+    font-size: 0.9rem;
+    margin-bottom: 2rem;
+    display: inline-block;
+    box-shadow: 0 0 15px rgba(59, 130, 246, 0.1);
+}
+
 .btn-glow:hover {
     box-shadow: 0 0 20px rgba(59, 130, 246, 0.4);
     transform: translateY(-2px);
