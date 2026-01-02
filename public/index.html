@@ -333,6 +333,95 @@
 
                                     <!-- Progress Tracking UI -->
                                     <div id="batchProgressZone" class="hidden" style="margin-top: 1rem;">
+
+                                        <!-- Gauge Speedometer Visualization -->
+                                        <div id="batchProgressGauge" class="hidden"
+                                            style="margin: 1rem auto; max-width: 320px;">
+                                            <svg viewBox="0 0 200 120" style="width: 100%; display: block;">
+                                                <path d="M 20 100 A 80 80 0 0 1 180 100" fill="none"
+                                                    stroke="rgba(255,255,255,0.05)" stroke-width="15"
+                                                    stroke-linecap="round" />
+                                                <path id="gaugeProgress" d="M 20 100 A 80 80 0 0 1 180 100" fill="none"
+                                                    stroke="url(#gaugeGradient)" stroke-width="15"
+                                                    stroke-linecap="round" stroke-dasharray="251.2"
+                                                    stroke-dashoffset="251.2"
+                                                    style="transition: stroke-dashoffset 0.8s cubic-bezier(0.4, 0, 0.2, 1);" />
+                                                <defs>
+                                                    <linearGradient id="gaugeGradient" x1="0%" y1="0%" x2="100%"
+                                                        y2="0%">
+                                                        <stop offset="0%" style="stop-color:#10b981;" />
+                                                        <stop offset="50%" style="stop-color:#fbbf24;" />
+                                                        <stop offset="100%" style="stop-color:#ef4444;" />
+                                                    </linearGradient>
+                                                </defs>
+                                                <line id="gaugeNeedle" x1="100" y1="100" x2="100" y2="35" stroke="#fff"
+                                                    stroke-width="2" stroke-linecap="round"
+                                                    style="transform-origin: 100px 100px; transform: rotate(-90deg); transition: transform 0.8s cubic-bezier(0.4, 0, 0.2, 1);" />
+                                                <circle cx="100" cy="100" r="4" fill="#60a5fa" />
+                                            </svg>
+
+                                            <div style="text-align: center; margin-top: -10px;">
+                                                <div id="gaugePercentage"
+                                                    style="font-size: 1.8rem; font-weight: bold; color: #fff;">0%</div>
+                                                <div id="gaugeStatus"
+                                                    style="font-size: 0.7rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px;">
+                                                    Iniciando...</div>
+                                            </div>
+
+                                            <div
+                                                style="display: flex; justify-content: space-around; margin-top: 1rem; padding: 0.5rem; background: rgba(0,0,0,0.2); border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">
+                                                <div style="text-align: center;">
+                                                    <div style="font-size: 0.9rem; font-weight: bold; color: #10b981;"
+                                                        id="gaugeCompletedText">0</div>
+                                                    <div style="font-size: 0.6rem; color: #64748b;">OK</div>
+                                                </div>
+                                                <div style="text-align: center;">
+                                                    <div style="font-size: 0.9rem; font-weight: bold; color: #fbbf24;"
+                                                        id="gaugePendingText">0</div>
+                                                    <div style="font-size: 0.6rem; color: #64748b;">WAIT</div>
+                                                </div>
+                                                <div style="text-align: center;">
+                                                    <div style="font-size: 0.9rem; font-weight: bold; color: #ef4444;"
+                                                        id="gaugeFailedText">0</div>
+                                                    <div style="font-size: 0.6rem; color: #64748b;">FAIL</div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <script>
+                                            function updateProgressGauge(completed, pending, failed, total) {
+                                                const gauge = document.getElementById('batchProgressGauge');
+                                                if (!gauge) return;
+                                                gauge.classList.remove('hidden');
+
+                                                const percentage = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+                                                document.getElementById('gaugeCompletedText').textContent = completed;
+                                                document.getElementById('gaugePendingText').textContent = pending;
+                                                document.getElementById('gaugeFailedText').textContent = failed;
+                                                document.getElementById('gaugePercentage').textContent = percentage + '%';
+
+                                                const statusEl = document.getElementById('gaugeStatus');
+                                                if (pending > 0) statusEl.textContent = 'Procesando...';
+                                                else if (failed > 0) statusEl.textContent = 'Finalizado con Errores';
+                                                else if (completed === total) statusEl.textContent = '¡Completado!';
+
+                                                const progressArc = document.getElementById('gaugeProgress');
+                                                const circumference = 251.2;
+                                                const offset = circumference - (percentage / 100) * circumference;
+                                                progressArc.style.strokeDashoffset = offset;
+
+                                                const needle = document.getElementById('gaugeNeedle');
+                                                const rotation = -90 + (percentage / 100) * 180;
+                                                needle.style.transform = `rotate(${rotation}deg)`;
+                                            }
+
+                                            function hideProgressGauge() {
+                                                const gauge = document.getElementById('batchProgressGauge');
+                                                if (gauge) gauge.classList.add('hidden');
+                                            }
+                                        </script>
+
                                         <div class="progress-container">
                                             <div id="batchProgressBar" class="progress-bar"></div>
                                         </div>
