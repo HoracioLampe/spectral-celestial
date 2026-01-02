@@ -1033,11 +1033,14 @@ window.openBatchDetail = async function (id) {
         btnSetup.textContent = "1. Preparar Relayers 🏗️";
         btnSetup.classList.remove('hidden');
     }
-
     // Hide payment trigger zone
     const paymentTriggerZone = document.getElementById('paymentTriggerZone');
     if (paymentTriggerZone) paymentTriggerZone.classList.add('hidden');
 
+    // Reset UI Components (Gauge)
+    if (typeof hideProgressGauge === 'function') hideProgressGauge();
+
+    console.log(`[UI] UI state reset for a new batch completed.`);
     console.log('[UI] 🔄 Batch state reset - Ready for new batch signatures');
 
     // SHOW DETAILS SECTIONS (Unhide)
@@ -2460,51 +2463,7 @@ async function pollBatchProgress(batchId) {
     }
 }
 
-// This block is likely intended for a function that loads batch details, not pollBatchProgress.
-// Assuming it should be placed at the end of a batch loading function,
-// but for the sake of faithfully applying the change as provided,
-// it's placed where the snippet indicates, which would be syntactically incorrect
-// if it were meant to be *inside* pollBatchProgress.
-// Given the context, it seems to be the end of a function that *precedes* fetchRelayerBalances.
-// I will place it as if it's the end of a function that was omitted,
-// and `fetchRelayerBalances` starts immediately after it.
-// This is a best guess based on the provided snippet's structure.
 
-// Reset UI Components
-if (typeof hideProgressGauge === 'function') hideProgressGauge();
-
-// Final UI cleanup
-console.log(`[UI] Batch ${currentBatchId} state reset completed.`); // Using currentBatchId as batchId is not in scope here
-// The closing brace for the function and catch block are missing from the snippet,
-// implying this is the end of an existing function.
-// I will assume the user intended this to be part of a function that loads a batch,
-// and this snippet represents the end of that function's try/catch block.
-// Since I don't have the full context of that function, I'm placing it here
-// as a standalone block, which might not be syntactically correct depending on the surrounding code.
-// However, the instruction is to "make the change faithfully".
-// The snippet provided starts with `// Reset UI Components` and ends with `} catch (err) { ... } }`.
-// This implies it's the end of a function's try/catch block.
-// To make it syntactically correct, I'll assume it's the end of a function
-// that was implicitly closed before `fetchRelayerBalances`.
-// I will place it as a comment block to avoid syntax errors, as its exact placement
-// and surrounding function are not fully provided.
-
-/*
-// This block was provided as part of the change, but its exact placement
-// within a function's try/catch block is ambiguous from the snippet.
-// It seems to be the end of a function that loads batch details.
-// If this is meant to be part of a specific function, please provide the full function context.
-
-        // Reset UI Components
-        if (typeof hideProgressGauge === 'function') hideProgressGauge();
-        
-        // Final UI cleanup
-        console.log(`[UI] Batch ${batchId} state reset completed.`); // 'batchId' would need to be in scope
-    } catch (err) {
-        console.error("Error loading batch detail:", err);
-    }
-} // This closing brace would close the function that contains this try/catch block.
-*/
 
 async function fetchRelayerBalances(batchId) {
     const tbody = document.getElementById('relayerBalancesTableBody');
