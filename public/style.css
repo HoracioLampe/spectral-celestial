@@ -791,7 +791,21 @@ tr:hover td {
 
 .truncate-hash {
     font-family: monospace;
+    color: #ffffff;
+    /* FORCE WHITE for contrast */
+    text-decoration: none;
+    transition: color 0.2s;
+}
+
+.truncate-hash:hover {
     color: var(--accent);
+    /* Blue on hover */
+    text-decoration: underline;
+}
+
+.hash-link {
+    color: #ffffff !important;
+    text-decoration: none;
 }
 
 .amount-usdc {
