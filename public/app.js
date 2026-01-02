@@ -2393,7 +2393,9 @@ async function pollBatchProgress(batchId) {
             const failed = data.stats ? parseInt(data.stats.failed || 0) : 0;
 
             // If we have stats, use strict Pending check
-            const isDoneStats = (pending === 0 && total > 0);
+            // FIX: User wants 100% completion. If there are FAILED txs, backend is retrying them.
+            // So we must NOT stop if failed > 0.
+            const isDoneStats = (pending === 0 && failed === 0 && total > 0);
 
             if (isDoneStats || (completed >= total && total > 0) || status === 'COMPLETED') {
                 stopTimer();
