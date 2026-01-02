@@ -1,5 +1,6 @@
 const API_TRANSACTIONS = '/api/transactions';
 let APP_CONFIG = { RPC_URL: '', WS_RPC_URL: '' };
+const BATCCH_PAGE_SIZE = 10;
 let AUTH_TOKEN = localStorage.getItem('jwt_token');
 
 async function authenticatedFetch(url, options = {}) {
@@ -753,7 +754,9 @@ window.showBatchList = function () {
 
 // Pagination State
 let currentBatchPage = 1;
-const BATCCH_PAGE_SIZE = 10;
+// Pagination State
+// const BATCCH_PAGE_SIZE = 10; // Moved to top
+
 
 // Cargar lista al iniciar o cambiar tab
 async function fetchBatches(page = 1) {
