@@ -89,6 +89,13 @@ const upload = multer({ dest: os.tmpdir() });
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok', uptime: process.uptime() }));
 
+app.get('/api/config', (req, res) => {
+    res.json({
+        CONTRACT_ADDRESS: process.env.CONTRACT_ADDRESS || "0x7B25Ce9800CCE4309E92e2834E09bD89453d90c5",
+        RPC_URL: RPC_PRIMARY
+    });
+});
+
 app.get('/api/auth/nonce', async (req, res) => {
     try {
         if (!req.session) {
