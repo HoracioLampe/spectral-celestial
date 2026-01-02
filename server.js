@@ -1138,7 +1138,7 @@ app.post('/api/batches/:id/return-funds', authenticateToken, async (req, res) =>
     }
 });
 
-// ADMIN: Trigger Rescue Script
+// ADMIN: Trigger Rescue Script (Legacy - Background)
 app.post('/api/admin/rescue', authenticateToken, async (req, res) => {
     try {
         if (req.user.role !== 'SUPER_ADMIN') {
@@ -1160,6 +1160,224 @@ app.post('/api/admin/rescue', authenticateToken, async (req, res) => {
 
     } catch (err) {
         console.error(err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ADMIN: Get Rescue Status (Dashboard)
+app.get('/api/admin/rescue-status', authenticateToken, async (req, res) => {
+    try {
+        if (req.user.role !== 'SUPER_ADMIN') {
+            return res.status(403).json({ error: 'Access denied. SUPER_ADMIN role required.' });
+        }
+
+        const batchId = req.query.batchId ? parseInt(req.query.batchId) : null;
+
+        // Query relayers with their faucet mapping
+        let query = `
+            SELECT 
+                r.address,
+                r.last_balance,
+                r.batch_id,
+                r.status as relayer_status,
+                f.address as faucet_address,
+                b.funder_address
+            FROM relayers r
+            LEFT JOIN batches b ON r.batch_id = b.id
+            LEFT JOIN faucets f ON LOWER(f.funder_address) = LOWER(b.funder_address)
+        `;
+
+        let params = [];
+        if (batchId) {
+            query += ' WHERE r.batch_id = $1';
+            params.push(batchId);
+        } else {
+            // Last 1000 batches
+            query += ` WHERE r.batch_id IN (
+                SELECT id FROM batches ORDER BY id DESC LIMIT 1000
+            )`;
+        }
+
+        query += ' ORDER BY r.id DESC';
+
+        const result = await pool.query(query, params);
+
+        // Get balances from blockchain
+        const rpcUrl = process.env.POLYGON_RPC_URL || process.env.RPC_URL || 'https://polygon-rpc.com';
+        const provider = new ethers.JsonRpcProvider(rpcUrl);
+
+        const relayersWithBalance = await Promise.all(
+            result.rows.map(async (r) => {
+                try {
+                    const balance = await provider.getBalance(r.address);
+                    const balanceEth = ethers.formatEther(balance);
+                    const balanceNum = parseFloat(balanceEth);
+
+                    return {
+                        address: r.address,
+                        balance: balanceEth,
+                        balanceNum: balanceNum,
+                        faucetAddress: r.faucet_address || 'Unknown',
+                        batchId: r.batch_id,
+                        status: r.relayer_status === 'drained' ? 'completed' : (balanceNum > 0.01 ? 'pending' : 'completed')
+                    };
+                } catch (err) {
+                    return {
+                        address: r.address,
+                        balance: '0',
+                        balanceNum: 0,
+                        faucetAddress: r.faucet_address || 'Unknown',
+                        batchId: r.batch_id,
+                        status: 'error',
+                        error: err.message
+                    };
+                }
+            })
+        );
+
+        // Calculate summary
+        const summary = {
+            total: relayersWithBalance.length,
+            pending: relayersWithBalance.filter(r => r.status === 'pending').length,
+            processing: 0, // Will be updated during active rescue
+            completed: relayersWithBalance.filter(r => r.status === 'completed').length,
+            failed: relayersWithBalance.filter(r => r.status === 'error').length,
+            totalBalance: relayersWithBalance.reduce((sum, r) => sum + r.balanceNum, 0).toFixed(4) + ' MATIC'
+        };
+
+        res.json({
+            relayers: relayersWithBalance,
+            summary: summary
+        });
+
+    } catch (err) {
+        console.error('[Admin] Rescue Status Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ADMIN: Execute Rescue (Dashboard)
+app.post('/api/admin/rescue-execute', authenticateToken, async (req, res) => {
+    try {
+        if (req.user.role !== 'SUPER_ADMIN') {
+            return res.status(403).json({ error: 'Access denied. SUPER_ADMIN role required.' });
+        }
+
+        const { batchId } = req.body;
+
+        console.log(`[Admin] 💰 User ${req.user.address} starting rescue${batchId ? ` for batch ${batchId}` : ' for all relayers'}...`);
+
+        // Execute rescue inline (not background) for better control
+        const rpcUrl = process.env.POLYGON_RPC_URL || process.env.RPC_URL || 'https://polygon-rpc.com';
+        const provider = new ethers.JsonRpcProvider(rpcUrl);
+
+        // Get relayers to rescue
+        let query = `
+            SELECT 
+                r.address,
+                r.private_key,
+                r.batch_id,
+                f.address as faucet_address
+            FROM relayers r
+            LEFT JOIN batches b ON r.batch_id = b.id
+            LEFT JOIN faucets f ON LOWER(f.funder_address) = LOWER(b.funder_address)
+        `;
+
+        let params = [];
+        if (batchId) {
+            query += ' WHERE r.batch_id = $1';
+            params.push(batchId);
+        } else {
+            query += ` WHERE r.batch_id IN (
+                SELECT id FROM batches ORDER BY id DESC LIMIT 1000
+            )`;
+        }
+
+        const result = await pool.query(query, params);
+        const relayers = result.rows;
+
+        if (relayers.length === 0) {
+            return res.json({ success: true, message: 'No relayers found to rescue', rescued: 0 });
+        }
+
+        // Get gas price
+        const feeData = await provider.getFeeData();
+        const gasPrice = feeData.gasPrice || 35000000000n;
+        const boostedGasPrice = (gasPrice * 130n) / 100n;
+        const gasLimit = 21000n;
+        const minCost = gasLimit * boostedGasPrice;
+        const safetyMargin = ethers.parseEther("0.1");
+
+        let rescued = 0;
+        let totalRescued = 0n;
+        const results = [];
+
+        // Process sequentially to avoid RPS issues
+        for (const r of relayers) {
+            try {
+                if (!r.faucet_address) {
+                    console.warn(`[Rescue] Skipping ${r.address}: No faucet found`);
+                    continue;
+                }
+
+                const wallet = new ethers.Wallet(r.private_key, provider);
+                const balance = await provider.getBalance(wallet.address);
+
+                if (balance > (minCost + safetyMargin)) {
+                    const amountToReturn = balance - minCost - safetyMargin;
+
+                    const tx = await wallet.sendTransaction({
+                        to: r.faucet_address,
+                        value: amountToReturn,
+                        gasLimit: gasLimit,
+                        gasPrice: boostedGasPrice
+                    });
+
+                    await tx.wait();
+
+                    console.log(`[Rescue] ✅ ${wallet.address.substring(0, 8)}... → ${r.faucet_address.substring(0, 8)}... | ${ethers.formatEther(amountToReturn)} MATIC | TX: ${tx.hash}`);
+
+                    totalRescued += amountToReturn;
+                    rescued++;
+
+                    // Update DB
+                    await pool.query(
+                        "UPDATE relayers SET last_balance = $1, last_activity = NOW(), status = 'drained' WHERE address = $2",
+                        ['0', r.address]
+                    );
+
+                    results.push({
+                        address: r.address,
+                        faucet: r.faucet_address,
+                        amount: ethers.formatEther(amountToReturn),
+                        txHash: tx.hash,
+                        status: 'success'
+                    });
+                }
+
+                // Rate limiting
+                await new Promise(resolve => setTimeout(resolve, 500));
+
+            } catch (err) {
+                console.error(`[Rescue] ❌ Failed for ${r.address}:`, err.message);
+                results.push({
+                    address: r.address,
+                    status: 'failed',
+                    error: err.message
+                });
+            }
+        }
+
+        res.json({
+            success: true,
+            message: `Rescued ${rescued} relayers`,
+            rescued: rescued,
+            totalAmount: ethers.formatEther(totalRescued) + ' MATIC',
+            results: results
+        });
+
+    } catch (err) {
+        console.error('[Admin] Rescue Execute Error:', err);
         res.status(500).json({ error: err.message });
     }
 });
