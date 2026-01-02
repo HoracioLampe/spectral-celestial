@@ -790,6 +790,14 @@ class RelayerEngine {
         const walletToUse = actingFaucetWallet || this.faucetWallet;
 
         try {
+            // STEP 0: AUTO-UNBLOCK - Verify and repair nonce BEFORE attempting atomic distribution
+            console.log(`[Engine][Fund] 🔧 Pre-flight: Verifying Faucet nonce status...`);
+            const nonceRepaired = await this.verifyAndRepairNonce(walletToUse);
+
+            if (!nonceRepaired) {
+                console.warn(`[Engine][Fund] ⚠️ Nonce repair incomplete, but proceeding with caution...`);
+            }
+
             // Re-instantiate contract with specific signer
             const contract = new ethers.Contract(this.contractAddress, this.contractABI, walletToUse);
             const totalValueToSend = amountWei * BigInt(relayers.length);
@@ -803,7 +811,7 @@ class RelayerEngine {
                 throw new Error(`Insufficient Faucet balance. Need ${ethers.formatEther(totalValueToSend)} MATIC, have ${ethers.formatEther(faucetBalance)}.`);
             }
 
-            console.log(`[Engine][Fund] 🚀 Atomic Distribution START: ${relayers.length} relayers.`);
+            console.log(`[Engine][Fund] 🚀 Atomic Distribution START: ${relayers.length} relayers | ${ethers.formatEther(amountWei)} POL each.`);
             console.log(`[Engine][Fund] Target: ${ethers.formatEther(amountWei)} MATIC each | Total: ${ethers.formatEther(totalValueToSend)} MATIC`);
 
             // Gas Calculation: Increased Baseline (200k) + 50k per recipient for safety
@@ -870,39 +878,50 @@ class RelayerEngine {
     /**
      * AUTO-REPAIR: Checks for stuck "ghost" transactions in mempool and clears them.
      * Aggressively loops until Pending == Latest.
+     * @param {ethers.Wallet} wallet - The wallet to check and repair (defaults to faucetWallet)
      */
-    async verifyAndRepairNonce() {
+    async verifyAndRepairNonce(wallet = null) {
+        const targetWallet = wallet || this.faucetWallet;
+
         try {
-            const address = this.faucetWallet.address;
+            const address = targetWallet.address;
             let latestNonce = await this.provider.getTransactionCount(address, "latest");
             let pendingNonce = await this.provider.getTransactionCount(address, "pending");
 
-            console.log(`[AutoRepair] 🔍 Nonce Check: L=${latestNonce} | P=${pendingNonce}`);
+            console.log(`[AutoRepair][${address.substring(0, 8)}] 🔍 Nonce Check: L=${latestNonce} | P=${pendingNonce}`);
 
             let attempt = 0;
             const MAX_ATTEMPTS = 10; // Safety break
 
             while (pendingNonce > latestNonce && attempt < MAX_ATTEMPTS) {
                 attempt++;
-                console.warn(`[AutoRepair] ⚠️ Stuck Queue Detected (Diff: ${pendingNonce - latestNonce}). Clearing slot ${latestNonce}...`);
+                console.warn(`[AutoRepair][${address.substring(0, 8)}] ⚠️ Stuck Queue Detected (Diff: ${pendingNonce - latestNonce}). Clearing slot ${latestNonce}...`);
 
                 const feeData = await this.provider.getFeeData();
                 const boostPrice = (feeData.gasPrice * 30n) / 10n; // 3x aggressive gas
 
                 // Send 0-value self-transfer to overwrite the "head" of the stuck queue
                 try {
-                    const tx = await this.faucetWallet.sendTransaction({
+                    const tx = await targetWallet.sendTransaction({
                         to: address,
                         value: 0,
                         nonce: latestNonce,
                         gasLimit: 30000,
                         gasPrice: boostPrice
                     });
-                    console.log(`[AutoRepair] 💉 Correction TX Sent: ${tx.hash}. Waiting...`);
-                    await tx.wait();
-                    console.log(`[AutoRepair] ✅ Slot ${latestNonce} cleared.`);
+                    console.log(`[AutoRepair][${address.substring(0, 8)}] 💉 Correction TX Sent: ${tx.hash}. Waiting...`);
+
+                    // Wait for confirmation with timeout
+                    await Promise.race([
+                        tx.wait(),
+                        new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 60000))
+                    ]);
+
+                    console.log(`[AutoRepair][${address.substring(0, 8)}] ✅ Slot ${latestNonce} cleared.`);
                 } catch (txErr) {
-                    console.warn(`[AutoRepair] ⚠️ Tx Replacement failed: ${txErr.message}. Retrying check...`);
+                    console.warn(`[AutoRepair][${address.substring(0, 8)}] ⚠️ Tx Replacement failed: ${txErr.message}. Retrying check...`);
+                    // Wait a bit before retrying
+                    await new Promise(r => setTimeout(r, 3000));
                 }
 
                 // Refresh counts
@@ -911,13 +930,16 @@ class RelayerEngine {
             }
 
             if (pendingNonce > latestNonce) {
-                console.warn(`[AutoRepair] ⚠️ Queue still stuck after ${MAX_ATTEMPTS} attempts. Proceeding with caution.`);
+                console.warn(`[AutoRepair][${address.substring(0, 8)}] ⚠️ Queue still stuck after ${MAX_ATTEMPTS} attempts. Proceeding with caution.`);
+                return false; // Indicate repair failed
             } else {
-                console.log(`[AutoRepair] ✨ Mempool is clean.`);
+                console.log(`[AutoRepair][${address.substring(0, 8)}] ✨ Mempool is clean.`);
+                return true; // Indicate success
             }
 
         } catch (e) {
             console.warn(`[AutoRepair] ⚠️ Failed to auto-repair nonce: ${e.message}`);
+            return false;
         }
     }
 
