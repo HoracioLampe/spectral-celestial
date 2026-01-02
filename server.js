@@ -703,12 +703,29 @@ app.post('/api/batches/:id/register-merkle', authenticateToken, async (req, res)
         // 3. Finalize Batch
         await client.query('UPDATE batches SET merkle_root = $1, funder_address = $2 WHERE id = $3', [root, normalizedFunder, batchId]);
 
+        // Get batch details for logging
+        const batchDetails = await client.query('SELECT batch_number, total_transactions FROM batches WHERE id = $1', [batchId]);
+        const batchInfo = batchDetails.rows[0];
+
         await client.query('COMMIT');
+
+        // 🌳 DETAILED MERKLE TREE CREATION LOG
+        console.log('\n========================================');
+        console.log('🌳 MERKLE TREE GENERATED SUCCESSFULLY');
+        console.log('========================================');
+        console.log(`📦 Batch ID:          ${batchId}`);
+        console.log(`🔢 Batch Number:      ${batchInfo.batch_number}`);
+        console.log(`📊 Total Txs:         ${batchInfo.total_transactions}`);
+        console.log(`👤 Funder Address:    ${normalizedFunder}`);
+        console.log(`🌲 Merkle Root:       ${root}`);
+        console.log(`⏰ Timestamp:         ${new Date().toISOString()}`);
+        console.log('========================================\n');
+
         res.json({ root });
 
     } catch (err) {
         if (client) await client.query('ROLLBACK');
-        console.error(err);
+        console.error('❌ [Merkle Tree] Generation Failed:', err);
         res.status(500).json({ error: err.message });
     } finally {
         client.release();
