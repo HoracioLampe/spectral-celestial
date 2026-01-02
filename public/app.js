@@ -2606,4 +2606,9 @@ setInterval(() => {
 
 // Initial calls
 checkFaucetStatus();
+
+// Initialize UI Managers
+initBatchUI();
+setupBatchEventListeners();
+setupMerkleTestListener();
 refreshRelayerBalances();

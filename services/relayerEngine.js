@@ -718,22 +718,52 @@ class RelayerEngine {
 
         // Check Faucet Balance BEFORE calculating per-relayer split
         const faucetBalance = await this.provider.getBalance(funderFaucetAddress);
-        // Reserve 0.2 MATIC for the distribution tx gas itself
-        const reserveGas = ethers.parseEther("0.2");
 
-        // REDUCED BUFFER: Use 1.2x instead of 2x to avoid draining faucet on estimation
-        let fundAmount = (totalCostWei * 120n) / 100n;
+        // --- DYNAMIC RESERVE CALCULATION ---
+        const feeData = await this.provider.getFeeData();
+        const gasPrice = feeData.gasPrice || ethers.parseUnits("50", "gwei"); // Fallback higher for safety
+
+        // Calculate Gas accurately for the Distribution Transaction itself
+        // Formula matches fundRelayers: 200k base + 50k per relayer
+        const distributeGasLimit = 200000n + (BigInt(relayers.length) * 50000n);
+        const distributeTxCost = distributeGasLimit * gasPrice;
+
+        // Safety Margin for Distribution Tx (1.5x of estimated cost) + Floor of 0.5 MATIC
+        const dynamicReserve = (distributeTxCost * 150n) / 100n;
+        const minReserve = ethers.parseEther("0.5");
+        const reserveGas = dynamicReserve > minReserve ? dynamicReserve : minReserve;
+
+        console.log(`[Engine][Fund] ⛽ Est. Gas Cost for Distribution: ${ethers.formatEther(distributeTxCost)} MATIC. Using Reserve: ${ethers.formatEther(reserveGas)} MATIC`);
+
+        // CONSERVATIVE BUFFER: User requested 2x (200%) default safety. Configurable via env.
+        const bufferPercent = BigInt(process.env.RELAYER_GAS_BUFFER_PERCENT || "200");
+        let fundAmount = (totalCostWei * bufferPercent) / 100n;
         let warningMsg = null;
 
-        if (faucetBalance < (totalCostWei + reserveGas)) {
-            console.warn(`[Engine][Fund] ⚠️ Faucet low! Needed: ${ethers.formatEther(totalCostWei)} | Has: ${ethers.formatEther(faucetBalance)}`);
+        // Check if we have enough for: FUNDING + DISTRIBUTION GAS
+        if (faucetBalance < (fundAmount + reserveGas)) {
+            // Critical Check: Do we even have enough for the GAS of the distribution tx?
+            if (faucetBalance < reserveGas) {
+                throw new Error(`CRÍTICO: Faucet vacío o insuficiente para GAS de distribución. Balance: ${ethers.formatEther(faucetBalance)} MATIC. Mínimo Gas: ${ethers.formatEther(reserveGas)}`);
+            }
+
+            console.warn(`[Engine][Fund] ⚠️ Faucet low! Needed: ${ethers.formatEther(fundAmount)} + ${ethers.formatEther(reserveGas)} Gas | Has: ${ethers.formatEther(faucetBalance)}`);
+
             // Cap funding to available balance minus reserve
             fundAmount = faucetBalance - reserveGas;
+
+            // Check if the capped amount is dangerously low (e.g. < totalCostWei raw)
+            // If we can't even cover the RAW cost (without buffer), we should probably stops or strictly warn.
+            if (fundAmount < totalCostWei) {
+                const missing = ethers.formatEther((totalCostWei + reserveGas) - faucetBalance);
+                throw new Error(`FONDOS INSUFICIENTES: Faltan ${missing} MATIC en la Faucet para cubrir los costos de gas de los relayers y la transacción. Balance: ${ethers.formatEther(faucetBalance)}`);
+            }
+
             if (fundAmount <= 0n) {
                 // Formatting error message strictly for UI parsing
-                throw new Error(`Faucet sin fondos suficientes. Balance: ${ethers.formatEther(faucetBalance)} MATIC. Requerido: ${ethers.formatEther(totalCostWei)}`);
+                throw new Error(`Faucet sin fondos suficientes. Balance: ${ethers.formatEther(faucetBalance)} MATIC.`);
             }
-            warningMsg = `⚠️ Fondos insuficientes para buffer completo. Se usará el máximo disponible: ${ethers.formatEther(fundAmount)} MATIC`;
+            warningMsg = `⚠️ Fondos ajustados. Se redujo el buffer. Disp: ${ethers.formatEther(fundAmount)} MATIC`;
             console.log(warningMsg);
         }
 
