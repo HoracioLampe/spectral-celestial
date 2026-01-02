@@ -168,6 +168,8 @@ app.get('/api/batches', authenticateToken, async (req, res) => {
         const userAddress = req.user.address.toLowerCase().trim();
         const userRole = req.user.role;
 
+        console.log(`[GET Batches] User: ${userAddress} | Role: ${userRole}`);
+
         // SELF-HEAL CHECK: Ensure faucet exists when loading dashboard
         // This covers cases where user exists but faucet doesn't (legacy/manual insert)
         await ensureUserFaucet(userAddress);
@@ -186,8 +188,11 @@ app.get('/api/batches', authenticateToken, async (req, res) => {
         }
 
         const countQuery = `SELECT COUNT(*) FROM batches b ${whereClause}`;
+        console.log(`[GET Batches] Count Query: ${countQuery} Params: ${JSON.stringify(queryParams)}`);
+
         const countRes = await pool.query(countQuery, queryParams);
         const totalItems = parseInt(countRes.rows[0].count);
+        console.log(`[GET Batches] Total Items Found: ${totalItems}`);
 
         const dataQuery = `
             SELECT b.*,
@@ -203,6 +208,7 @@ app.get('/api/batches', authenticateToken, async (req, res) => {
 
         queryParams.push(limit, offset);
         const result = await pool.query(dataQuery, queryParams);
+        console.log(`[GET Batches] Returning ${result.rows.length} rows`);
 
         res.json({
             batches: result.rows,
@@ -214,7 +220,7 @@ app.get('/api/batches', authenticateToken, async (req, res) => {
             }
         });
     } catch (err) {
-        console.error(err);
+        console.error("[GET Batches] Error:", err);
         res.status(500).json({ error: err.message });
     }
 });
