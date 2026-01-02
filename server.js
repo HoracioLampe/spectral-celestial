@@ -238,6 +238,9 @@ app.get('/api/batches/:id', authenticateToken, async (req, res) => {
             WHERE b.id = $1 ${req.user.role !== 'SUPER_ADMIN' ? 'AND LOWER(b.funder_address) = $2' : ''}
         `, req.user.role !== 'SUPER_ADMIN' ? [batchId, userAddress] : [batchId]);
 
+        console.log(`[DEBUG] Batch Lookup: ID=${batchId}, User=${userAddress}, Role=${req.user.role}, Rows=${batchRes.rows.length}`);
+
+
         if (batchRes.rows.length === 0) {
             return res.status(404).json({ error: 'Batch not found or access denied' });
         }
@@ -600,6 +603,7 @@ app.post('/api/batches/:id/setup', authenticateToken, async (req, res) => {
         const batchOwner = ownerRes.rows[0].funder_address?.toLowerCase();
 
         if (req.user.role !== 'SUPER_ADMIN' && batchOwner !== userAddress) {
+            console.warn(`[Setup] Access Denied. Owner=${batchOwner}, User=${userAddress}`);
             return res.status(403).json({ error: 'Access denied' });
         }
 
@@ -986,6 +990,32 @@ app.post('/api/batches/:id/return-funds', authenticateToken, async (req, res) =>
         res.json({ success: true, message: `Recovery process completed.Recovered: ${recovered || 0} MATIC` });
     } catch (err) {
         console.error("[Refund] Error:", err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ADMIN: Trigger Rescue Script
+app.post('/api/admin/rescue', authenticateToken, async (req, res) => {
+    try {
+        if (req.user.role !== 'SUPER_ADMIN') {
+            return res.status(403).json({ error: 'Acceso Denegado' });
+        }
+
+        console.log(`[Admin] 🛠️ User ${req.user.address} triggering Fund Rescue...`);
+
+        // Spawn script in background
+        const { spawn } = require('child_process');
+        const child = spawn('node', ['scripts/rescue_relayer_funds.js'], {
+            stdio: 'inherit', // Log to server console
+            detached: true    // Run independently
+        });
+
+        child.unref(); // Don't wait for it
+
+        res.json({ message: "Script de rescate iniciado en segundo plano. Revisa la consola del servidor." });
+
+    } catch (err) {
+        console.error(err);
         res.status(500).json({ error: err.message });
     }
 });

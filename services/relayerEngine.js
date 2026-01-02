@@ -690,10 +690,34 @@ class RelayerEngine {
         if (relayers.length === 0 || totalCostWei === 0n) return;
 
         // Step 0: Ensure Network Health
-        await this.verifyAndRepairNonce();
+        // await this.verifyAndRepairNonce(); // Faucet-specific nonce repair needed now, handled per wallet
+
+        // 1. Determine Correct Faucet (Funder-Specific)
+        let funderFaucetWallet = this.faucetWallet; // Default fallback
+        let funderFaucetAddress = this.faucetWallet.address;
+
+        try {
+            const faucetRes = await this.pool.query(`
+                SELECT f.address, f.private_key
+                FROM batches b
+                JOIN faucets f ON LOWER(f.funder_address) = LOWER(b.funder_address)
+                WHERE b.id = $1
+            `, [batchId]);
+
+            if (faucetRes.rows.length > 0) {
+                const { address, private_key } = faucetRes.rows[0];
+                funderFaucetWallet = new ethers.Wallet(private_key, this.provider);
+                funderFaucetAddress = address;
+                console.log(`[Engine][Fund] 🎯 Using Funder-Specific Faucet: ${address}`);
+            } else {
+                console.warn(`[Engine][Fund] ⚠️ No specific faucet for batch ${batchId}. Using Global Faucet.`);
+            }
+        } catch (err) {
+            console.error("Faucet lookup error during funding", err);
+        }
 
         // Check Faucet Balance BEFORE calculating per-relayer split
-        const faucetBalance = await this.provider.getBalance(this.faucetWallet.address);
+        const faucetBalance = await this.provider.getBalance(funderFaucetAddress);
         // Reserve 0.2 MATIC for the distribution tx gas itself
         const reserveGas = ethers.parseEther("0.2");
 
@@ -706,7 +730,8 @@ class RelayerEngine {
             // Cap funding to available balance minus reserve
             fundAmount = faucetBalance - reserveGas;
             if (fundAmount <= 0n) {
-                throw new Error(`CRITICAL: Faucet Empty (${ethers.formatEther(faucetBalance)} MATIC). Cannot fund relayers.`);
+                // Formatting error message strictly for UI parsing
+                throw new Error(`Faucet sin fondos suficientes. Balance: ${ethers.formatEther(faucetBalance)} MATIC. Requerido: ${ethers.formatEther(totalCostWei)}`);
             }
             warningMsg = `⚠️ Fondos insuficientes para buffer completo. Se usará el máximo disponible: ${ethers.formatEther(fundAmount)} MATIC`;
             console.log(warningMsg);
@@ -716,30 +741,32 @@ class RelayerEngine {
         console.log(`🪙 [Background] Funding: ${ethers.formatEther(fundAmount)} MATIC total (${ethers.formatEther(perRelayerWei)} per relayer)`);
 
         try {
-            await this.fundRelayers(batchId, relayers, perRelayerWei);
+            // Pass the specific wallet to use
+            await this.fundRelayers(batchId, relayers, perRelayerWei, funderFaucetWallet);
         } catch (err) {
-            // Enhance error for UI
+            // Enhance error for UI (Catch re-thrown errors)
             if (err.message.includes("insufficient funds") || err.code === 'INSUFFICIENT_FUNDS') {
-                // Format the error to be more readable
                 throw new Error(`Faucet sin fondos suficientes. Balance: ${ethers.formatEther(faucetBalance)} MATIC. Requerido: ${ethers.formatEther(totalCostWei)}`);
             }
             throw err;
         }
     }
 
-    async fundRelayers(batchId, relayers, amountWei) {
+    async fundRelayers(batchId, relayers, amountWei, actingFaucetWallet) {
         if (!amountWei || amountWei === 0n) return;
+        const walletToUse = actingFaucetWallet || this.faucetWallet;
 
         try {
-            const contract = new ethers.Contract(this.contractAddress, this.contractABI, this.faucetWallet);
+            // Re-instantiate contract with specific signer
+            const contract = new ethers.Contract(this.contractAddress, this.contractABI, walletToUse);
             const totalValueToSend = amountWei * BigInt(relayers.length);
 
-            // Check Faucet Balance
-            const faucetBalance = await this.provider.getBalance(this.faucetWallet.address);
-            console.log(`[Engine][Fund] Faucet Balance: ${ethers.formatEther(faucetBalance)} MATIC`);
+            // Double check balance (Race condition safety)
+            const faucetBalance = await this.provider.getBalance(walletToUse.address);
+            console.log(`[Engine][Fund] Faucet Balance (${walletToUse.address.substring(0, 6)}..): ${ethers.formatEther(faucetBalance)} MATIC`);
+
             // Add slight tolerance check
             if (faucetBalance < totalValueToSend) {
-                // Try to adjust if slightly off? No, safer to fail or let caller handle.
                 throw new Error(`Insufficient Faucet balance. Need ${ethers.formatEther(totalValueToSend)} MATIC, have ${ethers.formatEther(faucetBalance)}.`);
             }
 
@@ -955,13 +982,32 @@ class RelayerEngine {
     async returnFundsToFaucet(relayers, batchId) {
         console.log(`[Refund] 🧹 Starting fund recovery for Batch ${batchId}...`);
 
-        // 1. Fetch CURRENT Faucet directly from DB
-        const faucetRes = await this.pool.query('SELECT address FROM faucets ORDER BY id DESC LIMIT 1');
-        if (faucetRes.rows.length === 0) {
-            console.error("[Refund] ❌ No faucet found in DB. Aborting sweep.");
+        // 1. Determine Correct Faucet (Funder-Specific)
+        let targetFaucetAddress = null;
+        try {
+            const faucetRes = await this.pool.query(`
+                SELECT f.address 
+                FROM batches b
+                JOIN faucets f ON LOWER(f.funder_address) = LOWER(b.funder_address)
+                WHERE b.id = $1
+            `, [batchId]);
+
+            if (faucetRes.rows.length > 0) {
+                targetFaucetAddress = faucetRes.rows[0].address;
+                console.log(`[Refund] 🎯 Found Funder-Specific Faucet: ${targetFaucetAddress}`);
+            } else {
+                console.warn(`[Refund] ⚠️ No specific faucet for batch ${batchId}. Fallback to latest.`);
+                const fallbackRes = await this.pool.query('SELECT address FROM faucets ORDER BY id DESC LIMIT 1');
+                if (fallbackRes.rows.length > 0) targetFaucetAddress = fallbackRes.rows[0].address;
+            }
+        } catch (err) {
+            console.error("Faucet lookup error", err);
+        }
+
+        if (!targetFaucetAddress) {
+            console.error("[Refund] ❌ No faucet found DB. Aborting sweep.");
             return 0;
         }
-        const targetFaucetAddress = faucetRes.rows[0].address;
         console.log(`[Refund] 🏦 Sweep Target: ${targetFaucetAddress}`);
 
         const feeData = await this.provider.getFeeData();

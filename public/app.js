@@ -575,8 +575,29 @@ async function connectWallet() {
 
                         // Show Admin Menu only for SUPER_ADMIN
                         const navAdmin = document.getElementById('navAdmin');
-                        if (navAdmin) {
-                            navAdmin.classList.toggle('hidden', role !== 'SUPER_ADMIN');
+                        const adminRescueFunds = document.getElementById('adminRescueFunds');
+
+                        if (role === 'SUPER_ADMIN') {
+                            if (navAdmin) navAdmin.classList.remove('hidden');
+                            if (adminRescueFunds) {
+                                adminRescueFunds.classList.remove('hidden');
+                                adminRescueFunds.onclick = async (e) => {
+                                    e.preventDefault();
+                                    if (!confirm("⚠️ ¿Estás seguro de iniciar el rescate de fondos?\nEsto barrerá el saldo de TODOS los relayers hacia sus faucets respectivos.")) return;
+
+                                    try {
+                                        const res = await authenticatedFetch('/api/admin/rescue', { method: 'POST' });
+                                        if (res.ok) {
+                                            alert("✅ Proceso iniciado: " + (await res.json()).message);
+                                        }
+                                    } catch (err) {
+                                        alert("❌ Error: " + err.message);
+                                    }
+                                };
+                            }
+                        } else {
+                            if (navAdmin) navAdmin.classList.add('hidden');
+                            if (adminRescueFunds) adminRescueFunds.classList.add('hidden');
                         }
 
                         appLayout.style.opacity = "0";
@@ -2134,7 +2155,9 @@ async function signBatchPermit(batchId) {
     // 1. Get Batch Total
     const res = await authenticatedFetch(`/api/batches/${batchId}`);
     const data = await res.json();
-    if (!data.batch) throw new Error("Batch not found");
+    if (!res.ok || !data.batch) {
+        throw new Error(data.error || "Error al obtener datos del lote (Batch not found)");
+    }
 
     const totalUSDC = BigInt(data.batch.total_usdc || "0");
     const totalTx = parseInt(data.batch.total_transactions || "0");
@@ -2227,9 +2250,12 @@ async function signBatchPermit(batchId) {
 async function signBatchRoot(batchId) {
     if (!signer || !userAddress) throw new Error("Wallet no conectada");
 
-    const res = await fetch(`/api/batches/${batchId}`);
+    const res = await authenticatedFetch(`/api/batches/${batchId}`);
     const data = await res.json();
-    if (!data.batch) throw new Error("Lote no encontrado");
+
+    if (!res.ok || !data.batch) {
+        throw new Error(data.error || "Error al obtener datos del lote (Batch not found)");
+    }
 
     const rootEl = document.getElementById('displayMerkleRoot');
     const merkleRoot = rootEl ? rootEl.textContent.trim() : null;

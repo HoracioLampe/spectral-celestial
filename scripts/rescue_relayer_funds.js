@@ -3,14 +3,15 @@ const { Pool } = require('pg');
 const { ethers } = require('ethers');
 
 async function rescueFunds() {
-    // Check for target faucet argument
+    // Check for target faucet argument OVERRIDE
     const faucetArgIndex = process.argv.indexOf('--faucet');
-    let targetFaucetAddress = null;
+    let overrideFaucet = null;
     if (faucetArgIndex !== -1 && process.argv[faucetArgIndex + 1]) {
-        targetFaucetAddress = process.argv[faucetArgIndex + 1];
+        overrideFaucet = process.argv[faucetArgIndex + 1];
+        console.log(`⚠️ FORCE OVERRIDE: Sending ALL funds to ${overrideFaucet}`);
     }
 
-    console.log("🚀 Starting Relayer Rescue Script...");
+    console.log("🚀 Starting Relayer Rescue Script (Funder-Aware)...");
 
     // 1. Setup Database & Provider
     const pool = new Pool({
@@ -22,47 +23,49 @@ async function rescueFunds() {
     const provider = new ethers.JsonRpcProvider(providerUrl, undefined, { staticNetwork: true });
 
     try {
-        // 2. Determine target address
-        if (!targetFaucetAddress) {
-            console.log(`🔍 No target faucet provided via --faucet, checking DB...`);
-            const faucetRes = await pool.query('SELECT address FROM faucets ORDER BY id DESC LIMIT 1');
-            if (faucetRes.rows.length === 0) {
-                console.error("❌ No faucet found in database. Cannot return funds.");
-                await pool.end();
-                process.exit(1);
-            }
-            targetFaucetAddress = faucetRes.rows[0].address;
-        }
-
-        console.log(`🏦 Target Faucet Address: ${targetFaucetAddress}`);
-
         const batchArgIndex = process.argv.indexOf('--batch');
         let batchId = null;
         if (batchArgIndex !== -1 && process.argv[batchArgIndex + 1]) {
-            batchId = process.argv[batchArgIndex + 1];
+            batchId = parseInt(process.argv[batchArgIndex + 1]);
         }
 
         let relayers = [];
 
+        // UPDATED QUERY: Join Batches and Faucets to get correct return address
+        const querySelect = `
+            SELECT 
+                r.address, 
+                r.private_key, 
+                f.address as faucet_address,
+                b.id as batch_id
+            FROM relayers r
+            LEFT JOIN batches b ON r.batch_id = b.id
+            LEFT JOIN faucets f ON LOWER(f.funder_address) = LOWER(b.funder_address)
+        `;
+
         if (batchId) {
             console.log(`🎯 Targeting BATCH ID: ${batchId}`);
-            const res = await pool.query("SELECT address, private_key FROM relayers WHERE batch_id = $1", [batchId]);
+            const res = await pool.query(`${querySelect} WHERE r.batch_id = $1`, [batchId]);
             relayers = res.rows;
         } else {
-            console.log(`🎯 Targeting AGGRESSIVE scan of relayers from last 50 batches...`);
-            // Fetch relayers from the last 50 batches to ensure we catch everything recent
-            // regardless of 'last_balance' flag which might be stale.
+            console.log(`🎯 Targeting FULL HISTORY scan (Last 1000 batches)...`);
             const res = await pool.query(`
-                SELECT address, private_key 
-                FROM relayers 
-                WHERE batch_id IN (
-                    SELECT id FROM batches ORDER BY id DESC LIMIT 50
+                ${querySelect} 
+                WHERE r.batch_id IN (
+                    SELECT id FROM batches ORDER BY id DESC LIMIT 1000
                 )
             `);
             relayers = res.rows;
         }
 
         console.log(`🔍 Found ${relayers.length} relayers to process.`);
+
+        // Fallback global faucet if specific one missing
+        let globalFallback = null;
+        if (!overrideFaucet) {
+            const fRes = await pool.query('SELECT address FROM faucets ORDER BY id DESC LIMIT 1');
+            if (fRes.rows.length > 0) globalFallback = fRes.rows[0].address;
+        }
 
         const feeData = await provider.getFeeData();
         const gasPrice = feeData.gasPrice || 35000000000n;
@@ -75,7 +78,7 @@ async function rescueFunds() {
 
         let totalRescued = 0n;
         let successCount = 0;
-        const concurrency = 1; // Lowered to 1 to prevent ECONNRESET
+        const concurrency = 5;
         const queue = [...relayers];
         let processedCount = 0;
 
@@ -84,21 +87,29 @@ async function rescueFunds() {
                 const r = queue.shift();
                 if (!r) continue;
 
+                // Determine Target
+                let targetTo = overrideFaucet || r.faucet_address || globalFallback;
+
+                if (!targetTo) {
+                    console.error(`❌ Skipping ${r.address}: No target faucet found.`);
+                    continue;
+                }
+
                 try {
                     const wallet = new ethers.Wallet(r.private_key, provider);
                     const balance = await provider.getBalance(wallet.address);
 
-                    // Increase safety margin to 0.1 MATIC to account for queued txs/fluctuations
+                    // Increase safety margin to 0.1 MATIC
                     const safetyMargin = ethers.parseEther("0.1");
 
                     if (balance > (minCost + safetyMargin)) {
-                        let amountToReturn = balance - minCost - safetyMargin; // Subtract margin from send amount too
+                        let amountToReturn = balance - minCost - safetyMargin;
 
-                        console.log(`✨ [${wallet.address.substring(0, 8)}] Balance: ${ethers.formatEther(balance)} MATIC | Sweeping: ${ethers.formatEther(amountToReturn)}`);
+                        console.log(`✨ [${wallet.address.substring(0, 6)}..] Balance: ${ethers.formatEther(balance)} | Target: ${targetTo.substring(0, 6)}..`);
 
                         try {
                             const tx = await wallet.sendTransaction({
-                                to: targetFaucetAddress,
+                                to: targetTo,
                                 value: amountToReturn,
                                 gasLimit: gasLimit,
                                 gasPrice: boostedGasPrice
@@ -111,11 +122,10 @@ async function rescueFunds() {
                         } catch (txErr) {
                             if (txErr.code === 'INSUFFICIENT_FUNDS' || txErr.message.includes('insufficient funds')) {
                                 console.warn(`   ⚠️ Insufficient Funds (Queued/Dust). Retrying with 50%...`);
-                                // Fallback: Try sweeping 50% of the calculated amount to bypass queued locks
                                 try {
                                     const safeAmount = amountToReturn / 2n;
                                     const tx2 = await wallet.sendTransaction({
-                                        to: targetFaucetAddress,
+                                        to: targetTo,
                                         value: safeAmount,
                                         gasLimit: gasLimit,
                                         gasPrice: boostedGasPrice
@@ -124,7 +134,7 @@ async function rescueFunds() {
                                     console.log(`   ✅ Confirmed (50% Fallback): ${tx2.hash}`);
                                     totalRescued += safeAmount;
                                 } catch (fallbackErr) {
-                                    console.error(`   ❌ Fallback failed: ${fallbackErr.message.substring(0, 50)}...`);
+                                    console.error(`   ❌ Fallback failed`);
                                 }
                             } else {
                                 throw txErr;
@@ -132,23 +142,16 @@ async function rescueFunds() {
                         }
 
                     } else {
-                        // Mark as zero in DB if below sweep threshold
+                        // Mark as zero in DB
                         await pool.query("UPDATE relayers SET last_balance = $1, last_activity = NOW(), status = 'drained' WHERE address = $2", [ethers.formatEther(balance), r.address]);
                     }
                 } catch (err) {
-                    if (err.message.includes("429") || err.message.includes("RPS")) {
-                        console.warn(`   ⚠️ RPS Limit hit. Sleeping 5s...`);
-                        await new Promise(r => setTimeout(r, 5000));
-                        queue.push(r); // Re-queue
-                    } else {
-                        console.log(`   ⚠️ Failed for ${r.address.substring(0, 8)}: ${err.message.substring(0, 80)}`);
-                    }
+                    console.log(`   ⚠️ Failed for ${r.address.substring(0, 8)}: ${err.message.substring(0, 50)}`);
                 }
 
                 processedCount++;
-                if (processedCount % 5 === 0) console.log(`📊 Progress: ${processedCount}/${relayers.length}`);
-
-                await new Promise(r => setTimeout(r, 2000)); // Increased delay to 2000ms
+                if (processedCount % 10 === 0) console.log(`📊 Progress: ${processedCount}/${relayers.length}`);
+                await new Promise(r => setTimeout(r, 1000));
             }
         };
 
@@ -156,7 +159,7 @@ async function rescueFunds() {
         await Promise.all(workers);
 
         console.log("\n--- Summary ---");
-        console.log(`💎 Total Rescued: ${ethers.formatEther(totalRescued)} MATIC to ${targetFaucetAddress}`);
+        console.log(`💎 Total Rescued: ${ethers.formatEther(totalRescued)} MATIC`);
 
     } catch (err) {
         console.error("❌ Error:", err);
