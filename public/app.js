@@ -3,7 +3,7 @@ let APP_CONFIG = { RPC_URL: '', WS_RPC_URL: '' };
 const BATCCH_PAGE_SIZE = 10;
 const TIMEZONE_CONFIG = { timeZone: 'America/Argentina/Buenos_Aires' };
 let currentBatchPage = 1;
-// Global UI Elements (Moved to correct scope later if needed)
+
 let AUTH_TOKEN = localStorage.getItem('jwt_token');
 
 
