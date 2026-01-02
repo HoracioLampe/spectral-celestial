@@ -839,6 +839,115 @@ tr:hover td {
     margin-top: 1rem;
 }
 
+/* --- Restricted Access Premium UI --- */
+.restricted-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    background: radial-gradient(circle at center, #111827 0%, #050a18 100%);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.restricted-container {
+    padding: 2rem;
+    width: 100%;
+    display: flex;
+    justify-content: center;
+}
+
+.restricted-card-premium {
+    max-width: 480px;
+    width: 100%;
+    padding: 3.5rem 2.5rem;
+    text-align: center;
+    border: 2px solid rgba(59, 130, 246, 0.3);
+    box-shadow: 0 0 30px rgba(59, 130, 246, 0.1);
+    position: relative;
+    overflow: hidden;
+}
+
+.restricted-header {
+    position: relative;
+    margin-bottom: 2rem;
+}
+
+.lock-icon {
+    font-size: 4rem;
+    filter: drop-shadow(0 0 15px rgba(59, 130, 246, 0.4));
+}
+
+.status-pulse {
+    position: absolute;
+    top: -10px;
+    right: -10px;
+    width: 12px;
+    height: 12px;
+    background: var(--primary);
+    border-radius: 50%;
+    box-shadow: 0 0 10px var(--primary);
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0% {
+        transform: scale(0.95);
+        box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7);
+    }
+
+    70% {
+        transform: scale(1);
+        box-shadow: 0 0 0 10px rgba(59, 130, 246, 0);
+    }
+
+    100% {
+        transform: scale(0.95);
+        box-shadow: 0 0 0 0 rgba(59, 130, 246, 0);
+    }
+}
+
+.neon-text-blue {
+    font-size: 1.8rem;
+    font-weight: 800;
+    margin-bottom: 1rem;
+    color: #fff;
+    text-shadow: 0 0 10px rgba(59, 130, 246, 0.8);
+}
+
+.restricted-description {
+    color: var(--text-secondary);
+    font-size: 1rem;
+    margin-bottom: 2rem;
+}
+
+.info-box-premium {
+    background: rgba(59, 130, 246, 0.05);
+    border: 1px solid rgba(59, 130, 246, 0.2);
+    border-radius: var(--radius-md);
+    padding: 1.5rem;
+    margin-bottom: 2.5rem;
+}
+
+.info-box-premium p {
+    margin: 0;
+    color: var(--text-primary);
+    line-height: 1.6;
+}
+
+.btn-glow:hover {
+    box-shadow: 0 0 20px rgba(59, 130, 246, 0.4);
+    transform: translateY(-2px);
+}
+
+.restricted-footer {
+    margin-top: 2rem;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
 /* --- RESPONSIVE DESIGN --- */
 @media (max-width: 1024px) {
     .glass-panel {

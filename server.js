@@ -116,19 +116,21 @@ app.post('/api/auth/verify', async (req, res) => {
 
         if (!fields) return res.status(400).json({ error: 'Signature verification failed' });
 
+        const normalizedAddress = fields.address.toLowerCase().trim();
+
         // Check user role in DB. Default to REGISTERED for new users.
-        const userRes = await pool.query('SELECT role FROM rbac_users WHERE address = $1', [fields.address]);
+        const userRes = await pool.query('SELECT role FROM rbac_users WHERE address = $1', [normalizedAddress]);
         let role = 'REGISTERED';
         if (userRes.rows.length > 0) {
             role = userRes.rows[0].role;
         } else {
             // Auto-register as REGISTERED. Admin must upgrade to OPERATOR.
-            await pool.query('INSERT INTO rbac_users (address, role) VALUES ($1, $2) ON CONFLICT (address) DO NOTHING', [fields.address, role]);
+            await pool.query('INSERT INTO rbac_users (address, role) VALUES ($1, $2) ON CONFLICT (address) DO NOTHING', [normalizedAddress, role]);
         }
 
-        const token = jwt.sign({ address: fields.address, role: role }, JWT_SECRET, { expiresIn: '12h' });
+        const token = jwt.sign({ address: normalizedAddress, role: role }, JWT_SECRET, { expiresIn: '12h' });
 
-        res.json({ token, address: fields.address, role });
+        res.json({ token, address: normalizedAddress, role });
     } catch (e) {
         console.error(e);
         res.status(400).json({ error: e.message });
@@ -143,7 +145,7 @@ app.post('/api/auth/verify', async (req, res) => {
 // Get all batches (Filtered by User if not Admin)
 app.get('/api/batches', authenticateToken, async (req, res) => {
     try {
-        const userAddress = req.user.address;
+        const userAddress = req.user.address.toLowerCase().trim();
         const userRole = req.user.role;
 
         const limit = parseInt(req.query.limit) || 20;
@@ -206,10 +208,9 @@ app.get('/api/batches/:id', authenticateToken, async (req, res) => {
             WHERE b.id = $1
     `, [batchId]);
 
-        if (batchRes.rows.length === 0) return res.status(404).json({ error: 'Batch not found' });
-
-        // Ownership Check
-        if (req.user.role !== 'SUPER_ADMIN' && batchRes.rows[0].funder_address?.toLowerCase() !== userAddress) {
+        // Ownership Check (Case-insensitive)
+        const batchFunder = batchRes.rows[0].funder_address ? batchRes.rows[0].funder_address.toLowerCase().trim() : null;
+        if (req.user.role !== 'SUPER_ADMIN' && batchFunder !== userAddress) {
             return res.status(403).json({ error: 'Access denied: You do not own this batch' });
         }
 
@@ -227,7 +228,7 @@ app.get('/api/batches/:id', authenticateToken, async (req, res) => {
 // Create new batch (Capture funder from token)
 app.post('/api/batches', authenticateToken, async (req, res) => {
     try {
-        const userAddress = req.user.address;
+        const userAddress = req.user.address.toLowerCase().trim();
         const { batch_number, detail, description } = req.body;
 
         const result = await pool.query(

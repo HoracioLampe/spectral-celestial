@@ -130,22 +130,33 @@
                 </button>
             </div>
         </aside>
-        +
-        + <!-- RESTRICTED ACCESS VIEW (For users with REGISTERED role) -->
-        + <main id="restrictedView" class="main-content hidden">
-            + <div class="glass-panel restricted-card">
-                + <div class="restricted-icon">🔒</div>
-                + <h2>Acceso Restringido</h2>
-                + <p>Tu cuenta ha sido registrada correctamente, pero aún no tienes permisos para operar.</p>
-                + <div class="alert alert-info">
-                    + <span>ℹ️</span> Por favor, contacta al administrador para que tu rol sea elevado a
-                    <b>Operador</b>.
-                    + </div>
-                + <button class="btn btn-secondary mt-1" onclick="logout()">
-                    + Regresar a Inicio
-                    + </button>
-                + </div>
-            + </main>
+
+        <!-- RESTRICTED ACCESS VIEW (For users with REGISTERED role) -->
+        <main id="restrictedView" class="restricted-overlay hidden">
+            <div class="restricted-container">
+                <div class="glass-panel restricted-card-premium">
+                    <div class="restricted-header">
+                        <div class="status-pulse"></div>
+                        <div class="lock-icon">🔒</div>
+                    </div>
+                    <h2 class="neon-text-blue">Acceso en Revisión</h2>
+                    <p class="restricted-description">Tu cuenta ha sido registrada con éxito en el sistema.</p>
+
+                    <div class="info-box-premium">
+                        <p>Para comenzar a operar, por favor contacta al <strong>Administrador</strong> para habilitar
+                            tus permisos de usuario.</p>
+                    </div>
+
+                    <button class="btn btn-secondary btn-glow" onclick="logout()">
+                        <span>⬅️</span> Cerrar Sesión
+                    </button>
+
+                    <div class="restricted-footer">
+                        <span>Esperando aprobación de red...</span>
+                    </div>
+                </div>
+            </div>
+        </main>
 
         <!-- CONTENT AREA -->
         <div class="content-wrapper">
