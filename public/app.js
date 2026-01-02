@@ -2400,6 +2400,8 @@ async function pollBatchProgress(batchId) {
             const completed = parseInt(batch.completed_count || 0);
             const total = parseInt(batch.total_transactions || 1);
             const status = batch.status;
+            const pending = data.stats ? parseInt(data.stats.pending || 0) : 0;
+            const failed = data.stats ? parseInt(data.stats.failed || 0) : 0;
 
             // Update Progress Bar if exists
             const progressPct = total > 0 ? Math.round((completed / total) * 100) : 0;
