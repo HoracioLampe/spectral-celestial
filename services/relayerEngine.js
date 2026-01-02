@@ -161,10 +161,21 @@ class RelayerEngine {
     async backgroundProcess(batchId, relayers, isResumption = false, externalPermit = null, rootSignatureData = null) {
         // Track Start Time
         const startTime = Date.now();
-        console.log(`[Background] 🎬 START | Batch: ${batchId} | Relayers: ${relayers.length} | StartTime: ${new Date(startTime).toISOString()}`);
+
+        console.log('\n========================================');
+        console.log('⚙️  BACKGROUND PROCESS STARTED');
+        console.log('========================================');
+        console.log(`📦 Batch ID:          ${batchId}`);
+        console.log(`⚡ Relayers:          ${relayers.length}`);
+        console.log(`🔄 Is Resumption:     ${isResumption}`);
+        console.log(`📝 Has Permit:        ${!!externalPermit}`);
+        console.log(`✍️  Has Root Sig:      ${!!rootSignatureData}`);
+        console.log(`⏰ Start Time:        ${new Date(startTime).toISOString()}`);
+        console.log('========================================\n');
 
         // Update Status to SENT (Enviando) immediately
         await this.pool.query(`UPDATE batches SET status = 'SENT', start_time = NOW(), updated_at = NOW() WHERE id = $1`, [batchId]);
+        console.log(`[Background] ✅ Batch status updated to SENT`);
 
         // 1. Fetch Funder Address for this batch
         const batchRes = await this.pool.query('SELECT funder_address FROM batches WHERE id = $1', [batchId]);
