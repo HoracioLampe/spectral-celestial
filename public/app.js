@@ -469,12 +469,21 @@ window.logout = function () {
 // Export to window to ensure reachability from HTML attributes
 window.connectWallet = connectWallet;
 
+let isConnecting = false;
+
 async function connectWallet() {
+    if (isConnecting) {
+        console.warn("⚠️ connectWallet ya está en ejecución. Ignorando llamada duplicada.");
+        return;
+    }
+
     console.log("🚀 connectWallet called!");
     if (!window.ethereum) {
         console.error("❌ window.ethereum is missing!");
         return alert("⚠️ Instala MetaMask");
     }
+
+    isConnecting = true;
 
     const btnEnter = document.getElementById('btnEnterApp');
     const originalText = btnEnter ? btnEnter.innerHTML : "";
@@ -599,6 +608,8 @@ async function connectWallet() {
             btnEnter.disabled = false;
             btnEnter.innerHTML = originalText;
         }
+    } finally {
+        isConnecting = false;
     }
 }
 
