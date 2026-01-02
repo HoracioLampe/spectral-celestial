@@ -1,4 +1,4 @@
-const API_TRANSACTIONS = '/api/transactions';
+const API_TRANSACTIONS = '/api/transactions'; // v3.1.0-deploy-force
 let APP_CONFIG = { RPC_URL: '', WS_RPC_URL: '' };
 const BATCCH_PAGE_SIZE = 10;
 const TIMEZONE_CONFIG = { timeZone: 'America/Argentina/Buenos_Aires' };
