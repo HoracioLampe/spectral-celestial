@@ -735,7 +735,10 @@ const btnTestMerkle = document.getElementById('btnTestMerkle');
 if (btnTestMerkle) btnTestMerkle.onclick = runMerkleTest;
 
 // Global functions for HTML access
-window.closeBatchModal = () => batchModal.classList.remove('active');
+window.closeBatchModal = function () {
+    const modal = document.getElementById('batchModal');
+    if (modal) modal.classList.remove('active');
+};
 
 window.showBatchList = function () {
     stopTxPolling();
