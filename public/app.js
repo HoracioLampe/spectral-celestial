@@ -2522,6 +2522,9 @@ function renderRelayerBalances(explicitData) {
     // Check for Refund Success (Drained Status)
     const isDrained = data.some(r => r.status === 'drained');
     if (isDrained) {
+        // Stop the timer when funds are recovered
+        stopTimer();
+
         tbody.innerHTML += `
             <tr>
                 <td colspan="5" style="text-align: center; padding: 1rem; color: #4ade80; background: rgba(16, 185, 129, 0.1); border-radius: 8px; margin-top: 5px;">
