@@ -758,8 +758,13 @@ const BATCCH_PAGE_SIZE = 10;
 // Cargar lista al iniciar o cambiar tab
 async function fetchBatches(page = 1) {
     try {
+        // Show loading state if needed, though usually silent update is better or specific loader
+        // batchesListBody.innerHTML = '<tr><td colspan="9" style="text-align:center;">Cargando...</td></tr>';
+
         const res = await authenticatedFetch(`/api/batches?page=${page}&limit=${BATCCH_PAGE_SIZE}`);
         const data = await res.json();
+
+        if (data.error) throw new Error(data.error);
 
         // Handle new response format { batches: [], pagination: {} }
         const batches = data.batches || [];
@@ -770,6 +775,7 @@ async function fetchBatches(page = 1) {
         currentBatchPage = page;
     } catch (error) {
         console.error("Error fetching batches:", error);
+        batchesListBody.innerHTML = `<tr><td colspan="9" style="text-align:center; color: #ef4444; padding: 2rem;">Error al cargar lotes: ${error.message} <br> <button onclick="fetchBatches(1)" class="btn btn-sm btn-primary mt-2">Reintentar</button></td></tr>`;
     }
 }
 
