@@ -130,6 +130,22 @@
                 </button>
             </div>
         </aside>
+        +
+        + <!-- RESTRICTED ACCESS VIEW (For users with REGISTERED role) -->
+        + <main id="restrictedView" class="main-content hidden">
+            + <div class="glass-panel restricted-card">
+                + <div class="restricted-icon">🔒</div>
+                + <h2>Acceso Restringido</h2>
+                + <p>Tu cuenta ha sido registrada correctamente, pero aún no tienes permisos para operar.</p>
+                + <div class="alert alert-info">
+                    + <span>ℹ️</span> Por favor, contacta al administrador para que tu rol sea elevado a
+                    <b>Operador</b>.
+                    + </div>
+                + <button class="btn btn-secondary mt-1" onclick="logout()">
+                    + Regresar a Inicio
+                    + </button>
+                + </div>
+            + </main>
 
         <!-- CONTENT AREA -->
         <div class="content-wrapper">

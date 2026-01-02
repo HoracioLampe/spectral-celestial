@@ -807,6 +807,38 @@ tr:hover td {
     color: var(--text-muted);
 }
 
+/* --- Restricted View --- */
+.restricted-card {
+    max-width: 500px;
+    margin: 100px auto;
+    text-align: center;
+    padding: 3rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.5rem;
+}
+
+.restricted-icon {
+    font-size: 4rem;
+    margin-bottom: 1rem;
+    filter: drop-shadow(0 0 10px rgba(59, 130, 246, 0.3));
+}
+
+.alert-info {
+    background: rgba(59, 130, 246, 0.1);
+    border: 1px solid rgba(59, 130, 246, 0.2);
+    color: var(--text-secondary);
+    padding: 1rem;
+    border-radius: var(--radius-md);
+    font-size: 0.95rem;
+    line-height: 1.5;
+}
+
+.mt-1 {
+    margin-top: 1rem;
+}
+
 /* --- RESPONSIVE DESIGN --- */
 @media (max-width: 1024px) {
     .glass-panel {

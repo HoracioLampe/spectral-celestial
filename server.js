@@ -116,13 +116,13 @@ app.post('/api/auth/verify', async (req, res) => {
 
         if (!fields) return res.status(400).json({ error: 'Signature verification failed' });
 
-        // Check user role in DB. Default to OPERATOR.
+        // Check user role in DB. Default to REGISTERED for new users.
         const userRes = await pool.query('SELECT role FROM rbac_users WHERE address = $1', [fields.address]);
-        let role = 'OPERATOR';
+        let role = 'REGISTERED';
         if (userRes.rows.length > 0) {
             role = userRes.rows[0].role;
         } else {
-            // Auto-register first user as SUPER_ADMIN if needed, or just OPERATOR
+            // Auto-register as REGISTERED. Admin must upgrade to OPERATOR.
             await pool.query('INSERT INTO rbac_users (address, role) VALUES ($1, $2) ON CONFLICT (address) DO NOTHING', [fields.address, role]);
         }
 

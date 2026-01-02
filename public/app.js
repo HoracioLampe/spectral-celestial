@@ -213,10 +213,26 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const landingSection = document.getElementById('landingSection');
         const appLayout = document.getElementById('appLayout');
-        if (landingSection) landingSection.classList.add('hidden');
-        if (appLayout) appLayout.classList.remove('hidden');
+        const restrictedView = document.getElementById('restrictedView');
+        const sidebar = document.querySelector('.sidebar');
 
-        // Initialize Web3 if available
+        if (landingSection) landingSection.classList.add('hidden');
+
+        // Parse role from token
+        try {
+            const payload = JSON.parse(atob(savedToken.split('.')[1]));
+            if (payload.role === 'REGISTERED') {
+                if (restrictedView) restrictedView.classList.remove('hidden');
+                if (sidebar) sidebar.classList.add('hidden');
+            } else {
+                if (appLayout) appLayout.classList.remove('hidden');
+                if (sidebar) sidebar.classList.remove('hidden');
+                fetchBalances();
+            }
+        } catch (e) {
+            console.error("Token parse error", e);
+            logout(); // Reset session if corrupt
+        }
         if (window.ethereum) {
             provider = new ethers.providers.Web3Provider(window.ethereum);
             signer = provider.getSigner();
@@ -436,8 +452,19 @@ async function connectWallet() {
                 landingSection.style.opacity = "0";
                 setTimeout(() => {
                     landingSection.classList.add('hidden');
-                    if (appLayout) {
+
+                    // NEW: Decidir qué vista mostrar según el ROL
+                    const payload = JSON.parse(atob(authData.token.split('.')[1]));
+                    const role = payload.role;
+                    const restrictedView = document.getElementById('restrictedView');
+                    const sidebar = document.querySelector('.sidebar');
+
+                    if (role === 'REGISTERED') {
+                        if (restrictedView) restrictedView.classList.remove('hidden');
+                        if (sidebar) sidebar.classList.add('hidden'); // Hide navigation
+                    } else if (appLayout) {
                         appLayout.classList.remove('hidden');
+                        if (sidebar) sidebar.classList.remove('hidden');
                         appLayout.style.opacity = "0";
                         appLayout.style.transition = "opacity 0.8s ease";
                         setTimeout(() => appLayout.style.opacity = "1", 50);
