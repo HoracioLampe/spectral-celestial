@@ -128,6 +128,15 @@ app.post('/api/auth/verify', async (req, res) => {
             await pool.query('INSERT INTO rbac_users (address, role) VALUES ($1, $2) ON CONFLICT (address) DO NOTHING', [normalizedAddress, role]);
         }
 
+        // --- PROACTIVE FAUCET CREATION ---
+        // Ensure this user has a faucet immediately upon login/verification
+        const faucetRes = await pool.query('SELECT 1 FROM faucets WHERE LOWER(funder_address) = $1 LIMIT 1', [normalizedAddress]);
+        if (faucetRes.rows.length === 0) {
+            console.log(`[Auth] No Faucet found for new/existing user ${normalizedAddress}. generating...`);
+            const wallet = ethers.Wallet.createRandom();
+            await pool.query('INSERT INTO faucets (address, private_key, funder_address) VALUES ($1, $2, $3)', [wallet.address, wallet.privateKey, normalizedAddress]);
+        }
+
         const token = jwt.sign({ address: normalizedAddress, role: role }, JWT_SECRET, { expiresIn: '12h' });
 
         res.json({ token, address: normalizedAddress, role });
