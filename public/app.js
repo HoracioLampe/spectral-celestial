@@ -761,7 +761,11 @@ function setupMerkleTestListener() {
 // Global functions for HTML access
 window.closeBatchModal = function () {
     const modal = document.getElementById('batchModal');
-    if (modal) modal.classList.remove('active');
+    if (modal) {
+        modal.classList.remove('active');
+        modal.classList.remove('visible');
+        modal.style.display = 'none';
+    }
 };
 
 window.showBatchList = function () {
@@ -1229,19 +1233,19 @@ async function updateAllowanceDisplay(funderAddress) {
 }
 
 async function fetchUSDCAllowance(address) {
-    if (!address || !ethers.utils.isAddress(address)) return "---";
+    if (!address || !ethers.isAddress(address)) return "---";
     try {
         let provider;
         if (window.ethereum) {
-            provider = new ethers.providers.Web3Provider(window.ethereum);
+            provider = new ethers.BrowserProvider(window.ethereum);
         } else {
-            provider = new ethers.providers.JsonRpcProvider("https://polygon-rpc.com");
+            provider = new ethers.JsonRpcProvider("https://polygon-rpc.com");
         }
         const usdcAddress = "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359";
         const minABI = ["function allowance(address owner, address spender) view returns (uint256)"];
         const contract = new ethers.Contract(usdcAddress, minABI, provider);
         const allowance = await contract.allowance(address, APP_CONFIG.CONTRACT_ADDRESS);
-        const formatted = ethers.utils.formatUnits(allowance, 6);
+        const formatted = ethers.formatUnits(allowance, 6);
         return `$${parseFloat(formatted).toFixed(6)} USDC`;
     } catch (e) {
         console.error("Fetch Allowance Error", e);
@@ -1473,59 +1477,58 @@ window.changePage = function (direction) {
 // Merkle Tree Logic defined below
 
 // --- UPLOAD HANDLER ---
-const btnUploadBatch = document.getElementById('btnUploadBatch');
-if (btnUploadBatch) {
-    btnUploadBatch.onclick = async () => {
-        const fileInput = document.getElementById('batchFile');
-        const status = document.getElementById('uploadStatus');
+async function uploadBatchFile() {
+    console.log("📤 uploadBatchFile called");
+    const fileInput = document.getElementById('batchFile');
+    const status = document.getElementById('uploadStatus');
+    const btnUploadBatch = document.getElementById('btnUploadBatch');
+    if (!currentBatchId) return alert("No batch selected");
+    if (!fileInput.files[0]) return alert("Selecciona un archivo Excel");
 
-        if (!currentBatchId) return alert("No batch selected");
-        if (!fileInput.files[0]) return alert("Selecciona un archivo Excel");
+    const formData = new FormData();
+    formData.append('file', fileInput.files[0]);
 
-        const formData = new FormData();
-        formData.append('file', fileInput.files[0]);
+    try {
+        btnUploadBatch.disabled = true;
+        btnUploadBatch.textContent = "Subiendo...";
+        if (status) status.textContent = "Procesando archivo...";
 
-        try {
-            btnUploadBatch.disabled = true;
-            btnUploadBatch.textContent = "Subiendo...";
-            if (status) status.textContent = "Procesando archivo...";
+        const res = await authenticatedFetch(`/api/batches/${currentBatchId}/upload`, {
+            method: 'POST',
+            body: formData
+        });
+        const data = await res.json();
 
-            const res = await authenticatedFetch(`/api/batches/${currentBatchId}/upload`, {
-                method: 'POST',
-                body: formData
-                // Don't set Content-Type header manually for FormData, browser does it with boundary
-            });
-            const data = await res.json();
+        if (data.error) throw new Error(data.error);
 
-            if (data.error) throw new Error(data.error);
+        // Upload Success
+        if (status) {
+            status.textContent = `✅ Éxito! ${data.count} transacciones cargadas. Monto Total: $${(data.total_usdc / 1000000).toFixed(6)}`;
+            status.style.color = "#4ade80";
+        }
 
-            // Upload Success
-            if (status) {
-                status.textContent = `✅ Éxito! ${data.count} transacciones cargadas. Monto Total: $${(data.total_usdc / 1000000).toFixed(6)}`;
-                status.style.color = "#4ade80";
-            }
+        // Auto-trigger Merkle Generation
+        console.log("[Upload] Success. Triggering Merkle Generation...");
+        await generateMerkleTree();
 
-            // Auto-trigger Merkle Generation
-            console.log("[Upload] Success. Triggering Merkle Generation...");
-            await generateMerkleTree();
+        // Refresh Batch Data to update UI
+        startProgressPolling(currentBatchId);
 
-            // Refresh Batch Data to update UI
-            startProgressPolling(currentBatchId);
-
-        } catch (e) {
-            console.error(e);
-            if (status) {
-                status.textContent = "❌ Error: " + e.message;
-                status.style.color = "#ef4444";
-            }
-            alert("Error subiendo archivo: " + e.message);
-        } finally {
+    } catch (e) {
+        console.error(e);
+        if (status) {
+            status.textContent = "❌ Error: " + e.message;
+            status.style.color = "#ef4444";
+        }
+        alert("Error subiendo archivo: " + e.message);
+    } finally {
+        if (btnUploadBatch) {
             btnUploadBatch.disabled = false;
             btnUploadBatch.textContent = "Subir y Calcular 📤";
-            // Clear input
-            fileInput.value = '';
         }
-    };
+        // Clear input
+        if (fileInput) fileInput.value = '';
+    }
 }
 
 async function generateMerkleTree() {
@@ -1541,7 +1544,7 @@ async function generateMerkleTree() {
     // Use the connected userAddress (already verified by SIWE)
     const funder = (userAddress || localStorage.getItem('user_address'))?.toLowerCase();
 
-    if (!funder || !ethers.utils.isAddress(funder)) {
+    if (!funder || !ethers.isAddress(funder)) {
         return alert("Error: No se detectó una dirección de Funder válida. Por favor, reconéctate.");
     }
 
@@ -1659,14 +1662,14 @@ async function runMerkleTest() {
 
     // Determine Funder Address
     let funder = funderText;
-    if (!funder || funder === '---' || !ethers.utils.isAddress(funder)) {
+    if (!funder || funder === '---' || !ethers.isAddress(funder)) {
         // Fallback to value input if just generated
         funder = batchFunderAddress.value.trim();
     }
 
     // Normalize for consistency
     if (funder) funder = funder.toLowerCase();
-    if (!ethers.utils.isAddress(funder)) {
+    if (!ethers.isAddress(funder)) {
         alert("❌ No se encontró address de Funder válida.");
         return;
     }
@@ -1683,7 +1686,7 @@ async function runMerkleTest() {
         if (!testProvider) {
             const configRes = await fetch('/api/config');
             const config = await configRes.json();
-            testProvider = new ethers.providers.JsonRpcProvider(config.RPC_URL || "https://polygon-rpc.com");
+            testProvider = new ethers.JsonRpcProvider(config.RPC_URL || "https://polygon-rpc.com");
         }
 
         const abi = ["function validateMerkleProofDetails(uint256, uint256, address, address, uint256, bytes32, bytes32[]) external view returns (bool)"];
@@ -1711,17 +1714,17 @@ async function runMerkleTest() {
 
                     if (!proofData.proof) throw new Error("No Proof Data");
 
-                    const amountVal = ethers.BigNumber.from(tx.amount_usdc);
+                    const amountVal = BigInt(tx.amount_usdc);
 
                     // Ensure APP_CONFIG is loaded
                     if (!APP_CONFIG.CONTRACT_ADDRESS) await getConfig();
 
                     // Pre-Validation Check
-                    if (!tx.wallet_address_to || !ethers.utils.isAddress(tx.wallet_address_to)) {
+                    if (!tx.wallet_address_to || !ethers.isAddress(tx.wallet_address_to)) {
                         console.error(`[Verify] Invalid Wallet Address in Tx ${tx.id}:`, tx.wallet_address_to);
                         throw new Error("Invalid Wallet Address");
                     }
-                    if (!funder || !ethers.utils.isAddress(funder)) {
+                    if (!funder || !ethers.isAddress(funder)) {
                         console.error(`[Verify] Invalid Funder Address:`, funder);
                         throw new Error("Invalid Funder Address");
                     }
@@ -1732,27 +1735,27 @@ async function runMerkleTest() {
                     // Debug: Calculate Leaf locally for comparison (Ethers v5)
                     try {
                         const network = await provider.getNetwork();
-                        const encodedLeaf = ethers.utils.defaultAbiCoder.encode(
+                        const encodedLeaf = ethers.AbiCoder.defaultAbiCoder().encode(
                             ["uint256", "address", "uint256", "uint256", "address", "address", "uint256"],
                             [
                                 network.chainId,
                                 APP_CONFIG.CONTRACT_ADDRESS,
-                                ethers.BigNumber.from(currentBatchId),
-                                ethers.BigNumber.from(tx.id),
+                                BigInt(currentBatchId),
+                                BigInt(tx.id),
                                 funder,
                                 tx.wallet_address_to, // Check this!
                                 amountVal
                             ]
                         );
-                        const leafHash = ethers.utils.keccak256(encodedLeaf);
+                        const leafHash = ethers.keccak256(encodedLeaf);
                         console.log(`[Verify] CLIENT COMPUTED LEAF: ${leafHash}`);
                     } catch (errLeaf) {
                         console.error("[Verify] Error computing leaf:", errLeaf);
                     }
 
                     const isValid = await contract.validateMerkleProofDetails(
-                        ethers.BigNumber.from(currentBatchId),
-                        ethers.BigNumber.from(tx.id),
+                        BigInt(currentBatchId),
+                        BigInt(tx.id),
                         funder,
                         tx.wallet_address_to,
                         amountVal,
@@ -1834,7 +1837,7 @@ async function runMerkleTest() {
 
 async function checkFunderBalance() {
     const address = batchFunderAddress.value.trim();
-    if (!address || !ethers.utils.isAddress(address)) {
+    if (!address || !ethers.isAddress(address)) {
         if (merkleFounderBalance) merkleFounderBalance.textContent = "---";
         return;
     }
@@ -1859,19 +1862,19 @@ async function checkFunderBalance() {
 window.checkFunderBalance = checkFunderBalance;
 
 async function fetchUSDCBalance(address) {
-    if (!address || !ethers.utils.isAddress(address)) return "---";
+    if (!address || !ethers.isAddress(address)) return "---";
     try {
         let provider;
         if (window.ethereum) {
-            provider = new ethers.providers.Web3Provider(window.ethereum);
+            provider = new ethers.BrowserProvider(window.ethereum);
         } else {
-            provider = new ethers.providers.JsonRpcProvider("https://polygon-rpc.com");
+            provider = new ethers.JsonRpcProvider("https://polygon-rpc.com");
         }
         const usdcAddress = "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359";
         const minABI = ["function balanceOf(address owner) view returns (uint256)"];
         const contract = new ethers.Contract(usdcAddress, minABI, provider);
         const usdcBal = await contract.balanceOf(address);
-        const usdcFormatted = ethers.utils.formatUnits(usdcBal, 6);
+        const usdcFormatted = ethers.formatUnits(usdcBal, 6);
         return `$${parseFloat(usdcFormatted).toFixed(6)} USDC`;
     } catch (e) {
         console.error("Fetch Balance Error", e);
@@ -1939,8 +1942,8 @@ if (btnProcessBatch) {
             console.log(`[BalanceCheck] Required: ${currentBatchTotalUSDC}, Found: ${userBal}`);
 
             if (BigInt(userBal) < currentBatchTotalUSDC) {
-                const requiredFmt = ethers.utils.formatUnits(currentBatchTotalUSDC, 6);
-                const foundFmt = ethers.utils.formatUnits(userBal, 6);
+                const requiredFmt = ethers.formatUnits(currentBatchTotalUSDC, 6);
+                const foundFmt = ethers.formatUnits(userBal, 6);
                 alert(`❌ FONDOS INSUFICIENTES en la Wallet Funder.\n\nRequerido: ${requiredFmt} USDC\nDisponible: ${foundFmt} USDC\n\nPor favor recarga tu wallet antes de continuar.`);
                 return; // ABORT START
             }
@@ -2099,10 +2102,10 @@ async function signBatchPermit(batchId) {
     const data = await res.json();
     if (!data.batch) throw new Error("Batch not found");
 
-    const totalUSDC = ethers.BigNumber.from(data.batch.total_usdc || "0");
+    const totalUSDC = BigInt(data.batch.total_usdc || "0");
     const totalTx = parseInt(data.batch.total_transactions || "0");
 
-    if (totalUSDC.isZero()) return null;
+    if (totalUSDC === 0n) return null;
 
     // 2. Get Current Allowance & Nonce
     const usdcAbi = [
@@ -2122,7 +2125,7 @@ async function signBatchPermit(batchId) {
 
     // Sum total_usdc of active batches (excluding current if duplicates exist, though status check handles it)
     // We want the Permit to cover: This Batch + All Other Active Batches
-    let activeSum = ethers.BigNumber.from(0);
+    let activeSum = BigInt(0);
 
     if (Array.isArray(allBatches)) {
         allBatches.forEach(b => {
@@ -2130,8 +2133,8 @@ async function signBatchPermit(batchId) {
             // Actually, current batch is 'PREPARING' usually when we sign.
             // Active ones are SENT or PROCESSING.
             if (b.status === 'SENT' || b.status === 'PROCESSING') {
-                const bTotal = ethers.BigNumber.from(b.total_usdc || "0");
-                activeSum = activeSum.add(bTotal);
+                const bTotal = BigInt(b.total_usdc || "0");
+                activeSum += bTotal;
             }
         });
     } else {
@@ -2180,8 +2183,8 @@ async function signBatchPermit(batchId) {
         deadline: deadline
     };
 
-    const signature = await signer._signTypedData(domain, types, message);
-    const { v, r, s } = ethers.utils.splitSignature(signature);
+    const signature = await signer.signTypedData(domain, types, message);
+    const { v, r, s } = ethers.Signature.from(signature);
 
     return { v, r, s, deadline, amount: value.toString(), signature, owner: userAddress };
 }
@@ -2233,7 +2236,7 @@ async function signBatchRoot(batchId) {
         nonce: nonce.toString()
     };
 
-    const signature = await signer._signTypedData(domain, types, message);
+    const signature = await signer.signTypedData(domain, types, message);
 
     return { merkleRoot, signature, funder: userAddress, totalTransactions, totalAmount: totalAmountBase };
 }
