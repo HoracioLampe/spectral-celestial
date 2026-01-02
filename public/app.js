@@ -701,6 +701,11 @@ let merkleContainer, merkleInputZone, merkleResultZone, batchFunderAddress, btnG
 let displayMerkleRoot, merkleStatus, merkleTotalAmount, merkleFounderBalance, merkleResultBalance, merkleResultFunder;
 let batchTableBody;
 
+/**
+ * Initializes all Batch UI DOM elements references.
+ * Must be called after DOMContentLoaded to ensure elements exist.
+ * This prevents ReferenceErrors throughout the application lifecycle.
+ */
 function initBatchUI() {
     batchListView = document.getElementById('batchListView');
     batchDetailView = document.getElementById('batchDetailView');
@@ -740,6 +745,10 @@ function initBatchUI() {
 
 // Event Listeners
 // Wrappers for Event Listeners (Called after DOM Load)
+/**
+ * Attaches event listeners to Batch UI elements safely.
+ * Wraps logic to prevent crashes if elements are missing (e.g. different user roles).
+ */
 function setupBatchEventListeners() {
     // These variables must be accessed via DOM or global scope if defined later
     const btnOpenBatchModal = document.getElementById('btnOpenBatchModal');
