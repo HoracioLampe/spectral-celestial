@@ -209,7 +209,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (savedToken && savedAddress) {
         console.log("🔑 Restoring existing session...");
         AUTH_TOKEN = savedToken;
-        userAddress = savedAddress;
+        userAddress = savedAddress.toLowerCase().trim();
 
         const landingSection = document.getElementById('landingSection');
         const appLayout = document.getElementById('appLayout');
@@ -365,6 +365,9 @@ function attachEventListeners() {
     const btnDisconnect = document.getElementById('btnDisconnect');
     if (btnDisconnect) btnDisconnect.addEventListener('click', logout);
 
+    const btnRestrictedLogout = document.getElementById('btnRestrictedLogout');
+    if (btnRestrictedLogout) btnRestrictedLogout.addEventListener('click', logout);
+
     // Filter toggle
     if (window.btnConnect) window.btnConnect.onclick = connectWallet;
 }
@@ -378,6 +381,10 @@ function attachEventListeners() {
 // Event listeners are now attached in attachEventListeners() called from DOMContentLoaded
 
 function logout() {
+    window.logout();
+}
+
+window.logout = function () {
     console.log("🔌 Cerrando sesión...");
     localStorage.removeItem('jwt_token');
     localStorage.removeItem('user_address');
