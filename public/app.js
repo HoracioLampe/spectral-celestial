@@ -2417,16 +2417,24 @@ async function pollBatchProgress(batchId) {
             const failed = data.stats ? parseInt(data.stats.failed || 0) : 0;
 
             // If we have stats, use strict Pending check
-            // FIX: User wants 100% completion. If there are FAILED txs, backend is retrying them.
-            // So we must NOT stop if failed > 0.
-            const isDoneStats = (pending === 0 && failed === 0 && total > 0);
+            // FIX: Also check if status is COMPLETED or FAILED (backend stopped processing)
+            const isDoneStats = (pending === 0 && total > 0);
+            const isBackendDone = (status === 'COMPLETED' || status === 'FAILED');
 
-            if (isDoneStats || (completed >= total && total > 0) || status === 'COMPLETED') {
+            // Also check if timer already stopped (processing finished)
+            const timerStopped = !window.processTimerInterval;
+
+            if (isDoneStats || isBackendDone || timerStopped || (completed >= total && total > 0)) {
                 stopTimer();
                 const processStatus = document.getElementById('merkleTestStatus');
                 if (processStatus) {
-                    processStatus.textContent = "✅ ¡Distribución Finalizada!";
-                    processStatus.style.color = "#4ade80"; // Success Green
+                    if (status === 'FAILED' || failed > 0) {
+                        processStatus.textContent = "⚠️ Distribución Finalizada con Errores";
+                        processStatus.style.color = "#fbbf24"; // Warning Yellow
+                    } else {
+                        processStatus.textContent = "✅ ¡Distribución Finalizada!";
+                        processStatus.style.color = "#4ade80"; // Success Green
+                    }
                 }
                 const btnExecute = document.getElementById('btnExecuteBatch');
                 if (btnExecute) {
