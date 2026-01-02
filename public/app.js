@@ -623,13 +623,37 @@ async function checkNetwork() {
     }
 }
 
+// Consolidated UI Update
+function updateUI() {
+    if (!userAddress) return;
+
+    // Update Address Text
+    const shortAddr = `${userAddress.substring(0, 6)}...${userAddress.substring(38)}`;
+
+    // Sidebar Link
+    const sidebarLink = document.getElementById('userAddressLink');
+    if (sidebarLink) {
+        sidebarLink.textContent = shortAddr;
+        sidebarLink.href = getExplorerUrl(userAddress);
+    }
+
+    // Top Right Span (if exists)
+    if (window.userAddressSpan) window.userAddressSpan.textContent = shortAddr;
+
+    // Restricted View
+    const restrictedAddr = document.getElementById('restrictedUserAddress');
+    if (restrictedAddr) restrictedAddr.textContent = userAddress;
+
+    // Fetch Balances
+    fetchBalances();
+}
+
 async function fetchBalances() {
     if (!userAddress || !provider) return;
     try {
         console.log("💰 Fetching balances for:", userAddress);
         const balance = await provider.getBalance(userAddress);
         const maticVal = parseFloat(ethers.utils.formatEther(balance)).toFixed(4);
-        console.log("⛽ MATIC:", maticVal);
 
         const elMatic = document.getElementById('maticBalance');
         if (elMatic) elMatic.textContent = maticVal;
@@ -637,12 +661,10 @@ async function fetchBalances() {
         const usdcContract = new ethers.Contract(USDC_ADDRESS, USDC_ABI, provider);
         const usdcRaw = await usdcContract.balanceOf(userAddress);
         const usdcVal = parseFloat(ethers.utils.formatUnits(usdcRaw, 6)).toFixed(2);
-        console.log("💰 USDC:", usdcVal);
 
         const elUsdc = document.getElementById('usdcBalance');
         if (elUsdc) elUsdc.textContent = usdcVal;
 
-        console.log("✅ Balances updated UI");
     } catch (e) {
         console.error("❌ Error fetching balances:", e);
     }
