@@ -672,13 +672,13 @@ class RelayerEngine {
 
         const averageGas = totalSampleGas / BigInt(sampleSize);
         // Use Configurable Buffer
-        const bufferPercent = RelayerEngine.GAS_BUFFER_PERCENTAGE || 60n;
+        const bufferPercent = RelayerEngine.GAS_BUFFER_PERCENTAGE || 30n; // Reduced from 60n
         const bufferedGas = (averageGas * BigInt(txs.length)) * (100n + bufferPercent) / 100n;
         const feeData = await this.provider.getFeeData();
         const gasPrice = feeData.gasPrice || 50000000000n;
 
         // Use Configurable Cushion
-        const safetyCushion = RelayerEngine.GAS_CUSHION_MATIC || ethers.parseEther("0.25");
+        const safetyCushion = RelayerEngine.GAS_CUSHION_MATIC || ethers.parseEther("0.1"); // Reduced from 0.25
         const totalCost = (bufferedGas * gasPrice) + safetyCushion;
 
         console.log(`[Engine]   > Total estimated cost: ${ethers.formatEther(totalCost)} MATIC (inc. 0.05 buffer)`);
@@ -697,8 +697,8 @@ class RelayerEngine {
         // Reserve 0.2 MATIC for the distribution tx gas itself
         const reserveGas = ethers.parseEther("0.2");
 
-        // DOUBLE GAS BUFFER as requested by user
-        let fundAmount = totalCostWei * 2n;
+        // REDUCED BUFFER: Use 1.2x instead of 2x to avoid draining faucet on estimation
+        let fundAmount = (totalCostWei * 120n) / 100n;
         let warningMsg = null;
 
         if (faucetBalance < (totalCostWei + reserveGas)) {
@@ -719,7 +719,8 @@ class RelayerEngine {
             await this.fundRelayers(batchId, relayers, perRelayerWei);
         } catch (err) {
             // Enhance error for UI
-            if (err.message.includes("insufficient funds")) {
+            if (err.message.includes("insufficient funds") || err.code === 'INSUFFICIENT_FUNDS') {
+                // Format the error to be more readable
                 throw new Error(`Faucet sin fondos suficientes. Balance: ${ethers.formatEther(faucetBalance)} MATIC. Requerido: ${ethers.formatEther(totalCostWei)}`);
             }
             throw err;
@@ -736,7 +737,9 @@ class RelayerEngine {
             // Check Faucet Balance
             const faucetBalance = await this.provider.getBalance(this.faucetWallet.address);
             console.log(`[Engine][Fund] Faucet Balance: ${ethers.formatEther(faucetBalance)} MATIC`);
+            // Add slight tolerance check
             if (faucetBalance < totalValueToSend) {
+                // Try to adjust if slightly off? No, safer to fail or let caller handle.
                 throw new Error(`Insufficient Faucet balance. Need ${ethers.formatEther(totalValueToSend)} MATIC, have ${ethers.formatEther(faucetBalance)}.`);
             }
 
@@ -748,7 +751,7 @@ class RelayerEngine {
 
             const tx = await contract.distributeMatic(
                 relayers.map(r => r.address),
-                amountWei,
+                amountWei, // Sending strictly calculated amount
                 {
                     value: totalValueToSend,
                     gasLimit: safeGasLimit

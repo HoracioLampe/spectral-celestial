@@ -2179,7 +2179,8 @@ async function signBatchPermit(batchId) {
 
     // Total Value to Approve = New Batch + Active Batches
     // This ensures we don't accidentally revoke funds for running batches
-    const value = totalUSDC.add(activeSum);
+    // Fix: Use BigInt addition (Ethers v6)
+    const value = totalUSDC + activeSum;
 
     // 2.2 Calculate Dynamic Deadline (Concurrency Support)
     // Formula: (Total Active Txs + Current Batch Txs) * Conservative Time Per Tx
