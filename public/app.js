@@ -366,85 +366,58 @@ function initTheme() {
 }
 
 
-// RADICAL FIX: Pointer Events API (Modern & Robust)
 function initVerificationSlider() {
-    console.log("🔒 Init Verification Slider (Radical Fix)");
     const container = document.getElementById('verifyContainer');
     const slider = document.getElementById('verifySlider');
     const btnEnter = document.getElementById('btnEnterApp');
-
-    if (!container || !slider || !btnEnter) {
-        console.error("❌ Verification elements missing");
-        return;
-    }
-
-    // Disable native drag (prevents ghost image)
-    slider.ondragstart = () => false;
+    if (!container || !slider || !btnEnter) return;
 
     let isDragging = false;
-    const maxSlide = 260; // Hardcoded safety width based on CSS (320px container - 50px slider - 10px padding)
+    let startX = 0;
+    const maxSlide = container.offsetWidth - slider.offsetWidth - 10;
 
-    const unlock = () => {
-        isDragging = false;
-        slider.style.left = maxSlide + 'px';
-        container.classList.add('success');
-        slider.querySelector('.verify-icon').textContent = '✅';
-        btnEnter.disabled = false;
-        btnEnter.classList.remove('btn-disabled');
-        console.log("🔓 Unlocked!");
+    const onStart = (e) => {
+        if (container.classList.contains('success')) return;
+        isDragging = true;
+        startX = (e.type === 'touchstart' ? e.touches[0].clientX : e.clientX) - slider.offsetLeft;
+        slider.style.transition = 'none';
     };
 
-    const reset = () => {
-        if (!container.classList.contains('success')) {
+    const onMove = (e) => {
+        if (!isDragging) return;
+        let x = (e.type === 'touchmove' ? e.touches[0].clientX : e.clientX) - startX;
+
+        if (x < 5) x = 5;
+        if (x > maxSlide) x = maxSlide;
+
+        slider.style.left = x + 'px';
+
+        // Check for success
+        if (x >= maxSlide - 5) {
             isDragging = false;
-            slider.style.transition = 'left 0.3s cubic-bezier(0.4, 0.0, 0.2, 1)';
+            slider.style.left = maxSlide + 'px';
+            container.classList.add('success');
+            slider.querySelector('.verify-icon').textContent = '✅';
+            btnEnter.disabled = false;
+            console.log("🔒 Human verification successful");
+        }
+    };
+
+    const onEnd = () => {
+        if (!isDragging) return;
+        isDragging = false;
+        if (!container.classList.contains('success')) {
+            slider.style.transition = 'left 0.3s ease';
             slider.style.left = '5px';
         }
     };
 
-    // POINTER EVENTS (Unifies Mouse & Touch)
-    slider.onpointerdown = (e) => {
-        if (container.classList.contains('success')) return;
-        isDragging = true;
-        slider.setPointerCapture(e.pointerId); // CRITICAL: Keeps focus even if moving fast
-        slider.style.transition = 'none';
-        console.log("⬇️ Pointer Down");
-    };
-
-    slider.onpointermove = (e) => {
-        if (!isDragging) return;
-        e.preventDefault();
-
-        // Relative calculation relative to CONTAINER
-        const containerRect = container.getBoundingClientRect();
-        let newX = e.clientX - containerRect.left - (slider.offsetWidth / 2);
-
-        // Clamping
-        if (newX < 5) newX = 5;
-        if (newX > maxSlide) newX = maxSlide;
-
-        slider.style.left = newX + 'px';
-
-        // Trigger Success at 90%
-        if (newX >= maxSlide * 0.9) {
-            slider.releasePointerCapture(e.pointerId);
-            unlock();
-        }
-    };
-
-    slider.onpointerup = (e) => {
-        if (!isDragging) return;
-        isDragging = false;
-        slider.releasePointerCapture(e.pointerId);
-        reset();
-        console.log("⬆️ Pointer Up");
-    };
-
-    // Safety: Also unlock on Double Click
-    slider.ondblclick = () => {
-        console.log("⚡ Emergency Unlock Triggered");
-        unlock();
-    };
+    slider.addEventListener('mousedown', onStart);
+    slider.addEventListener('touchstart', onStart);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('touchmove', onMove);
+    window.addEventListener('mouseup', onEnd);
+    window.addEventListener('touchend', onEnd);
 }
 
 function initDOMElements() {
