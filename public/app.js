@@ -2352,35 +2352,44 @@ async function pollBatchProgress(batchId) {
         return;
     }
 
-    // 1. Fetch Relayer Balances (Keep existing logic)
-    await fetchRelayerBalances(batchId);
-
-    // 2. Fetch Batch Status for Progress & Timer Stop
     try {
-        const res = await fetch(`/api/batches/${batchId}`);
-        const data = await res.json();
+        // Parallel Fetch for Speed ⚡
+        const [relayerRes, batchRes] = await Promise.all([
+            fetchRelayerBalances(batchId), // Now returns promise but doesn't return data directly to variable (it renders internally)
+            fetch(`/api/batches/${batchId}`)
+        ]);
+
+        const data = await batchRes.json();
         const batch = data.batch;
 
         if (batch) {
             // Update Transactions Table
             if (data.transactions) {
-                console.log(`[UI] Refreshing Grid: ${data.transactions.length} txs received.`);
+                // console.log(`[UI] Refreshing Grid: ${data.transactions.length} txs received.`);
                 allBatchTransactions = data.transactions;
                 renderBatchTransactions();
             }
 
             const completed = parseInt(batch.completed_count || 0);
             const total = parseInt(batch.total_transactions || 1);
+            const status = batch.status;
 
-            // Update Progress Bar if exists (Optional, but good UX)
-            // (Assumes you might want to add a progress bar later, or just console)
-            console.log(`[Progress] ${completed}/${total}`);
+            // Update Progress Bar if exists
+            const progressPct = total > 0 ? Math.round((completed / total) * 100) : 0;
+            const progressBar = document.getElementById('batchProgressBar');
+            const progressText = document.getElementById('batchProgressText');
+            const progressPercent = document.getElementById('batchProgressPercent');
+            const batchProgressZone = document.getElementById('batchProgressZone');
 
-            // Update Status Badge if needed
-            const statusBadge = document.getElementById('batchStatusBadge'); // If you added this ID
+            if (batchProgressZone) batchProgressZone.classList.remove('hidden');
+
+            if (progressBar) progressBar.style.width = `${progressPct}%`;
+            if (progressText) progressText.textContent = `Procesando: ${completed} / ${total}`;
+            if (progressPercent) progressPercent.textContent = `${progressPct}%`;
 
             // Check Completion
-            if (completed >= total && total > 0) {
+            // STOP if: Counts match OR Status is COMPLETED (Backend source of truth)
+            if ((completed >= total && total > 0) || status === 'COMPLETED') {
                 stopTimer();
                 const processStatus = document.getElementById('merkleTestStatus');
                 if (processStatus) {
@@ -2388,11 +2397,17 @@ async function pollBatchProgress(batchId) {
                     processStatus.style.color = "#4ade80"; // Success Green
                 }
                 const btnExecute = document.getElementById('btnExecuteBatch');
-                if (btnExecute) btnExecute.textContent = "✅ Completado";
+                if (btnExecute) {
+                    btnExecute.textContent = "✅ Completado";
+                    btnExecute.disabled = true;
+                }
 
-                // Optional: Stop polling after completion? 
-                // Currently keeping it to see relayer refunds, but slowing it down or stopping is fine.
-                // clearInterval(window.balanceInterval); 
+                // Slow down polling when finished to save resources
+                if (window.balanceInterval) {
+                    clearInterval(window.balanceInterval);
+                    // Keep polling slowly just in case (e.g. 10s) to see final relayer refunds
+                    window.balanceInterval = setInterval(() => pollBatchProgress(batchId), 10000);
+                }
             }
         }
     } catch (err) {
