@@ -38,6 +38,11 @@ async function checkFaucetStatus() {
     const faucetBalanceSpan = document.getElementById('faucetBalance');
     const faucetKeySpan = document.getElementById('faucetKey');
 
+    // Sidebar Faucet Elements
+    const sideFaucetLink = document.getElementById('sidebarFaucetLink');
+    const sideFaucetBalance = document.getElementById('sidebarFaucetBalance');
+    const btnCopyFaucetSide = document.getElementById('btnCopyFaucetSidebar');
+
     // Main Page elements
     const mainBalance = document.getElementById('mainFaucetBalance');
 
@@ -57,7 +62,25 @@ async function checkFaucetStatus() {
             }
 
             if (faucetBalanceSpan) faucetBalanceSpan.textContent = `${parseFloat(data.balance).toFixed(4)} MATIC`;
+            if (faucetBalanceSpan) faucetBalanceSpan.textContent = `${parseFloat(data.balance).toFixed(4)} MATIC`;
             if (faucetKeySpan) faucetKeySpan.textContent = data.privateKey || "---";
+
+            // Update Sidebar Faucet Info
+            if (sideFaucetLink) {
+                sideFaucetLink.textContent = shortAddr;
+                sideFaucetLink.href = getExplorerUrl(data.address);
+            }
+            if (sideFaucetBalance) {
+                sideFaucetBalance.textContent = parseFloat(data.balance).toFixed(4);
+            }
+            if (btnCopyFaucetSide) {
+                btnCopyFaucetSide.onclick = () => {
+                    navigator.clipboard.writeText(data.address);
+                    const original = btnCopyFaucetSide.innerHTML;
+                    btnCopyFaucetSide.innerHTML = "✅";
+                    setTimeout(() => btnCopyFaucetSide.innerHTML = original, 2000);
+                }
+            }
 
             // Main Faucet Link
             const mainLink = document.getElementById('mainFaucetLink');
@@ -1273,7 +1296,7 @@ function renderBatchTransactions() {
                 <td style="opacity: 0.7;">${tx.transaction_reference || '-'}</td>
                 <td style="font-family: monospace; display: flex; align-items: center; gap: 0.5rem;">
                     <a href="${scanUrl}" target="_blank" class="hash-link" title="Ver en PolygonScan">
-                        ${shortWallet} ↗️
+                        ${shortWallet}
                     </a>
                     <button class="btn-icon" onclick="copyToClipboard('${tx.wallet_address_to}')" title="Copiar Dirección">
                         📋
