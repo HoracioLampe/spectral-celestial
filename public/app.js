@@ -1016,6 +1016,30 @@ window.openBatchDetail = async function (id) {
     if (document.getElementById('filterAmount')) document.getElementById('filterAmount').value = '';
     if (document.getElementById('filterStatus')) document.getElementById('filterStatus').value = '';
 
+    // 🔧 RESET SIGNATURE STATES (Fix for second batch issue)
+    // Reset execution button to initial state
+    const btnExecute = document.getElementById('btnExecuteBatch');
+    if (btnExecute) {
+        btnExecute.disabled = false;
+        btnExecute.textContent = "2. Ejecutar Lote 🚀";
+        btnExecute.classList.remove('btn-success');
+        btnExecute.classList.add('btn-primary');
+    }
+
+    // Reset setup button
+    const btnSetup = document.getElementById('btnSetupRelayers');
+    if (btnSetup) {
+        btnSetup.disabled = false;
+        btnSetup.textContent = "1. Preparar Relayers 🏗️";
+        btnSetup.classList.remove('hidden');
+    }
+
+    // Hide payment trigger zone
+    const paymentTriggerZone = document.getElementById('paymentTriggerZone');
+    if (paymentTriggerZone) paymentTriggerZone.classList.add('hidden');
+
+    console.log('[UI] 🔄 Batch state reset - Ready for new batch signatures');
+
     // SHOW DETAILS SECTIONS (Unhide)
     const txDetail = document.getElementById('txDetailSection');
     const txContainer = document.getElementById('txTableContainer');
