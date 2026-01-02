@@ -455,19 +455,27 @@ window.logout = function () {
 }
 
 async function connectWallet() {
-    if (!window.ethereum) return alert("⚠️ Instala MetaMask");
+    console.log("🚀 connectWallet called!");
+    if (!window.ethereum) {
+        console.error("❌ window.ethereum is missing!");
+        return alert("⚠️ Instala MetaMask");
+    }
 
     const btnEnter = document.getElementById('btnEnterApp');
     const originalText = btnEnter ? btnEnter.innerHTML : "";
 
     try {
+        console.log("🔄 Starting SIWE Auth Flow...");
         if (btnEnter) {
             btnEnter.disabled = true;
             btnEnter.innerHTML = "<span>⏳</span> Autenticando...";
         }
 
         const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+        console.log("👤 Account found:", accounts[0]);
         userAddress = accounts[0];
+
+        console.log("📡 Initializing provider (Ethers v", (ethers.version || "???"), ")");
         provider = new ethers.providers.Web3Provider(window.ethereum);
         signer = provider.getSigner();
 
