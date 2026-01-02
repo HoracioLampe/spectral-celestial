@@ -1232,7 +1232,7 @@ window.clearFilters = function () {
 // Server-Side Fetch
 async function fetchBatchTransactions(batchId) {
     if (!batchId) return;
-    const wallet = document.getElementById('filterWallet')?.value || '';
+    const wallet = document.getElementById('filterWallet')?.value.toLowerCase().trim() || '';
     const amount = document.getElementById('filterAmount')?.value || '';
     const status = document.getElementById('filterStatus')?.value || '';
 
