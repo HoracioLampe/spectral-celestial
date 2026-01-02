@@ -104,6 +104,23 @@ app.get('/api/auth/nonce', async (req, res) => {
     }
 });
 
+// --- Faucet Self-Healing Helper ---
+async function ensureUserFaucet(userAddress) {
+    if (!userAddress) return;
+    const normalizedAddress = userAddress.toLowerCase().trim();
+    try {
+        const faucetRes = await pool.query('SELECT 1 FROM faucets WHERE LOWER(funder_address) = $1 LIMIT 1', [normalizedAddress]);
+        if (faucetRes.rows.length === 0) {
+            console.log(`[Self-Heal] No Faucet found for ${normalizedAddress}. generating...`);
+            const wallet = ethers.Wallet.createRandom();
+            await pool.query('INSERT INTO faucets (address, private_key, funder_address) VALUES ($1, $2, $3)', [wallet.address, wallet.privateKey, normalizedAddress]);
+            console.log(`[Self-Heal] Faucet created for ${normalizedAddress}`);
+        }
+    } catch (e) {
+        console.error(`[Self-Heal] Failed for ${normalizedAddress}:`, e.message);
+    }
+}
+
 app.post('/api/auth/verify', async (req, res) => {
     try {
         const { message, signature } = req.body;
@@ -129,13 +146,7 @@ app.post('/api/auth/verify', async (req, res) => {
         }
 
         // --- PROACTIVE FAUCET CREATION ---
-        // Ensure this user has a faucet immediately upon login/verification
-        const faucetRes = await pool.query('SELECT 1 FROM faucets WHERE LOWER(funder_address) = $1 LIMIT 1', [normalizedAddress]);
-        if (faucetRes.rows.length === 0) {
-            console.log(`[Auth] No Faucet found for new/existing user ${normalizedAddress}. generating...`);
-            const wallet = ethers.Wallet.createRandom();
-            await pool.query('INSERT INTO faucets (address, private_key, funder_address) VALUES ($1, $2, $3)', [wallet.address, wallet.privateKey, normalizedAddress]);
-        }
+        await ensureUserFaucet(normalizedAddress);
 
         const token = jwt.sign({ address: normalizedAddress, role: role }, JWT_SECRET, { expiresIn: '12h' });
 
@@ -156,6 +167,10 @@ app.get('/api/batches', authenticateToken, async (req, res) => {
     try {
         const userAddress = req.user.address.toLowerCase().trim();
         const userRole = req.user.role;
+
+        // SELF-HEAL CHECK: Ensure faucet exists when loading dashboard
+        // This covers cases where user exists but faucet doesn't (legacy/manual insert)
+        await ensureUserFaucet(userAddress);
 
         const limit = parseInt(req.query.limit) || 20;
         const page = parseInt(req.query.page) || 1;
