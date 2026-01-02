@@ -226,6 +226,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const btnEnterApp = document.getElementById('btnEnterApp');
     if (btnEnterApp) {
+        btnEnterApp.disabled = false; // Force enable
         btnEnterApp.addEventListener('click', connectWallet);
     }
 
