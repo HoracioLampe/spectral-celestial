@@ -2388,8 +2388,14 @@ async function pollBatchProgress(batchId) {
             if (progressPercent) progressPercent.textContent = `${progressPct}%`;
 
             // Check Completion
-            // STOP if: Counts match OR Status is COMPLETED (Backend source of truth)
-            if ((completed >= total && total > 0) || status === 'COMPLETED') {
+            // STOP if: Counts match OR Status is COMPLETED (Backend source of truth) OR No Pending transactions
+            const pending = data.stats ? parseInt(data.stats.pending || 0) : -1;
+            const failed = data.stats ? parseInt(data.stats.failed || 0) : 0;
+
+            // If we have stats, use strict Pending check
+            const isDoneStats = (pending === 0 && total > 0);
+
+            if (isDoneStats || (completed >= total && total > 0) || status === 'COMPLETED') {
                 stopTimer();
                 const processStatus = document.getElementById('merkleTestStatus');
                 if (processStatus) {

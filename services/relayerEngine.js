@@ -312,7 +312,8 @@ class RelayerEngine {
         // Add a slight stagger to avoid all workers hitting node at exact same ms
         const workerPromises = relayers.map((wallet, idx) => {
             return new Promise(resolve => {
-                setTimeout(() => resolve(this.workerLoop(wallet, batchId)), idx * 500);
+                // Reduced stagger to 50ms (from 500ms) for faster ramp-up
+                setTimeout(() => resolve(this.workerLoop(wallet, batchId)), idx * 50);
             });
         });
 
