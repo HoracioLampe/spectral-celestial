@@ -29,6 +29,9 @@
                 class="px-3 py-1 bg-slate-700 hover:bg-slate-600 rounded text-sm">Faucets</button>
             <button onclick="setQuery('SELECT table_name FROM information_schema.tables WHERE table_schema=\'public\'')"
                 class="px-3 py-1 bg-blue-700 hover:bg-blue-600 rounded text-sm">List Tables</button>
+            <button onclick="unblockFaucets()"
+                class="px-3 py-1 bg-green-700 hover:bg-green-600 rounded text-sm font-bold">🔓 Desbloquear
+                Faucets</button>
         </div>
 
         <div class="mb-4">
@@ -43,6 +46,28 @@
 
         <div id="status" class="mt-2 text-sm text-gray-400"></div>
 
+        <!-- Faucet Unblock Results Section -->
+        <div id="faucetResults" class="mt-8 hidden">
+            <h2 class="text-2xl font-bold mb-4 text-green-400">🔓 Resultados de Desbloqueo de Faucets</h2>
+            <div id="faucetSummary" class="mb-4 p-4 bg-slate-800 rounded"></div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse" id="faucetTable">
+                    <thead class="bg-slate-800 text-slate-200">
+                        <tr>
+                            <th class="p-3 border-b border-slate-700">Faucet Address</th>
+                            <th class="p-3 border-b border-slate-700">Funder</th>
+                            <th class="p-3 border-b border-slate-700">Balance</th>
+                            <th class="p-3 border-b border-slate-700">Nonce (L/P)</th>
+                            <th class="p-3 border-b border-slate-700">Estado</th>
+                            <th class="p-3 border-b border-slate-700">TX Hash</th>
+                        </tr>
+                    </thead>
+                    <tbody id="faucetTableBody" class="text-slate-300"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- SQL Results Section -->
         <div class="mt-8 overflow-x-auto">
             <table class="w-full text-left border-collapse" id="resultsTable">
                 <thead class="bg-slate-800 text-slate-200">
@@ -120,6 +145,150 @@
             } finally {
                 btn.disabled = false;
                 btn.textContent = "▶ Ejecutar Query";
+            }
+        }
+
+        async function unblockFaucets() {
+            const status = document.getElementById('status');
+            const resultsDiv = document.getElementById('faucetResults');
+            const summaryDiv = document.getElementById('faucetSummary');
+            const tbody = document.getElementById('faucetTableBody');
+
+            status.textContent = "⏳ Verificando y desbloqueando faucets...";
+            resultsDiv.classList.add('hidden');
+            tbody.innerHTML = '';
+
+            try {
+                // Get JWT token from localStorage
+                const token = localStorage.getItem('auth_token');
+                if (!token) {
+                    throw new Error('No autenticado. Por favor inicia sesión.');
+                }
+
+                const res = await fetch('/api/admin/unblock-faucets', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                const data = await res.json();
+
+                if (!res.ok) {
+                    throw new Error(data.error || 'Error al desbloquear faucets');
+                }
+
+                // Show results
+                resultsDiv.classList.remove('hidden');
+
+                // Summary
+                const summary = data.summary;
+                summaryDiv.innerHTML = `
+                    <div class="grid grid-cols-5 gap-4 text-center">
+                        <div>
+                            <div class="text-2xl font-bold text-blue-400">${summary.total}</div>
+                            <div class="text-xs text-gray-400">Total</div>
+                        </div>
+                        <div>
+                            <div class="text-2xl font-bold text-green-400">${summary.clean}</div>
+                            <div class="text-xs text-gray-400">Limpios</div>
+                        </div>
+                        <div>
+                            <div class="text-2xl font-bold text-yellow-400">${summary.blocked}</div>
+                            <div class="text-xs text-gray-400">Bloqueados</div>
+                        </div>
+                        <div>
+                            <div class="text-2xl font-bold text-purple-400">${summary.repaired}</div>
+                            <div class="text-xs text-gray-400">Reparados</div>
+                        </div>
+                        <div>
+                            <div class="text-2xl font-bold text-red-400">${summary.failed}</div>
+                            <div class="text-xs text-gray-400">Fallidos</div>
+                        </div>
+                    </div>
+                `;
+
+                // Table rows
+                data.results.forEach(faucet => {
+                    const tr = document.createElement('tr');
+                    tr.className = "hover:bg-slate-800 border-b border-slate-700/50";
+
+                    // Address (shortened with copy button)
+                    const tdAddr = document.createElement('td');
+                    tdAddr.className = "p-3 font-mono text-sm";
+                    tdAddr.innerHTML = `
+                        <span class="text-blue-400">${faucet.address.substring(0, 6)}...${faucet.address.substring(38)}</span>
+                        <button onclick="navigator.clipboard.writeText('${faucet.address}')" class="ml-2 text-xs text-gray-500 hover:text-white">📋</button>
+                    `;
+                    tr.appendChild(tdAddr);
+
+                    // Funder
+                    const tdFunder = document.createElement('td');
+                    tdFunder.className = "p-3 font-mono text-xs text-gray-400";
+                    tdFunder.textContent = faucet.funderAddress === 'N/A' ? 'N/A' : `${faucet.funderAddress.substring(0, 6)}...`;
+                    tr.appendChild(tdFunder);
+
+                    // Balance
+                    const tdBal = document.createElement('td');
+                    tdBal.className = "p-3 font-mono text-sm";
+                    tdBal.textContent = `${parseFloat(faucet.balance).toFixed(4)} POL`;
+                    tr.appendChild(tdBal);
+
+                    // Nonce
+                    const tdNonce = document.createElement('td');
+                    tdNonce.className = "p-3 font-mono text-sm";
+                    tdNonce.textContent = `${faucet.latestNonce} / ${faucet.pendingNonce}`;
+                    tr.appendChild(tdNonce);
+
+                    // Status Badge
+                    const tdStatus = document.createElement('td');
+                    tdStatus.className = "p-3";
+                    let badge = '';
+                    switch (faucet.status) {
+                        case 'clean':
+                            badge = '<span class="px-2 py-1 bg-green-900 text-green-300 rounded text-xs">🟢 Limpio</span>';
+                            break;
+                        case 'blocked':
+                            badge = '<span class="px-2 py-1 bg-yellow-900 text-yellow-300 rounded text-xs">🟡 Bloqueado</span>';
+                            break;
+                        case 'repaired':
+                            badge = '<span class="px-2 py-1 bg-purple-900 text-purple-300 rounded text-xs">✅ Reparado</span>';
+                            break;
+                        case 'repair_failed':
+                            badge = '<span class="px-2 py-1 bg-red-900 text-red-300 rounded text-xs">❌ Fallo</span>';
+                            break;
+                        case 'error':
+                            badge = '<span class="px-2 py-1 bg-red-900 text-red-300 rounded text-xs">⚠️ Error</span>';
+                            break;
+                    }
+                    tdStatus.innerHTML = badge;
+                    if (faucet.error) {
+                        tdStatus.innerHTML += `<div class="text-xs text-red-400 mt-1">${faucet.error}</div>`;
+                    }
+                    tr.appendChild(tdStatus);
+
+                    // TX Hash
+                    const tdTx = document.createElement('td');
+                    tdTx.className = "p-3 font-mono text-xs";
+                    if (faucet.txHash) {
+                        tdTx.innerHTML = `<a href="https://polygonscan.com/tx/${faucet.txHash}" target="_blank" class="text-blue-400 hover:text-blue-300">${faucet.txHash.substring(0, 10)}...</a>`;
+                    } else {
+                        tdTx.textContent = '-';
+                    }
+                    tr.appendChild(tdTx);
+
+                    tbody.appendChild(tr);
+                });
+
+                status.textContent = `✅ Proceso completado. ${summary.repaired} faucet(s) reparado(s).`;
+                status.classList.remove('text-red-400');
+                status.classList.add('text-green-400');
+
+            } catch (e) {
+                status.textContent = "❌ Error: " + e.message;
+                status.classList.add("text-red-400");
+                console.error('Unblock error:', e);
             }
         }
     </script>

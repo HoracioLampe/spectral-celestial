@@ -303,6 +303,142 @@ app.post('/api/admin/sql', async (req, res) => {
     }
 });
 
+// --- API: Admin Unblock Faucets ---
+app.post('/api/admin/unblock-faucets', authenticateToken, async (req, res) => {
+    try {
+        // Verify SUPER_ADMIN role
+        if (req.user.role !== 'SUPER_ADMIN') {
+            return res.status(403).json({ error: 'Access denied. SUPER_ADMIN role required.' });
+        }
+
+        console.log(`[Admin] Unblock Faucets requested by ${req.user.address}`);
+
+        // Fetch all faucets from database
+        const faucetsRes = await pool.query('SELECT address, private_key, funder_address FROM faucets ORDER BY id ASC');
+        const faucets = faucetsRes.rows;
+
+        if (faucets.length === 0) {
+            return res.json({ success: true, results: [], message: 'No faucets found in database' });
+        }
+
+        console.log(`[Admin] Found ${faucets.length} faucets to check`);
+
+        const rpcUrl = process.env.POLYGON_RPC_URL || process.env.RPC_URL || 'https://polygon-rpc.com';
+        const provider = new ethers.JsonRpcProvider(rpcUrl);
+
+        const results = [];
+
+        // Check and repair each faucet
+        for (const faucet of faucets) {
+            try {
+                const wallet = new ethers.Wallet(faucet.private_key, provider);
+                const address = wallet.address;
+
+                // Get nonce status
+                const latestNonce = await provider.getTransactionCount(address, "latest");
+                const pendingNonce = await provider.getTransactionCount(address, "pending");
+                const balance = await provider.getBalance(address);
+
+                const isBlocked = pendingNonce > latestNonce;
+                const nonceDiff = pendingNonce - latestNonce;
+
+                console.log(`[Admin] Checking ${address.substring(0, 10)}... | Latest: ${latestNonce} | Pending: ${pendingNonce} | Blocked: ${isBlocked}`);
+
+                let repairResult = {
+                    address: address,
+                    funderAddress: faucet.funder_address || 'N/A',
+                    balance: ethers.formatEther(balance),
+                    latestNonce: latestNonce,
+                    pendingNonce: pendingNonce,
+                    status: isBlocked ? 'blocked' : 'clean',
+                    repaired: false,
+                    txHash: null,
+                    error: null
+                };
+
+                // If blocked, attempt repair
+                if (isBlocked) {
+                    console.log(`[Admin] 🔧 Repairing ${address.substring(0, 10)}... (${nonceDiff} tx stuck)`);
+
+                    try {
+                        const feeData = await provider.getFeeData();
+                        const boostPrice = (feeData.gasPrice * 30n) / 10n; // 3x gas
+
+                        const tx = await wallet.sendTransaction({
+                            to: address,
+                            value: 0,
+                            nonce: latestNonce,
+                            gasLimit: 30000,
+                            gasPrice: boostPrice
+                        });
+
+                        console.log(`[Admin] 💉 Repair TX sent: ${tx.hash}`);
+
+                        // Wait for confirmation with timeout
+                        await Promise.race([
+                            tx.wait(),
+                            new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 60000))
+                        ]);
+
+                        // Verify repair
+                        const newLatest = await provider.getTransactionCount(address, "latest");
+                        const newPending = await provider.getTransactionCount(address, "pending");
+
+                        repairResult.repaired = true;
+                        repairResult.txHash = tx.hash;
+                        repairResult.status = (newPending === newLatest) ? 'repaired' : 'partially_repaired';
+                        repairResult.latestNonce = newLatest;
+                        repairResult.pendingNonce = newPending;
+
+                        console.log(`[Admin] ✅ Repair complete for ${address.substring(0, 10)}...`);
+
+                    } catch (repairErr) {
+                        console.error(`[Admin] ❌ Repair failed for ${address.substring(0, 10)}...:`, repairErr.message);
+                        repairResult.error = repairErr.message;
+                        repairResult.status = 'repair_failed';
+                    }
+                }
+
+                results.push(repairResult);
+
+            } catch (checkErr) {
+                console.error(`[Admin] Error checking faucet ${faucet.address}:`, checkErr.message);
+                results.push({
+                    address: faucet.address,
+                    funderAddress: faucet.funder_address || 'N/A',
+                    balance: '0',
+                    latestNonce: 0,
+                    pendingNonce: 0,
+                    status: 'error',
+                    repaired: false,
+                    txHash: null,
+                    error: checkErr.message
+                });
+            }
+        }
+
+        const summary = {
+            total: results.length,
+            clean: results.filter(r => r.status === 'clean').length,
+            blocked: results.filter(r => r.status === 'blocked').length,
+            repaired: results.filter(r => r.status === 'repaired').length,
+            failed: results.filter(r => r.status === 'repair_failed' || r.status === 'error').length
+        };
+
+        console.log(`[Admin] Unblock complete. Summary:`, summary);
+
+        res.json({
+            success: true,
+            summary: summary,
+            results: results
+        });
+
+    } catch (err) {
+        console.error('[Admin] Unblock Faucets Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // Upload Excel & Calculate Totals (Secure)
 app.post('/api/batches/:id/upload', authenticateToken, upload.single('file'), async (req, res) => {
     const client = await pool.connect();
