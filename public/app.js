@@ -1514,15 +1514,26 @@ async function uploadBatchFile() {
 
         // Upload Success
         if (status) {
-            status.textContent = `✅ Éxito! ${data.count} transacciones cargadas. Monto Total: $${(data.total_usdc / 1000000).toFixed(6)}`;
+            // Fix: Server returns { batch, transactions }, so access properties via data.batch
+            const count = data.batch.total_transactions || 0;
+            const usdc = data.batch.total_usdc || 0n; // comes as string/bigint
+            // Convert usdc to readable string if needed, assuming it's BigInt-like string
+            const usdcFloat = parseFloat(usdc.toString()) / 1000000;
+
+            status.textContent = `✅ Éxito! ${count} transacciones cargadas. Monto Total: $${usdcFloat.toFixed(6)}`;
             status.style.color = "#4ade80";
+        }
+
+        // FORCE UI UPDATE: Update header stats immediately
+        if (data.batch) {
+            updateDetailView(data.batch);
         }
 
         // Auto-trigger Merkle Generation
         console.log("[Upload] Success. Triggering Merkle Generation...");
         await generateMerkleTree();
 
-        // Refresh Batch Data to update UI
+        // Refresh Batch Data to update UI (transactions list)
         startProgressPolling(currentBatchId);
 
     } catch (e) {
