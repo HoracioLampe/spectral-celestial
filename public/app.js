@@ -232,42 +232,59 @@ document.addEventListener('DOMContentLoaded', async () => {
         AUTH_TOKEN = savedToken;
         userAddress = savedAddress.toLowerCase().trim();
 
+        // Restore Provider
+        if (window.ethereum) {
+            provider = new ethers.providers.Web3Provider(window.ethereum);
+            try {
+                // Background network check
+                provider.getNetwork().then(network => {
+                    if (network.chainId !== 137) {
+                        console.warn("User on wrong network (restore)");
+                    }
+                });
+            } catch (e) {
+                console.error("Provider init error", e);
+            }
+        }
+
         const landingSection = document.getElementById('landingSection');
         const appLayout = document.getElementById('appLayout');
         const restrictedView = document.getElementById('restrictedView');
         const sidebar = document.querySelector('.sidebar');
+        const navAdmin = document.getElementById('navAdmin');
 
         if (landingSection) landingSection.classList.add('hidden');
 
         // Parse role from token
         try {
             const payload = JSON.parse(atob(savedToken.split('.')[1]));
+
+            if (payload.role === 'SUPER_ADMIN') {
+                if (navAdmin) navAdmin.classList.remove('hidden');
+            }
+
             if (payload.role === 'REGISTERED') {
                 if (restrictedView) restrictedView.classList.remove('hidden');
                 if (sidebar) sidebar.classList.add('hidden');
                 if (appLayout) appLayout.classList.remove('hidden');
                 const addrSpan = document.getElementById('restrictedUserAddress');
                 if (addrSpan) addrSpan.textContent = userAddress;
+
+                // Even restricted users might need faucet check or logout
+                document.getElementById('restrictedLogoutBtn')?.addEventListener('click', logout);
             } else {
                 if (appLayout) appLayout.classList.remove('hidden');
-                if (sidebar) sidebar.classList.remove('hidden');
+                if (restrictedView) restrictedView.classList.add('hidden');
+                if (sidebar) sidebar.classList.remove('hidden'); // Show sidebar for valid users
 
-                // Show Admin Menu only for SUPER_ADMIN
-                const navAdmin = document.getElementById('navAdmin');
-                if (navAdmin) {
-                    navAdmin.classList.toggle('hidden', payload.role !== 'SUPER_ADMIN');
-                }
-
-                fetchBalances();
+                // Force UI Updates
+                updateUI();
+                checkFaucetStatus();
+                // We do NOT call loadBatches here automatically to avoid double-fetch if updateUI does it, 
+                // but usually updateUI handles balance. loadBatches is separate.
+                loadBatches();
             }
         } catch (e) {
-            console.error("Token parse error", e);
-            logout(); // Reset session if corrupt
-        }
-        if (window.ethereum) {
-            provider = new ethers.providers.Web3Provider(window.ethereum);
-            signer = provider.getSigner();
-
             // Update UI elements
             const btnConnect = document.getElementById('btnConnect');
             if (btnConnect) btnConnect.innerHTML = "🔗 Conectado";
@@ -571,8 +588,9 @@ async function connectWallet() {
             if (walletInfo) walletInfo.classList.remove('hidden');
             if (userAddressSpan) userAddressSpan.textContent = `${userAddress.substring(0, 6)}...${userAddress.substring(38)}`;
 
-            await fetchBalances();
-            fetchBatches();
+            updateUI();
+            checkFaucetStatus();
+            fetchBatches(); // Keep fetching batches
 
             window.ethereum.on('accountsChanged', () => location.reload());
             window.ethereum.on('chainChanged', () => location.reload());
