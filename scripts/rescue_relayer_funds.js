@@ -60,12 +60,8 @@ async function rescueFunds() {
 
         console.log(`🔍 Found ${relayers.length} relayers to process.`);
 
-        // Fallback global faucet if specific one missing
+        // REMOVED: global fallback logic to ensure isolation
         let globalFallback = null;
-        if (!overrideFaucet) {
-            const fRes = await pool.query('SELECT address FROM faucets ORDER BY id DESC LIMIT 1');
-            if (fRes.rows.length > 0) globalFallback = fRes.rows[0].address;
-        }
 
         const feeData = await provider.getFeeData();
         const gasPrice = feeData.gasPrice || 35000000000n;
@@ -87,8 +83,8 @@ async function rescueFunds() {
                 const r = queue.shift();
                 if (!r) continue;
 
-                // Determine Target
-                let targetTo = overrideFaucet || r.faucet_address || globalFallback;
+                // Determine Target - STRICT isolation
+                let targetTo = overrideFaucet || r.faucet_address;
 
                 if (!targetTo) {
                     console.error(`❌ Skipping ${r.address}: No target faucet found.`);
