@@ -2687,3 +2687,60 @@ setupMerkleTestListener();
 refreshRelayerBalances();
 
 // Last Updated: Force Push 2026-01-02
+
+
+// --- Speedometer Gauge Logic (Consolidated from index.html) ---
+function updateProgressGauge(completed, pending, failed, total) {
+    const gauge = document.getElementById('batchProgressGauge');
+    if (!gauge) return;
+    gauge.classList.remove('hidden');
+
+    const percentage = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+    document.getElementById('gaugeCompletedText').textContent = completed;
+    document.getElementById('gaugePendingText').textContent = pending;
+    document.getElementById('gaugeFailedText').textContent = failed;
+    document.getElementById('gaugePercentage').textContent = percentage + '%';
+
+    const statusEl = document.getElementById('gaugeStatus');
+    if (pending > 0) {
+        statusEl.textContent = 'Procesando Envío...';
+        statusEl.style.color = '#fbbf24';
+    } else if (failed > 0) {
+        statusEl.textContent = 'Terminado con Alertas';
+        statusEl.style.color = '#ef4444';
+    } else if (completed === total && total > 0) {
+        statusEl.textContent = '¡Distribución Exitosa!';
+        statusEl.style.color = '#10b981';
+    } else {
+        statusEl.textContent = 'Listo para Iniciar';
+        statusEl.style.color = '#94a3b8';
+    }
+
+    const needle = document.getElementById('gaugeNeedleGroup');
+    if (needle) {
+        const rotation = -90 + (percentage / 100) * 180;
+        needle.style.transform = 'rotate(' + rotation + 'deg)';
+    }
+
+    for (let i = 1; i <= 4; i++) {
+        const seg = document.getElementById('seg' + i);
+        if (!seg) continue;
+        const threshold = (i - 1) * 25;
+        if (percentage > threshold) {
+            seg.style.opacity = '1';
+            seg.style.filter = 'url(#segmentGlow)';
+        } else {
+            seg.style.opacity = '0.2';
+            seg.style.filter = 'none';
+        }
+    }
+}
+
+function hideProgressGauge() {
+    const gauge = document.getElementById('batchProgressGauge');
+    if (gauge) gauge.classList.add('hidden');
+}
+
+window.updateProgressGauge = updateProgressGauge;
+window.hideProgressGauge = hideProgressGauge;
