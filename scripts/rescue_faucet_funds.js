@@ -4,7 +4,10 @@ const { ethers } = require('ethers');
 
 async function rescueFaucetFunds() {
     try {
-        const rawTarget = process.argv[2] || process.env.ADMIN_WALLET || "0x6A98F7Ec26222bAb06bE0B9ADe9A48FD743c1Abe";
+        const rawTarget = process.argv[2] || process.env.ADMIN_WALLET;
+        if (!rawTarget) {
+            throw new Error("ADMIN_WALLET environment variable is not set and no target address provided as argument.");
+        }
         const targetWallet = ethers.getAddress(rawTarget.toLowerCase().trim());
         console.log(`🚀 Starting Faucet Rescue Script...`);
         console.log(`🎯 Target Wallet: ${targetWallet}`);
