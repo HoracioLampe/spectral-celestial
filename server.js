@@ -255,13 +255,15 @@ app.get('/api/batches/:id', authenticateToken, async (req, res) => {
 
         const batch = batchRes.rows[0];
 
-        // Stats
+        // Stats distribution for ECharts Doughnut
         const statsRes = await pool.query(`
             SELECT 
                 COUNT(*) as total,
                 COUNT(CASE WHEN status = 'COMPLETED' THEN 1 END) as completed,
                 COUNT(CASE WHEN status = 'FAILED' THEN 1 END) as failed,
-                COUNT(CASE WHEN status = 'PENDING' THEN 1 END) as pending
+                COUNT(CASE WHEN status = 'PENDING' THEN 1 END) as pending,
+                COUNT(CASE WHEN status = 'ENVIANDO' THEN 1 END) as sending,
+                COUNT(CASE WHEN status = 'QUEUED' THEN 1 END) as queued
             FROM batch_transactions 
             WHERE batch_id = $1
         `, [batchId]);

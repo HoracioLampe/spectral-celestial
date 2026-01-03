@@ -7,7 +7,7 @@ let currentBatchPage = 1;
 // Global Error Handler for debugging
 window.onerror = function (msg, url, line, col, error) {
     console.error(`[Global Error] ${msg} at ${url}:${line}:${col}`, error);
-    alert(`Error detectado: ${msg}\n\nRevisa la consola para mÃƒÂ¡s detalles.`);
+    alert(`Error detectado: ${msg}\n\nRevisa la consola para mÃƒÆ’Ã‚Â¡s detalles.`);
     return false;
 };
 window.onunhandledrejection = function (event) {
@@ -74,7 +74,7 @@ async function checkFaucetStatus() {
             // Faucet Modal Link
             const modalLink = document.getElementById('faucetModalLink');
             if (modalLink) {
-                modalLink.textContent = `${data.address} Ã¢â€ â€”Ã¯Â¸Â`;
+                modalLink.textContent = `${data.address} ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â€ÃƒÂ¯Ã‚Â¸Ã‚Â`;
                 modalLink.href = getExplorerUrl(data.address);
                 modalLink.dataset.address = data.address;
             }
@@ -94,7 +94,7 @@ async function checkFaucetStatus() {
                 btnCopyFaucetSide.onclick = () => {
                     navigator.clipboard.writeText(data.address);
                     const original = btnCopyFaucetSide.innerHTML;
-                    btnCopyFaucetSide.innerHTML = "Ã¢Å“â€¦";
+                    btnCopyFaucetSide.innerHTML = "ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦";
                     setTimeout(() => btnCopyFaucetSide.innerHTML = original, 2000);
                 }
             }
@@ -102,7 +102,7 @@ async function checkFaucetStatus() {
             // Main Faucet Link
             const mainLink = document.getElementById('mainFaucetLink');
             if (mainLink) {
-                mainLink.textContent = `${shortAddr} Ã¢â€ â€”Ã¯Â¸Â`;
+                mainLink.textContent = `${shortAddr} ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â€ÃƒÂ¯Ã‚Â¸Ã‚Â`;
                 mainLink.href = getExplorerUrl(data.address);
                 mainLink.dataset.address = data.address;
             }
@@ -130,7 +130,7 @@ async function checkFaucetStatus() {
         } else {
             if (btnSetup) btnSetup.disabled = true;
             if (faucetStatus) {
-                faucetStatus.textContent = "Ã¢ÂÅ’ No hay Faucet. Haz clic en 'Gestione Faucet' > 'Generar'.";
+                faucetStatus.textContent = "ÃƒÂ¢Ã‚ÂÃ…â€™ No hay Faucet. Haz clic en 'Gestione Faucet' > 'Generar'.";
                 faucetStatus.style.color = "#ef4444";
             }
             const mainLink = document.getElementById('mainFaucetLink');
@@ -139,23 +139,23 @@ async function checkFaucetStatus() {
     } catch (err) {
         console.error('Error checking faucet:', err);
         const mainLink = document.getElementById('mainFaucetLink');
-        if (mainLink) mainLink.textContent = "Ã¢Å¡Â Ã¯Â¸Â Error RPC";
+        if (mainLink) mainLink.textContent = "ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â Error RPC";
     }
 }
 
 window.generateFaucet = async () => {
-    if (!confirm("Ã‚Â¿Deseas generar una nueva Faucet? Esto crearÃƒÂ¡ una direcciÃƒÂ³n ÃƒÂºnica en la BD.")) return;
+    if (!confirm("Ãƒâ€šÃ‚Â¿Deseas generar una nueva Faucet? Esto crearÃƒÆ’Ã‚Â¡ una direcciÃƒÆ’Ã‚Â³n ÃƒÆ’Ã‚Âºnica en la BD.")) return;
     try {
         const response = await fetch('/api/faucet/generate', { method: 'POST' });
         const res = await response.json();
         if (response.ok) {
-            alert("Ã¢Å“â€¦ Faucet generada con ÃƒÂ©xito: " + res.address);
+            alert("ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Faucet generada con ÃƒÆ’Ã‚Â©xito: " + res.address);
             checkFaucetStatus();
         } else {
-            alert("Ã¢ÂÅ’ Error: " + res.error);
+            alert("ÃƒÂ¢Ã‚ÂÃ…â€™ Error: " + res.error);
         }
     } catch (err) {
-        alert("Ã¢ÂÅ’ Error de conexiÃƒÂ³n");
+        alert("ÃƒÂ¢Ã‚ÂÃ…â€™ Error de conexiÃƒÆ’Ã‚Â³n");
     }
 };
 
@@ -163,7 +163,7 @@ window.copyFaucetAddress = () => {
     const link = document.getElementById('mainFaucetLink') || document.getElementById('faucetModalLink');
     if (!link || !link.dataset.address) return;
     navigator.clipboard.writeText(link.dataset.address).then(() => {
-        alert("Ã°Å¸â€œâ€¹ DirecciÃƒÂ³n copiada al portapapeles");
+        alert("ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã¢â‚¬Â¹ DirecciÃƒÆ’Ã‚Â³n copiada al portapapeles");
     });
 };
 
@@ -171,7 +171,7 @@ window.copyFaucetKey = () => {
     const key = document.getElementById('faucetKey').textContent;
     if (key === '---') return;
     navigator.clipboard.writeText(key).then(() => {
-        alert("Ã°Å¸â€œâ€¹ Llave Privada copiada al portapapeles");
+        alert("ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã¢â‚¬Â¹ Llave Privada copiada al portapapeles");
     });
 };
 
@@ -225,7 +225,7 @@ let provider, signer, userAddress;
 let currentBatchTotalUSDC = 0n; // Use BigInt for precision checking
 
 document.addEventListener('DOMContentLoaded', async () => {
-    console.log("Ã°Å¸Å¡â‚¬ Wallet App Iniciada");
+    console.log("ÃƒÂ°Ã…Â¸Ã…Â¡Ã¢â€šÂ¬ Wallet App Iniciada");
 
     initDOMElements();
     attachEventListeners();
@@ -245,24 +245,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     const savedAddress = localStorage.getItem('user_address');
 
     if (savedToken && savedAddress) {
-        console.log("Ã°Å¸â€â€˜ Restoring existing session...");
+        console.log("ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ¢â‚¬Ëœ Restoring existing session...");
         AUTH_TOKEN = savedToken;
         userAddress = savedAddress.toLowerCase().trim();
 
         // Restore Provider
         if (window.ethereum) {
-            console.log("Ã°Å¸â€œÂ¡ Initializing Ethers v6 BrowserProvider (Session Restore)");
+            console.log("ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã‚Â¡ Initializing Ethers v6 BrowserProvider (Session Restore)");
             provider = new ethers.BrowserProvider(window.ethereum);
             try {
                 // Background network check
                 provider.getNetwork().then(network => {
-                    console.log("Ã°Å¸Å’Â Network detected (restore):", network.name, network.chainId.toString());
+                    console.log("ÃƒÂ°Ã…Â¸Ã…â€™Ã‚Â Network detected (restore):", network.name, network.chainId.toString());
                     if (network.chainId !== 137n) {
                         console.warn("User on wrong network (restore)");
                     }
                 });
             } catch (e) {
-                console.error("Ã¢ÂÅ’ Provider init error during restore", e);
+                console.error("ÃƒÂ¢Ã‚ÂÃ…â€™ Provider init error during restore", e);
             }
         }
 
@@ -306,7 +306,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         } catch (e) {
             // Update UI elements
             const btnConnect = document.getElementById('btnConnect');
-            if (btnConnect) btnConnect.innerHTML = "Ã°Å¸â€â€” Conectado";
+            if (btnConnect) btnConnect.innerHTML = "ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ¢â‚¬â€ Conectado";
             const walletInfo = document.getElementById('walletInfo');
             if (walletInfo) walletInfo.classList.remove('hidden');
 
@@ -326,7 +326,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 btnCopy.onclick = () => {
                     navigator.clipboard.writeText(userAddress);
                     const original = btnCopy.innerHTML;
-                    btnCopy.innerHTML = "Ã¢Å“â€¦";
+                    btnCopy.innerHTML = "ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦";
                     setTimeout(() => btnCopy.innerHTML = original, 2000);
                 };
             }
@@ -343,7 +343,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (window.ethereum && !savedToken) {
         const accounts = await window.ethereum.request({ method: 'eth_accounts' });
         if (accounts.length > 0) {
-            console.log("Ã°Å¸â€â€” Injected wallet found, ready for login.");
+            console.log("ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ¢â‚¬â€ Injected wallet found, ready for login.");
         }
     }
 });
@@ -356,10 +356,10 @@ function initTheme() {
     // Apply stored
     if (storedTheme === 'light') {
         document.documentElement.setAttribute('data-theme', 'light');
-        if (themeIcon) themeIcon.textContent = 'Ã¢Ëœâ‚¬Ã¯Â¸Â';
+        if (themeIcon) themeIcon.textContent = 'ÃƒÂ¢Ã‹Å“Ã¢â€šÂ¬ÃƒÂ¯Ã‚Â¸Ã‚Â';
     } else {
         document.documentElement.removeAttribute('data-theme');
-        if (themeIcon) themeIcon.textContent = 'Ã°Å¸Å’â„¢';
+        if (themeIcon) themeIcon.textContent = 'ÃƒÂ°Ã…Â¸Ã…â€™Ã¢â€žÂ¢';
     }
 
     if (toggleBtn) {
@@ -368,11 +368,11 @@ function initTheme() {
             if (current === 'light') {
                 document.documentElement.removeAttribute('data-theme');
                 localStorage.setItem('theme', 'dark');
-                if (themeIcon) themeIcon.textContent = 'Ã°Å¸Å’â„¢';
+                if (themeIcon) themeIcon.textContent = 'ÃƒÂ°Ã…Â¸Ã…â€™Ã¢â€žÂ¢';
             } else {
                 document.documentElement.setAttribute('data-theme', 'light');
                 localStorage.setItem('theme', 'light');
-                if (themeIcon) themeIcon.textContent = 'Ã¢Ëœâ‚¬Ã¯Â¸Â';
+                if (themeIcon) themeIcon.textContent = 'ÃƒÂ¢Ã‹Å“Ã¢â€šÂ¬ÃƒÂ¯Ã‚Â¸Ã‚Â';
             }
         };
     }
@@ -448,7 +448,7 @@ function attachEventListeners() {
 
 
 // ==========================================
-// --- INTEGRACIÃƒâ€œN WEB3 (METAMASK) ---
+// --- INTEGRACIÃƒÆ’Ã¢â‚¬Å“N WEB3 (METAMASK) ---
 // ==========================================
 
 // Event listeners are now attached in attachEventListeners() called from DOMContentLoaded
@@ -458,7 +458,7 @@ function logout() {
 }
 
 window.logout = function () {
-    console.log("Ã°Å¸â€Å’ Cerrando sesiÃƒÂ³n...");
+    console.log("ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ…â€™ Cerrando sesiÃƒÆ’Ã‚Â³n...");
     localStorage.removeItem('jwt_token');
     localStorage.removeItem('user_address');
     AUTH_TOKEN = null;
@@ -473,14 +473,14 @@ let isConnecting = false;
 
 async function connectWallet() {
     if (isConnecting) {
-        console.warn("Ã¢Å¡Â Ã¯Â¸Â connectWallet ya estÃƒÂ¡ en ejecuciÃƒÂ³n. Ignorando llamada duplicada.");
+        console.warn("ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â connectWallet ya estÃƒÆ’Ã‚Â¡ en ejecuciÃƒÆ’Ã‚Â³n. Ignorando llamada duplicada.");
         return;
     }
 
-    console.log("Ã°Å¸Å¡â‚¬ connectWallet called!");
+    console.log("ÃƒÂ°Ã…Â¸Ã…Â¡Ã¢â€šÂ¬ connectWallet called!");
     if (!window.ethereum) {
-        console.error("Ã¢ÂÅ’ window.ethereum is missing!");
-        return alert("Ã¢Å¡Â Ã¯Â¸Â Instala MetaMask");
+        console.error("ÃƒÂ¢Ã‚ÂÃ…â€™ window.ethereum is missing!");
+        return alert("ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â Instala MetaMask");
     }
 
     isConnecting = true;
@@ -489,20 +489,20 @@ async function connectWallet() {
     const originalText = btnEnter ? btnEnter.innerHTML : "";
 
     try {
-        console.log("Ã°Å¸â€â€ž Starting SIWE Auth Flow...");
+        console.log("ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ¢â‚¬Å¾ Starting SIWE Auth Flow...");
         if (btnEnter) {
             btnEnter.disabled = true;
-            btnEnter.innerHTML = "<span>Ã¢ÂÂ³</span> Autenticando...";
+            btnEnter.innerHTML = "<span>ÃƒÂ¢Ã‚ÂÃ‚Â³</span> Autenticando...";
         }
 
         const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-        console.log("Ã°Å¸â€˜Â¤ Account found:", accounts[0]);
+        console.log("ÃƒÂ°Ã…Â¸Ã¢â‚¬ËœÃ‚Â¤ Account found:", accounts[0]);
         userAddress = accounts[0];
 
-        console.log("Ã°Å¸â€œÂ¡ Initializing BrowserProvider (Ethers v6)");
+        console.log("ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã‚Â¡ Initializing BrowserProvider (Ethers v6)");
         provider = new ethers.BrowserProvider(window.ethereum);
         signer = await provider.getSigner();
-        console.log("Ã°Å¸â€œÂ Signer obtained:", await signer.getAddress());
+        console.log("ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã‚Â Signer obtained:", await signer.getAddress());
 
         // --- SIWE LOGIN FLOW ---
         const nonceRes = await fetch('/api/auth/nonce');
@@ -514,7 +514,7 @@ async function connectWallet() {
 
         // Anti-HTML check
         if (nonce.includes("<!DOCTYPE") || nonce.includes("<html")) {
-            throw new Error("El servidor devolviÃƒÂ³ un error en lugar de un cÃƒÂ³digo de seguridad (Nonce).");
+            throw new Error("El servidor devolviÃƒÆ’Ã‚Â³ un error en lugar de un cÃƒÆ’Ã‚Â³digo de seguridad (Nonce).");
         }
 
         const domain = window.location.host;
@@ -526,12 +526,12 @@ async function connectWallet() {
 
         // CRITICAL: SIWE requires EIP-55 checksummed address
         const checksummedAddress = ethers.getAddress(userAddress);
-        console.log("Ã°Å¸â€Â Checksummed address for SIWE:", checksummedAddress);
+        console.log("ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ‚Â Checksummed address for SIWE:", checksummedAddress);
 
         const message = `${domain} wants you to sign in with your Ethereum account:\n${checksummedAddress}\n\n${statement}\n\nURI: ${origin}\nVersion: ${version}\nChain ID: ${chainId}\nNonce: ${nonce}\nIssued At: ${issuedAt}`;
-        console.log("Ã¢Å“ÂÃ¯Â¸Â Requesting signature...");
+        console.log("ÃƒÂ¢Ã…â€œÃ‚ÂÃƒÂ¯Ã‚Â¸Ã‚Â Requesting signature...");
         const signature = await signer.signMessage(message);
-        console.log("Ã¢Å“â€¦ Signature obtained");
+        console.log("ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Signature obtained");
 
         const verifyRes = await fetch('/api/auth/verify', {
             method: 'POST',
@@ -545,7 +545,7 @@ async function connectWallet() {
             localStorage.setItem('jwt_token', authData.token);
             localStorage.setItem('user_address', authData.address);
 
-            console.log("Ã¢Å“â€¦ Authenticated via SIWE");
+            console.log("ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Authenticated via SIWE");
 
             // --- TRANSITION TO APP ---
             const landingSection = document.getElementById('landingSection');
@@ -557,7 +557,7 @@ async function connectWallet() {
                 setTimeout(() => {
                     landingSection.classList.add('hidden');
 
-                    // NEW: Decidir quÃƒÂ© vista mostrar segÃƒÂºn el ROL
+                    // NEW: Decidir quÃƒÆ’Ã‚Â© vista mostrar segÃƒÆ’Ã‚Âºn el ROL
                     const payload = JSON.parse(atob(authData.token.split('.')[1]));
                     const role = payload.role;
                     const restrictedView = document.getElementById('restrictedView');
@@ -583,15 +583,15 @@ async function connectWallet() {
                                 adminRescueFunds.classList.remove('hidden');
                                 adminRescueFunds.onclick = async (e) => {
                                     e.preventDefault();
-                                    if (!confirm("Ã¢Å¡Â Ã¯Â¸Â Ã‚Â¿EstÃƒÂ¡s seguro de iniciar el rescate de fondos?\nEsto barrerÃƒÂ¡ el saldo de TODOS los relayers hacia sus faucets respectivos.")) return;
+                                    if (!confirm("ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â Ãƒâ€šÃ‚Â¿EstÃƒÆ’Ã‚Â¡s seguro de iniciar el rescate de fondos?\nEsto barrerÃƒÆ’Ã‚Â¡ el saldo de TODOS los relayers hacia sus faucets respectivos.")) return;
 
                                     try {
                                         const res = await authenticatedFetch('/api/admin/rescue', { method: 'POST' });
                                         if (res.ok) {
-                                            alert("Ã¢Å“â€¦ Proceso iniciado: " + (await res.json()).message);
+                                            alert("ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Proceso iniciado: " + (await res.json()).message);
                                         }
                                     } catch (err) {
-                                        alert("Ã¢ÂÅ’ Error: " + err.message);
+                                        alert("ÃƒÂ¢Ã‚ÂÃ…â€™ Error: " + err.message);
                                     }
                                 };
                             }
@@ -607,7 +607,7 @@ async function connectWallet() {
                 }, 500);
             }
 
-            if (btnConnect) btnConnect.innerHTML = "Ã°Å¸â€â€” Conectado";
+            if (btnConnect) btnConnect.innerHTML = "ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ¢â‚¬â€ Conectado";
             if (walletInfo) walletInfo.classList.remove('hidden');
             if (userAddressSpan) userAddressSpan.textContent = `${userAddress.substring(0, 6)}...${userAddress.substring(38)}`;
 
@@ -618,7 +618,7 @@ async function connectWallet() {
             window.ethereum.on('accountsChanged', () => location.reload());
             window.ethereum.on('chainChanged', () => location.reload());
         } else {
-            throw new Error(authData.error || "Error de verificaciÃƒÂ³n SIWE");
+            throw new Error(authData.error || "Error de verificaciÃƒÆ’Ã‚Â³n SIWE");
         }
     } catch (error) {
         console.error(error);
@@ -638,16 +638,16 @@ async function checkNetwork() {
     if (!provider) return;
     try {
         const network = await provider.getNetwork();
-        console.log("Ã°Å¸Å’Â Current Network ID:", network.chainId.toString());
+        console.log("ÃƒÂ°Ã…Â¸Ã…â€™Ã‚Â Current Network ID:", network.chainId.toString());
         if (network.chainId !== 137n) {
-            console.log("Ã°Å¸â€â€ž Requesting network switch to Polygon...");
+            console.log("ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ¢â‚¬Å¾ Requesting network switch to Polygon...");
             await window.ethereum.request({
                 method: 'wallet_switchEthereumChain',
                 params: [{ chainId: POLYGON_CHAIN_ID }]
             });
         }
     } catch (e) {
-        console.warn("Ã¢Å¡Â Ã¯Â¸Â Network check/switch error:", e);
+        console.warn("ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â Network check/switch error:", e);
     }
 }
 
@@ -678,14 +678,14 @@ function updateUI() {
 
 async function fetchBalances() {
     if (!userAddress || !provider) {
-        console.log("Ã°Å¸Å’â€˜ fetchBalances skipped: No userAddress or provider ready yet.");
+        console.log("ÃƒÂ°Ã…Â¸Ã…â€™Ã¢â‚¬Ëœ fetchBalances skipped: No userAddress or provider ready yet.");
         return;
     }
     try {
-        console.log("Ã°Å¸â€™Â° Fetching balances for:", userAddress);
+        console.log("ÃƒÂ°Ã…Â¸Ã¢â‚¬â„¢Ã‚Â° Fetching balances for:", userAddress);
         const balance = await provider.getBalance(userAddress);
         const maticVal = parseFloat(ethers.formatEther(balance)).toFixed(4);
-        console.log("Ã°Å¸â€™Å½ MATIC Balance:", maticVal);
+        console.log("ÃƒÂ°Ã…Â¸Ã¢â‚¬â„¢Ã…Â½ MATIC Balance:", maticVal);
 
         const elMatic = document.getElementById('maticBalance');
         if (elMatic) elMatic.textContent = maticVal;
@@ -693,13 +693,13 @@ async function fetchBalances() {
         const usdcContract = new ethers.Contract(USDC_ADDRESS, USDC_ABI, provider);
         const usdcRaw = await usdcContract.balanceOf(userAddress);
         const usdcVal = parseFloat(ethers.formatUnits(usdcRaw, 6)).toFixed(2);
-        console.log("Ã°Å¸â€™Âµ USDC Balance:", usdcVal);
+        console.log("ÃƒÂ°Ã…Â¸Ã¢â‚¬â„¢Ã‚Âµ USDC Balance:", usdcVal);
 
         const elUsdc = document.getElementById('usdcBalance');
         if (elUsdc) elUsdc.textContent = usdcVal;
 
     } catch (e) {
-        console.error("Ã¢ÂÅ’ Error fetching balances:", e);
+        console.error("ÃƒÂ¢Ã‚ÂÃ…â€™ Error fetching balances:", e);
     }
 }
 
@@ -708,7 +708,7 @@ async function fetchBalances() {
 
 
 // ==========================================
-// --- GESTIÃƒâ€œN DE LOTES (BATCHES - REFACTOR) ---
+// --- GESTIÃƒÆ’Ã¢â‚¬Å“N DE LOTES (BATCHES - REFACTOR) ---
 // ==========================================
 
 let currentBatchId = null;
@@ -857,7 +857,7 @@ function updatePaginationUI(pagination) {
     const indicator = document.getElementById('pageIndicator');
 
     if (indicator) {
-        indicator.textContent = `PÃƒÂ¡gina ${pagination.currentPage} de ${pagination.totalPages}`;
+        indicator.textContent = `PÃƒÆ’Ã‚Â¡gina ${pagination.currentPage} de ${pagination.totalPages}`;
     }
 
     if (btnFirst) {
@@ -883,7 +883,7 @@ function updatePaginationUI(pagination) {
 function renderBatchesList(batches) {
     batchesListBody.innerHTML = '';
     if (batches.length === 0) {
-        batchesListBody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding: 2rem;">No hay lotes creados. Ã‚Â¡Crea uno nuevo!</td></tr>';
+        batchesListBody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding: 2rem;">No hay lotes creados. Ãƒâ€šÃ‚Â¡Crea uno nuevo!</td></tr>';
         return;
     }
 
@@ -907,7 +907,7 @@ function renderBatchesList(batches) {
             <td>${progress}</td>
             <td>
                 <button class="btn-glass" style="padding: 0.3rem 0.8rem; font-size: 0.8rem;" onclick="openBatchDetail(${b.id})">
-                    Ver Detalle Ã°Å¸â€˜ÂÃ¯Â¸Â
+                    Ver Detalle ÃƒÂ°Ã…Â¸Ã¢â‚¬ËœÃ‚ÂÃƒÂ¯Ã‚Â¸Ã‚Â
                 </button>
             </td>
         `;
@@ -920,7 +920,7 @@ function getStatusBadge(status) {
     if (status === 'SENT') return '<span class="badge" style="background: #10b981;">Enviando</span>';
     if (status === 'COMPLETED') return '<span class="badge" style="background: #059669; box-shadow: 0 0 10px #059669;">Enviado con Exito</span>';
     if (status === 'PROCESSING') return '<span class="badge" style="background: #8b5cf6;">Procesando</span>';
-    return '<span class="badge" style="background: #f59e0b; color: #000;">En PreparaciÃƒÂ³n</span>';
+    return '<span class="badge" style="background: #f59e0b; color: #000;">En PreparaciÃƒÆ’Ã‚Â³n</span>';
 }
 
 async function createBatch() {
@@ -930,7 +930,7 @@ async function createBatch() {
         description: document.getElementById('newBatchDesc').value,
     };
 
-    if (!data.batch_number || !data.detail) return alert("Completa NÃƒÂºmero y Detalle");
+    if (!data.batch_number || !data.detail) return alert("Completa NÃƒÆ’Ã‚Âºmero y Detalle");
 
     try {
         btnSaveBatch.textContent = "Creando...";
@@ -945,7 +945,7 @@ async function createBatch() {
             throw new Error(responseData.error);
         }
 
-        // Ãƒâ€°xito
+        // ÃƒÆ’Ã¢â‚¬Â°xito
         if (window.closeBatchModal) window.closeBatchModal();
         // Limpiar form
         document.getElementById('newBatchNumber').value = '';
@@ -956,7 +956,7 @@ async function createBatch() {
 
         // Wrap alert in setTimeout to ensure modal closes visually first 
         setTimeout(() => {
-            alert("Lote creado exitosamente Ã¢Å“â€¦");
+            alert("Lote creado exitosamente ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦");
         }, 100);
 
     } catch (error) {
@@ -977,7 +977,7 @@ window.openBatchDetail = async function (id) {
 
     if (!batchListView || !batchDetailView) {
         console.error("Critical UI Error: Views not found", { batchListView, batchDetailView });
-        alert("Error interno: Vistas de interfaz no encontradas. Recarga la pÃƒÂ¡gina.");
+        alert("Error interno: Vistas de interfaz no encontradas. Recarga la pÃƒÆ’Ã‚Â¡gina.");
         return;
     }
 
@@ -1016,12 +1016,12 @@ window.openBatchDetail = async function (id) {
     if (document.getElementById('filterAmount')) document.getElementById('filterAmount').value = '';
     if (document.getElementById('filterStatus')) document.getElementById('filterStatus').value = '';
 
-    // Ã°Å¸â€Â§ RESET SIGNATURE STATES (Fix for second batch issue)
+    // ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ‚Â§ RESET SIGNATURE STATES (Fix for second batch issue)
     // Reset execution button to initial state
     const btnExecute = document.getElementById('btnExecuteBatch');
     if (btnExecute) {
         btnExecute.disabled = false;
-        btnExecute.textContent = "2. Ejecutar Lote Ã°Å¸Å¡â‚¬";
+        btnExecute.textContent = "2. Ejecutar Lote ÃƒÂ°Ã…Â¸Ã…Â¡Ã¢â€šÂ¬";
         btnExecute.classList.remove('btn-success');
         btnExecute.classList.add('btn-primary');
     }
@@ -1030,7 +1030,7 @@ window.openBatchDetail = async function (id) {
     const btnSetup = document.getElementById('btnSetupRelayers');
     if (btnSetup) {
         btnSetup.disabled = false;
-        btnSetup.textContent = "1. Preparar Relayers Ã°Å¸Ââ€”Ã¯Â¸Â";
+        btnSetup.textContent = "1. Preparar Relayers ÃƒÂ°Ã…Â¸Ã‚ÂÃ¢â‚¬â€ÃƒÂ¯Ã‚Â¸Ã‚Â";
         btnSetup.classList.remove('hidden');
     }
     // Hide payment trigger zone
@@ -1041,7 +1041,7 @@ window.openBatchDetail = async function (id) {
     if (typeof hideProgressGauge === 'function') hideProgressGauge();
 
     console.log(`[UI] UI state reset for a new batch completed.`);
-    console.log('[UI] Ã°Å¸â€â€ž Batch state reset - Ready for new batch signatures');
+    console.log('[UI] ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ¢â‚¬Å¾ Batch state reset - Ready for new batch signatures');
 
     // SHOW DETAILS SECTIONS (Unhide)
     const txDetail = document.getElementById('txDetailSection');
@@ -1100,7 +1100,7 @@ window.currentServerTotal = 0; // Server-side pagination total
 
 function updateDetailView(batch) {
     detailBatchTitle.textContent = `${batch.batch_number} - ${batch.detail}`;
-    detailBatchDesc.textContent = batch.description || "Sin descripciÃƒÂ³n";
+    detailBatchDesc.textContent = batch.description || "Sin descripciÃƒÆ’Ã‚Â³n";
 
     // Stats logic
     if (batchStatsContainer) {
@@ -1126,7 +1126,7 @@ function updateDetailView(batch) {
         detailUploadContainer.classList.remove('hidden');
         uploadStatus.textContent = '';
         btnUploadBatch.disabled = false;
-        btnUploadBatch.textContent = "Subir y Calcular Ã°Å¸â€œÂ¤";
+        btnUploadBatch.textContent = "Subir y Calcular ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã‚Â¤";
         if (merkleContainer) merkleContainer.classList.add('hidden');
     } else {
         detailUploadContainer.classList.add('hidden');
@@ -1163,7 +1163,7 @@ function updateDetailView(batch) {
             if (verifyLabel) {
                 // Use total_transactions from batch object
                 const count = Math.min(100, batch.total_transactions || 0);
-                verifyLabel.textContent = `Ã°Å¸â€Â¬ VerificaciÃƒÂ³n On-Chain (Muestreo ${count} ${count === 1 ? 'tx' : 'txs'})`;
+                verifyLabel.textContent = `ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ‚Â¬ VerificaciÃƒÆ’Ã‚Â³n On-Chain (Muestreo ${count} ${count === 1 ? 'tx' : 'txs'})`;
             }
 
             // CRITICAL Fix for Merkle Logic
@@ -1204,7 +1204,7 @@ function updateDetailView(batch) {
                     // Reset UI state to "Loading/Checking"
                     if (relayerMsg) {
                         relayerMsg.classList.remove('hidden');
-                        relayerMsg.innerHTML = `<span style="color:#fbbf24;">Ã¢ÂÂ³ Verificando Relayers...</span>`;
+                        relayerMsg.innerHTML = `<span style="color:#fbbf24;">ÃƒÂ¢Ã‚ÂÃ‚Â³ Verificando Relayers...</span>`;
                     }
                     if (relayerSetupZone) relayerSetupZone.classList.remove('hidden');
 
@@ -1433,8 +1433,8 @@ function renderBatchTransactions() {
                     <a href="${scanUrl}" target="_blank" class="hash-link" title="Ver en PolygonScan">
                         ${shortWallet}
                     </a>
-                    <button class="btn-icon" onclick="copyToClipboard('${tx.wallet_address_to}')" title="Copiar DirecciÃƒÂ³n">
-                        Ã°Å¸â€œâ€¹
+                    <button class="btn-icon" onclick="copyToClipboard('${tx.wallet_address_to}')" title="Copiar DirecciÃƒÆ’Ã‚Â³n">
+                        ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã¢â‚¬Â¹
                     </button>
                 </td>
                 <td style="color: #4ade80; font-weight: bold;">$${usdcDisplay}</td>
@@ -1490,11 +1490,11 @@ function renderPaginationControls(totalItems) {
     div.style.gap = '1rem';
     div.style.marginTop = '1rem';
     div.innerHTML = `
-        <button class="btn-glass" onclick="changePage('first')" ${currentTxPage === 1 ? 'disabled' : ''}>Ã¢ÂÂ®Ã¯Â¸Â</button>
-        <button class="btn-glass" onclick="changePage(-1)" ${currentTxPage === 1 ? 'disabled' : ''}>Ã¢Â¬â€¦Ã¯Â¸Â Ant.</button>
-        <span style="align-self: center;">PÃƒÂ¡gina ${currentTxPage} de ${totalPages}</span>
-        <button class="btn-glass" onclick="changePage(1)" ${currentTxPage === totalPages ? 'disabled' : ''}>Sig. Ã¢Å¾Â¡Ã¯Â¸Â</button>
-        <button class="btn-glass" onclick="changePage('last')" ${currentTxPage === totalPages ? 'disabled' : ''}>Ã¢ÂÂ­Ã¯Â¸Â</button>
+        <button class="btn-glass" onclick="changePage('first')" ${currentTxPage === 1 ? 'disabled' : ''}>ÃƒÂ¢Ã‚ÂÃ‚Â®ÃƒÂ¯Ã‚Â¸Ã‚Â</button>
+        <button class="btn-glass" onclick="changePage(-1)" ${currentTxPage === 1 ? 'disabled' : ''}>ÃƒÂ¢Ã‚Â¬Ã¢â‚¬Â¦ÃƒÂ¯Ã‚Â¸Ã‚Â Ant.</button>
+        <span style="align-self: center;">PÃƒÆ’Ã‚Â¡gina ${currentTxPage} de ${totalPages}</span>
+        <button class="btn-glass" onclick="changePage(1)" ${currentTxPage === totalPages ? 'disabled' : ''}>Sig. ÃƒÂ¢Ã…Â¾Ã‚Â¡ÃƒÂ¯Ã‚Â¸Ã‚Â</button>
+        <button class="btn-glass" onclick="changePage('last')" ${currentTxPage === totalPages ? 'disabled' : ''}>ÃƒÂ¢Ã‚ÂÃ‚Â­ÃƒÂ¯Ã‚Â¸Ã‚Â</button>
     `;
 
     // Robust Append: Try known container, else fallback to table parent
@@ -1549,7 +1549,7 @@ window.changePage = function (direction) {
 
 // --- UPLOAD HANDLER ---
 async function uploadBatchFile() {
-    console.log("Ã°Å¸â€œÂ¤ uploadBatchFile called");
+    console.log("ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã‚Â¤ uploadBatchFile called");
     const fileInput = document.getElementById('batchFile');
     const status = document.getElementById('uploadStatus');
     const btnUploadBatch = document.getElementById('btnUploadBatch');
@@ -1580,7 +1580,7 @@ async function uploadBatchFile() {
             // Convert usdc to readable string if needed, assuming it's BigInt-like string
             const usdcFloat = parseFloat(usdc.toString()) / 1000000;
 
-            status.textContent = `Ã¢Å“â€¦ Ãƒâ€°xito! ${count} transacciones cargadas. Monto Total: $${usdcFloat.toFixed(6)}`;
+            status.textContent = `ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ ÃƒÆ’Ã¢â‚¬Â°xito! ${count} transacciones cargadas. Monto Total: $${usdcFloat.toFixed(6)}`;
             status.style.color = "#4ade80";
         }
 
@@ -1599,14 +1599,14 @@ async function uploadBatchFile() {
     } catch (e) {
         console.error(e);
         if (status) {
-            status.textContent = "Ã¢ÂÅ’ Error: " + e.message;
+            status.textContent = "ÃƒÂ¢Ã‚ÂÃ…â€™ Error: " + e.message;
             status.style.color = "#ef4444";
         }
         alert("Error subiendo archivo: " + e.message);
     } finally {
         if (btnUploadBatch) {
             btnUploadBatch.disabled = false;
-            btnUploadBatch.textContent = "Subir y Calcular Ã°Å¸â€œÂ¤";
+            btnUploadBatch.textContent = "Subir y Calcular ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã‚Â¤";
         }
         // Clear input
         if (fileInput) fileInput.value = '';
@@ -1618,7 +1618,7 @@ async function generateMerkleTree() {
 
     // Check if wallet is connected
     if (!userAddress || !signer) {
-        alert("Ã¢Å¡Â Ã¯Â¸Â Debes conectar tu Wallet Funder primero.");
+        alert("ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â Debes conectar tu Wallet Funder primero.");
         await connectWallet();
         if (!userAddress) return;
     }
@@ -1627,13 +1627,13 @@ async function generateMerkleTree() {
     const funder = (userAddress || localStorage.getItem('user_address'))?.toLowerCase();
 
     if (!funder || !ethers.isAddress(funder)) {
-        return alert("Error: No se detectÃƒÂ³ una direcciÃƒÂ³n de Funder vÃƒÂ¡lida. Por favor, reconÃƒÂ©ctate.");
+        return alert("Error: No se detectÃƒÆ’Ã‚Â³ una direcciÃƒÆ’Ã‚Â³n de Funder vÃƒÆ’Ã‚Â¡lida. Por favor, reconÃƒÆ’Ã‚Â©ctate.");
     }
 
     try {
         btnGenerateMerkle.disabled = true;
         btnGenerateMerkle.textContent = "Generando...";
-        merkleStatus.textContent = "Calculando ÃƒÂ¡rbol criptogrÃƒÂ¡fico...";
+        merkleStatus.textContent = "Calculando ÃƒÆ’Ã‚Â¡rbol criptogrÃƒÆ’Ã‚Â¡fico...";
 
         const res = await authenticatedFetch(`/api/batches/${currentBatchId}/register-merkle`, {
             method: 'POST',
@@ -1658,7 +1658,7 @@ async function generateMerkleTree() {
             if (btnSetup) {
                 btnSetup.classList.remove('hidden');
                 btnSetup.disabled = false;
-                btnSetup.textContent = "1. Preparar Relayers Ã°Å¸Ââ€”Ã¯Â¸Â";
+                btnSetup.textContent = "1. Preparar Relayers ÃƒÂ°Ã…Â¸Ã‚ÂÃ¢â‚¬â€ÃƒÂ¯Ã‚Â¸Ã‚Â";
             }
             if (paymentTriggerZone) paymentTriggerZone.classList.add('hidden');
 
@@ -1675,7 +1675,7 @@ async function generateMerkleTree() {
                 fetchUSDCBalance(funder).then(bal => { balanceEl.textContent = bal; });
             }
 
-            merkleStatus.textContent = "Ã¢Å“â€¦ ÃƒÂrbol Generado y Guardado.";
+            merkleStatus.textContent = "ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ ÃƒÆ’Ã‚Ârbol Generado y Guardado.";
         } else {
             throw new Error(data.error || "Error desconocido");
         }
@@ -1683,10 +1683,10 @@ async function generateMerkleTree() {
     } catch (error) {
         console.error(error);
         alert("Error: " + error.message);
-        merkleStatus.textContent = "Ã¢ÂÅ’ FallÃƒÂ³ la generaciÃƒÂ³n.";
+        merkleStatus.textContent = "ÃƒÂ¢Ã‚ÂÃ…â€™ FallÃƒÆ’Ã‚Â³ la generaciÃƒÆ’Ã‚Â³n.";
     } finally {
         btnGenerateMerkle.disabled = false;
-        btnGenerateMerkle.textContent = "Generar Merkle Tree Ã¢Å¡â„¢Ã¯Â¸Â";
+        btnGenerateMerkle.textContent = "Generar Merkle Tree ÃƒÂ¢Ã…Â¡Ã¢â€žÂ¢ÃƒÂ¯Ã‚Â¸Ã‚Â";
     }
 }
 
@@ -1700,7 +1700,7 @@ async function runMerkleTest() {
     const merkleRoot = rootEl ? rootEl.textContent.trim() : null;
 
     if (!merkleRoot || !merkleRoot.startsWith("0x")) {
-        alert("Ã¢Å¡Â Ã¯Â¸Â Genera el Merkle Tree primero");
+        alert("ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â Genera el Merkle Tree primero");
         return;
     }
 
@@ -1715,7 +1715,7 @@ async function runMerkleTest() {
     if (!testTransactions || testTransactions.length === 0) {
         // Fetch a small random sample from server
         try {
-            if (status) status.textContent = "Ã¢ÂÂ³ Obteniendo muestra del servidor...";
+            if (status) status.textContent = "ÃƒÂ¢Ã‚ÂÃ‚Â³ Obteniendo muestra del servidor...";
             const res = await authenticatedFetch(`/api/batches/${currentBatchId}/transactions?page=1&limit=100`);
             const data = await res.json();
             if (data.transactions && data.transactions.length > 0) {
@@ -1724,7 +1724,7 @@ async function runMerkleTest() {
                 throw new Error("No se encontraron transacciones en el servidor.");
             }
         } catch (e) {
-            alert("Ã¢Å¡Â Ã¯Â¸Â Error preparando test: " + e.message);
+            alert("ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â Error preparando test: " + e.message);
             return;
         }
     }
@@ -1738,7 +1738,7 @@ async function runMerkleTest() {
     const selectedTxs = shuffled.slice(0, sampleSize);
 
     if (verifyLabel) {
-        verifyLabel.textContent = `Ã°Å¸â€Â¬ VerificaciÃƒÂ³n On-Chain (Muestreo ${sampleSize} ${sampleSize === 1 ? 'tx' : 'txs'})`;
+        verifyLabel.textContent = `ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ‚Â¬ VerificaciÃƒÆ’Ã‚Â³n On-Chain (Muestreo ${sampleSize} ${sampleSize === 1 ? 'tx' : 'txs'})`;
     }
     const funderText = document.getElementById('merkleResultFunder').textContent.trim();
 
@@ -1752,13 +1752,13 @@ async function runMerkleTest() {
     // Normalize for consistency
     if (funder) funder = funder.toLowerCase();
     if (!ethers.isAddress(funder)) {
-        alert("Ã¢ÂÅ’ No se encontrÃƒÂ³ address de Funder vÃƒÂ¡lida.");
+        alert("ÃƒÂ¢Ã‚ÂÃ…â€™ No se encontrÃƒÆ’Ã‚Â³ address de Funder vÃƒÆ’Ã‚Â¡lida.");
         return;
     }
 
     if (btn) btn.disabled = true;
     if (status) {
-        status.textContent = `Ã¢ÂÂ³ Inicializando test: ${sampleSize} transacciones (${MAX_CONCURRENT} hilos)...`;
+        status.textContent = `ÃƒÂ¢Ã‚ÂÃ‚Â³ Inicializando test: ${sampleSize} transacciones (${MAX_CONCURRENT} hilos)...`;
         status.style.color = "#fbbf24";
     }
 
@@ -1851,7 +1851,7 @@ async function runMerkleTest() {
 
                     console.log(`[Verify] Result for Tx ${tx.id}: ${isValid}`);
 
-                    if (!isValid) throw new Error("Ã¢ÂÅ’ Invalid On-Chain Result");
+                    if (!isValid) throw new Error("ÃƒÂ¢Ã‚ÂÃ…â€™ Invalid On-Chain Result");
 
                     // Success! Break loop
                     return;
@@ -1872,7 +1872,7 @@ async function runMerkleTest() {
             }
             // Finally block handled outside the loop effectively by incrementing counts
             completed++;
-            if (status) status.textContent = `Ã¢ÂÂ³ Progreso: ${completed}/${sampleSize} verificados (Fallos: ${failed})`;
+            if (status) status.textContent = `ÃƒÂ¢Ã‚ÂÃ‚Â³ Progreso: ${completed}/${sampleSize} verificados (Fallos: ${failed})`;
         };
 
         // Execution Queue (Worker Pool Pattern)
@@ -1900,12 +1900,12 @@ async function runMerkleTest() {
         // Final Report
         if (failed === 0) {
             if (status) {
-                status.textContent = `Ã¢Å“â€¦ Test Exitoso: ${sampleSize}/${sampleSize} transacciones verificadas en Blockchain.`;
+                status.textContent = `ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Test Exitoso: ${sampleSize}/${sampleSize} transacciones verificadas en Blockchain.`;
                 status.style.color = "#4ade80";
             }
         } else {
             if (status) {
-                status.textContent = `Ã¢ÂÅ’ Test Fallido: ${failed} errores encontrados. Revisa la consola y tu configuraciÃƒÂ³n.`;
+                status.textContent = `ÃƒÂ¢Ã‚ÂÃ…â€™ Test Fallido: ${failed} errores encontrados. Revisa la consola y tu configuraciÃƒÆ’Ã‚Â³n.`;
                 status.style.color = "#ef4444";
             }
         }
@@ -1913,7 +1913,7 @@ async function runMerkleTest() {
     } catch (globalErr) {
         console.error(globalErr);
         if (status) {
-            status.textContent = "Ã¢ÂÅ’ Error CrÃƒÂ­tico: " + globalErr.message;
+            status.textContent = "ÃƒÂ¢Ã‚ÂÃ…â€™ Error CrÃƒÆ’Ã‚Â­tico: " + globalErr.message;
             status.style.color = "#ef4444";
         }
     } finally {
@@ -1997,7 +1997,7 @@ function updateRelayerCountOptions(count) {
     if (effectiveMax > 1 && !presets.includes(effectiveMax)) {
         const opt = document.createElement('option');
         opt.value = effectiveMax;
-        opt.textContent = `${effectiveMax} (MÃƒÂ¡ximo Absoluto)`;
+        opt.textContent = `${effectiveMax} (MÃƒÆ’Ã‚Â¡ximo Absoluto)`;
         select.appendChild(opt);
     }
 }
@@ -2013,10 +2013,10 @@ if (btnProcessBatch) {
         // Ensure polling is active
         startTxPolling(currentBatchId);
         const count = parseInt(relayerCountSelect.value) || 5;
-        if (!confirm(`Ã‚Â¿EstÃƒÂ¡s seguro de iniciar la distribuciÃƒÂ³n con ${count} Relayer(s)?`)) return;
+        if (!confirm(`Ãƒâ€šÃ‚Â¿EstÃƒÆ’Ã‚Â¡s seguro de iniciar la distribuciÃƒÆ’Ã‚Â³n con ${count} Relayer(s)?`)) return;
 
         if (!signer || !userAddress) {
-            alert("Ã¢Å¡Â Ã¯Â¸Â Debes conectar tu Wallet primero para poder firmar las autorizaciones (Permit y Root).");
+            alert("ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â Debes conectar tu Wallet primero para poder firmar las autorizaciones (Permit y Root).");
             return;
         }
 
@@ -2030,12 +2030,12 @@ if (btnProcessBatch) {
             if (BigInt(userBal) < currentBatchTotalUSDC) {
                 const requiredFmt = ethers.formatUnits(currentBatchTotalUSDC, 6);
                 const foundFmt = ethers.formatUnits(userBal, 6);
-                alert(`Ã¢ÂÅ’ FONDOS INSUFICIENTES en la Wallet Funder.\n\nRequerido: ${requiredFmt} USDC\nDisponible: ${foundFmt} USDC\n\nPor favor recarga tu wallet antes de continuar.`);
+                alert(`ÃƒÂ¢Ã‚ÂÃ…â€™ FONDOS INSUFICIENTES en la Wallet Funder.\n\nRequerido: ${requiredFmt} USDC\nDisponible: ${foundFmt} USDC\n\nPor favor recarga tu wallet antes de continuar.`);
                 return; // ABORT START
             }
         } catch (balErr) {
             console.error("Balance Check Error:", balErr);
-            if (!confirm("Ã¢Å¡Â Ã¯Â¸Â No se pudo verificar tu saldo de USDC. Ã‚Â¿Deseas continuar bajo tu propio riesgo?")) {
+            if (!confirm("ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â No se pudo verificar tu saldo de USDC. Ãƒâ€šÃ‚Â¿Deseas continuar bajo tu propio riesgo?")) {
                 return;
             }
         }
@@ -2049,17 +2049,17 @@ if (btnProcessBatch) {
                 // 1. Check if Root needs signing (Gasless)
                 // Always ask for now, or check contract state if possible. 
                 // We ask user because we assume if they are using Permit, they want gasless root set too.
-                if (confirm("Ã‚Â¿Deseas firmar la RAÃƒÂZ DEL MERKLE (Gasless) para autorizar este lote?")) {
+                if (confirm("Ãƒâ€šÃ‚Â¿Deseas firmar la RAÃƒÆ’Ã‚ÂZ DEL MERKLE (Gasless) para autorizar este lote?")) {
                     rootSignatureData = await signBatchRoot(currentBatchId);
                 }
 
                 // 2. Check Permit
-                if (confirm("Ã‚Â¿Deseas firmar un PERMIT automÃƒÂ¡tico para evitar 'Approve' manual?")) {
+                if (confirm("Ãƒâ€šÃ‚Â¿Deseas firmar un PERMIT automÃƒÆ’Ã‚Â¡tico para evitar 'Approve' manual?")) {
                     permitData = await signBatchPermit(currentBatchId);
                 }
             } catch (e) {
                 console.warn("Signing process interrupted:", e);
-                alert("Ã¢Å¡Â Ã¯Â¸Â Proceso de firma interrumpido: " + e.message);
+                alert("ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â Proceso de firma interrumpido: " + e.message);
                 // We allow continuing without signatures (maybe they did manual tx)
             }
         }
@@ -2082,8 +2082,8 @@ async function setupRelayerBatch() {
 
     try {
         btnSetup.disabled = true;
-        btnSetup.textContent = "Preparando... Ã¢ÂÂ³";
-        processStatus.textContent = "Ã°Å¸Ââ€”Ã¯Â¸Â Creando y fondeando relayers (TransacciÃƒÂ³n AtÃƒÂ³mica)...";
+        btnSetup.textContent = "Preparando... ÃƒÂ¢Ã‚ÂÃ‚Â³";
+        processStatus.textContent = "ÃƒÂ°Ã…Â¸Ã‚ÂÃ¢â‚¬â€ÃƒÂ¯Ã‚Â¸Ã‚Â Creando y fondeando relayers (TransacciÃƒÆ’Ã‚Â³n AtÃƒÆ’Ã‚Â³mica)...";
         processStatus.style.color = "#fbbf24";
 
         const response = await authenticatedFetch(`/api/batches/${currentBatchId}/setup`, {
@@ -2094,7 +2094,7 @@ async function setupRelayerBatch() {
         const res = await response.json();
 
         if (response.ok) {
-            processStatus.textContent = `Ã¢Å“â€¦ ${res.count} Relayers listos y fondeados. Ahora puedes disparar.`;
+            processStatus.textContent = `ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ ${res.count} Relayers listos y fondeados. Ahora puedes disparar.`;
             processStatus.style.color = "#4ade80";
 
             btnSetup.classList.add('hidden');
@@ -2108,10 +2108,10 @@ async function setupRelayerBatch() {
         }
     } catch (err) {
         console.error(err);
-        processStatus.textContent = "Ã¢ÂÅ’ Error: " + err.message;
+        processStatus.textContent = "ÃƒÂ¢Ã‚ÂÃ…â€™ Error: " + err.message;
         processStatus.style.color = "#ef4444";
         btnSetup.disabled = false;
-        btnSetup.textContent = "1. Preparar Relayers Ã°Å¸Ââ€”Ã¯Â¸Â";
+        btnSetup.textContent = "1. Preparar Relayers ÃƒÂ°Ã…Â¸Ã‚ÂÃ¢â‚¬â€ÃƒÂ¯Ã‚Â¸Ã‚Â";
     }
 }
 
@@ -2125,7 +2125,7 @@ async function executeDistribution() {
 
     try {
         btnExecute.disabled = true;
-        btnExecute.textContent = "Firmando... Ã¢Å“ÂÃ¯Â¸Â";
+        btnExecute.textContent = "Firmando... ÃƒÂ¢Ã…â€œÃ‚ÂÃƒÂ¯Ã‚Â¸Ã‚Â";
         if (signHint) signHint.textContent = "Por favor, firma en tu wallet...";
 
         // 1. Sign Permit (Funder -> Contract)
@@ -2133,7 +2133,7 @@ async function executeDistribution() {
         // 2. Sign Root (Funder -> Merkle Proofs)
         const rootSignatureData = await signBatchRoot(currentBatchId);
 
-        processStatus.textContent = "Ã°Å¸Å¡â‚¬ Enviando firmas y arrancando distribuciÃƒÂ³n...";
+        processStatus.textContent = "ÃƒÂ°Ã…Â¸Ã…Â¡Ã¢â€šÂ¬ Enviando firmas y arrancando distribuciÃƒÆ’Ã‚Â³n...";
         processStatus.style.color = "#4ade80";
         if (signHint) signHint.textContent = "Firmas verificadas. Arrancando...";
 
@@ -2148,8 +2148,8 @@ async function executeDistribution() {
         const res = await response.json();
 
         if (response.ok) {
-            processStatus.textContent = "Ã¢Å“â€¦ DistribuciÃƒÂ³n iniciada con ÃƒÂ©xito.";
-            btnExecute.textContent = "Ã¢Å“â€¦ En curso";
+            processStatus.textContent = "ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ DistribuciÃƒÆ’Ã‚Â³n iniciada con ÃƒÆ’Ã‚Â©xito.";
+            btnExecute.textContent = "ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ En curso";
             if (signHint) signHint.classList.add('hidden');
 
             // Start Timer
@@ -2161,15 +2161,15 @@ async function executeDistribution() {
                 pollBatchProgress(currentBatchId);
             }, 3000);
         } else {
-            throw new Error(res.error || "Error en ejecuciÃƒÂ³n");
+            throw new Error(res.error || "Error en ejecuciÃƒÆ’Ã‚Â³n");
         }
     } catch (err) {
         console.error(err);
-        processStatus.textContent = "Ã¢ÂÅ’ Error: " + err.message;
+        processStatus.textContent = "ÃƒÂ¢Ã‚ÂÃ…â€™ Error: " + err.message;
         processStatus.style.color = "#ef4444";
         btnExecute.disabled = false;
-        btnExecute.textContent = "Disparar Pagos Ã°Å¸Å¡â‚¬";
-        if (signHint) signHint.textContent = "Error al firmar. IntÃƒÂ©ntalo de nuevo.";
+        btnExecute.textContent = "Disparar Pagos ÃƒÂ°Ã…Â¸Ã…Â¡Ã¢â€šÂ¬";
+        if (signHint) signHint.textContent = "Error al firmar. IntÃƒÆ’Ã‚Â©ntalo de nuevo.";
     }
 }
 
@@ -2290,7 +2290,7 @@ async function signBatchRoot(batchId) {
 
     const rootEl = document.getElementById('displayMerkleRoot');
     const merkleRoot = rootEl ? rootEl.textContent.trim() : null;
-    if (!merkleRoot || !merkleRoot.startsWith("0x")) throw new Error("Merkle Root invÃƒÂ¡lido");
+    if (!merkleRoot || !merkleRoot.startsWith("0x")) throw new Error("Merkle Root invÃƒÆ’Ã‚Â¡lido");
 
     const totalTransactions = data.batch.total_transactions || 0;
     const totalAmountBase = data.batch.total_usdc || "0";
@@ -2359,7 +2359,7 @@ function stopTimer() {
     const timerEl = document.getElementById('processTimer');
     if (timerEl && !timerEl.textContent.includes("Finalizado en")) {
         timerEl.style.color = '#10b981'; // Green
-        timerEl.textContent = `Ã¢ÂÂ±Ã¯Â¸Â Finalizado en: ${timerEl.textContent}`;
+        timerEl.textContent = `ÃƒÂ¢Ã‚ÂÃ‚Â±ÃƒÂ¯Ã‚Â¸Ã‚Â Finalizado en: ${timerEl.textContent}`;
     }
 }
 
@@ -2377,14 +2377,14 @@ window.closeFaucetModal = () => {
 
 
 async function pollBatchProgress(batchId) {
-    // Ã°Å¸â€ºÂ¡Ã¯Â¸Â Safety: Stop if we are viewing a different batch
+    // ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂºÃ‚Â¡ÃƒÂ¯Ã‚Â¸Ã‚Â Safety: Stop if we are viewing a different batch
     if (currentBatchId && parseInt(batchId) !== parseInt(currentBatchId)) {
         console.warn(`[Poll] Ignoring poll for Batch ${batchId} (Current: ${currentBatchId})`);
         return;
     }
 
     try {
-        // Parallel Fetch for Speed Ã¢Å¡Â¡
+        // Parallel Fetch for Speed ÃƒÂ¢Ã…Â¡Ã‚Â¡
         const [relayerRes, batchRes] = await Promise.all([
             fetchRelayerBalances(batchId), // Now returns promise but doesn't return data directly to variable (it renders internally)
             fetch(`/api/batches/${batchId}`)
@@ -2423,10 +2423,12 @@ async function pollBatchProgress(batchId) {
             // Update Speedometer Gauge (Premium)
             if (typeof updateProgressGauge === 'function') {
                 // Ensure the gauge zone is visible if we have transactions
-                const gaugeZone = document.getElementById('batchProgressGauge');
+                const gaugeZone = document.getElementById('tradingTerminalZone');
+                const legacyZone = document.getElementById('batchProgressGauge');
                 if (gaugeZone && total > 0) gaugeZone.classList.remove('hidden');
+                if (legacyZone) legacyZone.classList.add('hidden'); // Hide old gauge if exists
 
-                updateProgressGauge(completed, pending, failed, total);
+                updateProgressGauge(data.stats, total);
             }
 
             // If we have stats, use strict Pending check
@@ -2442,16 +2444,16 @@ async function pollBatchProgress(batchId) {
                 const processStatus = document.getElementById('merkleTestStatus');
                 if (processStatus) {
                     if (status === 'FAILED' || failed > 0) {
-                        processStatus.textContent = "Ã¢Å¡Â Ã¯Â¸Â DistribuciÃƒÂ³n Finalizada con Errores";
+                        processStatus.textContent = "ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â DistribuciÃƒÆ’Ã‚Â³n Finalizada con Errores";
                         processStatus.style.color = "#fbbf24"; // Warning Yellow
                     } else {
-                        processStatus.textContent = "Ã¢Å“â€¦ Ã‚Â¡DistribuciÃƒÂ³n Finalizada!";
+                        processStatus.textContent = "ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Ãƒâ€šÃ‚Â¡DistribuciÃƒÆ’Ã‚Â³n Finalizada!";
                         processStatus.style.color = "#4ade80"; // Success Green
                     }
                 }
                 const btnExecute = document.getElementById('btnExecuteBatch');
                 if (btnExecute) {
-                    btnExecute.textContent = "Ã¢Å“â€¦ Completado";
+                    btnExecute.textContent = "ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ Completado";
                     btnExecute.disabled = true;
                 }
 
@@ -2486,7 +2488,7 @@ async function fetchRelayerBalances(batchId) {
     } catch (err) {
         console.error('Error fetching relayer balances:', err);
         if (tbody) {
-            tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:1rem; color:#ef4444;">Ã¢Å¡Â Ã¯Â¸Â Error: ${err.message}</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:1rem; color:#ef4444;">ÃƒÂ¢Ã…Â¡Ã‚Â ÃƒÂ¯Ã‚Â¸Ã‚Â Error: ${err.message}</td></tr>`;
         }
     }
 }
@@ -2516,13 +2518,13 @@ function renderRelayerBalances(explicitData) {
     // --- Header Info: Funding Tx (Shared) ---
     // Assuming all relayers share the same funding tx, we take the first one.
     const fundingTx = data[0]?.transactionhash_deposit;
-    const fundingTxLink = fundingTx ? `<a href="https://polygonscan.com/tx/${fundingTx}" target="_blank" class="hash-link" style="color: #60a5fa; font-family: monospace;">${fundingTx} Ã¢â€ â€”Ã¯Â¸Â</a>` : '<span style="color:#94a3b8">Pendiente...</span>';
+    const fundingTxLink = fundingTx ? `<a href="https://polygonscan.com/tx/${fundingTx}" target="_blank" class="hash-link" style="color: #60a5fa; font-family: monospace;">${fundingTx} ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â€ÃƒÂ¯Ã‚Â¸Ã‚Â</a>` : '<span style="color:#94a3b8">Pendiente...</span>';
 
     const infoDiv = document.getElementById('relayerGridInfo');
     if (infoDiv) {
         infoDiv.innerHTML = `
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 0.5rem; background: rgba(255,255,255,0.03); padding: 0.5rem 1rem; border-radius: 6px;">
-                <span style="font-size: 0.85rem; color: #cbd5e1;">Ã¢Å¡Â¡ TX Carga Relayers:</span>
+                <span style="font-size: 0.85rem; color: #cbd5e1;">ÃƒÂ¢Ã…Â¡Ã‚Â¡ TX Carga Relayers:</span>
                 ${fundingTxLink}
             </div>
         `;
@@ -2542,7 +2544,7 @@ function renderRelayerBalances(explicitData) {
             balanceDisplayStr = `0.000000 MATIC`; // Force zero display
             balanceColor = '#94a3b8'; // Greyout
         } else if (isStale) {
-            balanceDisplayStr = `${balanceVal.toFixed(6)} MATIC <span style="font-size: 0.7rem; color: #fbbf24;">(Persistente Ã°Å¸â€™Â¾)</span>`;
+            balanceDisplayStr = `${balanceVal.toFixed(6)} MATIC <span style="font-size: 0.7rem; color: #fbbf24;">(Persistente ÃƒÂ°Ã…Â¸Ã¢â‚¬â„¢Ã‚Â¾)</span>`;
             balanceColor = '#fbbf24';
         }
 
@@ -2553,7 +2555,7 @@ function renderRelayerBalances(explicitData) {
             <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
                 <td style="padding:0.75rem; color:#94a3b8; font-size:0.8rem; font-weight:bold;">#${r.id}</td>
                 <td style="padding:0.75rem; font-family:monospace; font-size:0.85rem;">
-                    <a href="${getExplorerUrl(r.address)}" target="_blank" class="hash-link">${shortAddr} Ã¢â€ â€”Ã¯Â¸Â</a>
+                    <a href="${getExplorerUrl(r.address)}" target="_blank" class="hash-link">${shortAddr} ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â€ÃƒÂ¯Ã‚Â¸Ã‚Â</a>
                 </td>
                 <td style="padding:0.75rem; color:${balanceColor}; font-weight:bold;">${balanceDisplay}</td>
                 <td style="padding:0.75rem; color:#94a3b8; font-size:0.8rem;">
@@ -2575,7 +2577,7 @@ function renderRelayerBalances(explicitData) {
         tbody.innerHTML += `
             <tr>
                 <td colspan="5" style="text-align: center; padding: 1rem; color: #4ade80; background: rgba(16, 185, 129, 0.1); border-radius: 8px; margin-top: 5px;">
-                    Ã¢Å“â€¦ <b>Recovered remaining relayer funds to the Faucet wallet.</b>
+                    ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¦ <b>Recovered remaining relayer funds to the Faucet wallet.</b>
                 </td>
             </tr>
         `;
@@ -2615,9 +2617,9 @@ function renderRelayerPaginationControls(totalItems) {
     div.style.paddingPadding = '1rem';
 
     div.innerHTML = `
-        <button class="btn-glass" onclick="changeRelayerPage(-1)" ${currentRelayerPage === 1 ? 'disabled' : ''}>Ã¢Â¬â€¦Ã¯Â¸Â Anterior</button>
-        <span style="align-self: center; font-size: 0.9rem;">PÃƒÂ¡gina ${currentRelayerPage} de ${totalPages}</span>
-        <button class="btn-glass" onclick="changeRelayerPage(1)" ${currentRelayerPage === totalPages ? 'disabled' : ''}>Siguiente Ã¢Å¾Â¡Ã¯Â¸Â</button>
+        <button class="btn-glass" onclick="changeRelayerPage(-1)" ${currentRelayerPage === 1 ? 'disabled' : ''}>ÃƒÂ¢Ã‚Â¬Ã¢â‚¬Â¦ÃƒÂ¯Ã‚Â¸Ã‚Â Anterior</button>
+        <span style="align-self: center; font-size: 0.9rem;">PÃƒÆ’Ã‚Â¡gina ${currentRelayerPage} de ${totalPages}</span>
+        <button class="btn-glass" onclick="changeRelayerPage(1)" ${currentRelayerPage === totalPages ? 'disabled' : ''}>Siguiente ÃƒÂ¢Ã…Â¾Ã‚Â¡ÃƒÂ¯Ã‚Â¸Ã‚Â</button>
     `;
 
     // Append to Relayer Table Container
@@ -2642,7 +2644,7 @@ window.triggerGasDistribution = async () => {
 
     const modalStatus = document.getElementById('modalFaucetStatus');
     if (modalStatus) {
-        modalStatus.textContent = "Ã¢Å’â€º Iniciando distribuciÃƒÂ³n...";
+        modalStatus.textContent = "ÃƒÂ¢Ã…â€™Ã¢â‚¬Âº Iniciando distribuciÃƒÆ’Ã‚Â³n...";
         modalStatus.style.color = "#fbbf24";
     }
 
@@ -2681,27 +2683,6 @@ setInterval(() => {
 checkFaucetStatus();
 
 
-// --- ECharts Trading Terminal Logic ---
-let gaugeChart = null;
-let activityChart = null;
-let activityData = [];
-
-function initECharts() {
-    const gContainer = document.getElementById('echartsGauge');
-    const aContainer = document.getElementById('echartsActivity');
-    if (!gContainer || !aContainer) return;
-
-    gaugeChart = echarts.init(gContainer, 'dark', { renderer: 'svg' });
-    activityChart = echarts.init(aContainer, 'dark', { renderer: 'svg' });
-
-    window.addEventListener('resize', () => {
-        gaugeChart.resize();
-        activityChart.resize();
-    });
-}
-
-function updateProgressGauge(completed, pending, failed, total) {
-    const zone = document.getElementById('tradingTerminalZone');
 
 
 // --- ECharts Trading Terminal Logic ---
@@ -2727,14 +2708,22 @@ function initECharts() {
     });
 }
 
-function updateProgressGauge(completed, pending, failed, total) {
+function updateProgressGauge(stats, total) {
+    if (!stats) return;
+
     const zone = document.getElementById('tradingTerminalZone');
     if (zone) zone.classList.remove('hidden');
 
     if (!gaugeChart) initECharts();
 
+    const completed = parseInt(stats.completed || 0);
+    const pending = parseInt(stats.pending || 0);
+    const failed = parseInt(stats.failed || 0);
+    const sending = parseInt(stats.sending || 0);
+    const queued = parseInt(stats.queued || 0);
+
     const successPct = total > 0 ? (completed / total) * 100 : 0;
-    const pendingPct = total > 0 ? (pending / total) * 100 : 0;
+    const processPct = total > 0 ? ((completed + sending + queued) / total) * 100 : 0;
     const failedPct = total > 0 ? (failed / total) * 100 : 0;
 
     // 1. Update Gauge (ECharts Progress Gauge Style)
@@ -2743,7 +2732,7 @@ function updateProgressGauge(completed, pending, failed, total) {
         series: [{
             type: 'gauge',
             startAngle: 90,
- endAngle: -270,
+            endAngle: -270,
             pointer: { show: false },
             progress: { show: true, overlap: false, roundCap: true, clip: false, itemStyle: { borderWidth: 1, borderColor: '#464646' } },
             axisLine: { lineStyle: { width: 40 } },
@@ -2752,8 +2741,8 @@ function updateProgressGauge(completed, pending, failed, total) {
             axisLabel: { show: false },
             data: [
                 { value: successPct.toFixed(2), name: 'Success', itemStyle: { color: '#00ff88' } },
-                { value: (successPct + pendingPct).toFixed(2), name: 'Pending', itemStyle: { color: '#f0b90b' }, z: 1 },
-                { value: (successPct + pendingPct + failedPct).toFixed(2), name: 'Failed', itemStyle: { color: '#ff3366' }, z: 0 }
+                { value: processPct.toFixed(2), name: 'In Progress', itemStyle: { color: '#f0b90b' }, z: 1 },
+                { value: 100, name: 'Total Scope', itemStyle: { color: 'rgba(255, 51, 102, 0.2)' }, z: 0 }
             ],
             detail: { fontSize: 30, color: '#fff', formatter: '{value}%', fontWeight: 'bold', offsetCenter: [0, '0%'] }
         }]
@@ -2775,7 +2764,9 @@ function updateProgressGauge(completed, pending, failed, total) {
             emphasis: { label: { show: true, fontSize: 20, fontWeight: 'bold', color: '#fff' } },
             data: [
                 { value: completed, name: 'Completed', itemStyle: { color: '#00ff88' } },
-                { value: pending, name: 'Pending', itemStyle: { color: '#f0b90b' } },
+                { value: sending, name: 'Sending', itemStyle: { color: '#3b82f6' } },
+                { value: queued, name: 'Queued', itemStyle: { color: '#f0b90b' } },
+                { value: pending, name: 'Pending', itemStyle: { color: '#64748b' } },
                 { value: failed, name: 'Failed', itemStyle: { color: '#ff3366' } }
             ]
         }]
@@ -2802,7 +2793,7 @@ function updateProgressGauge(completed, pending, failed, total) {
     });
 
     // 4. Update Text Counters
-    document.getElementById('terminalStatus').textContent = pending > 0 ? 'PROCESSING' : (completed === total ? 'COMPLETED' : 'WAITING');
+    document.getElementById('terminalStatus').textContent = (sending > 0 || queued > 0) ? 'EXECUTING' : (completed === total ? 'FINISHED' : 'WAITING');
     document.getElementById('terminalSuccessRate').textContent = successPct.toFixed(2) + '%';
     document.getElementById('terminalProcessed').textContent = completed + ' / ' + total;
 }
