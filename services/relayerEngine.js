@@ -378,9 +378,12 @@ class RelayerEngine {
             }
         } catch (criticalErr) {
             console.error(`❌ [Background] Critical Error for Batch ${batchId}:`, criticalErr);
+            // Truncate error message to prevent UI overflow
+            const errorMsg = criticalErr.message || String(criticalErr);
+            const truncatedMsg = errorMsg.length > 200 ? errorMsg.substring(0, 200) + '...' : errorMsg;
             await this.pool.query(
                 `UPDATE batches SET status = 'FAILED', detail = $1, updated_at = NOW() WHERE id = $2`,
-                [`❌ ERROR CRÍTICO: ${criticalErr.message}`, batchId]
+                [`❌ ERROR: ${truncatedMsg}`, batchId]
             );
         }
     }
