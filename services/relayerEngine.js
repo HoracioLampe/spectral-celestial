@@ -177,32 +177,25 @@ class RelayerEngine {
         await this.pool.query(`UPDATE batches SET status = 'SENT', start_time = NOW(), updated_at = NOW() WHERE id = $1`, [batchId]);
         console.log(`[Background] ✅ Batch status updated to SENT`);
 
-        // 1. Fetch Funder Address for this batch
-        const batchRes = await this.pool.query('SELECT funder_address FROM batches WHERE id = $1', [batchId]);
-        const funderAddress = batchRes.rows[0]?.funder_address;
-
         if (funderAddress) {
-            // --- 1.1 VERIFY ON-CHAIN ROOT ---
+            // --- 1. PRE-FLIGHT PARALLELIZATION ---
+            console.log(`[Engine] ⚡ Initializing Parallel Pre-flight (Root, Permit, Funding)...`);
+
+            // Get Current Nonce for Faucet
+            let currentNonce = await this.provider.getTransactionCount(this.faucetWallet.address, "latest");
+            const parallelTasks = [];
+
+            // --- 1.1 MERKLE ROOT REGISTRATION (IF NEEDED) ---
             const contract = new ethers.Contract(this.contractAddress, this.contractABI, this.provider);
             const onChainRoot = await contract.batchRoots(funderAddress, batchId);
-
-            // Get Backend Root
             const dbBatchRes = await this.pool.query('SELECT merkle_root FROM batches WHERE id = $1', [batchId]);
             const dbRoot = dbBatchRes.rows[0]?.merkle_root;
 
-            console.log(`[Engine] 🔍 P-Check Root: Chain=${onChainRoot} vs DB=${dbRoot}`);
-
             if (onChainRoot === ethers.ZeroHash) {
-                console.log(`[Engine] ⚠️ Root NOT set on-chain.`);
-
                 if (rootSignatureData) {
-                    try {
-                        console.log(`[Engine][Root] 📝 PREPARING MERKLE ROOT REGISTRATION:`);
-                        console.log(`   > Batch ID:    ${batchId}`);
-                        console.log(`   > Funder:      ${rootSignatureData.funder}`);
-                        console.log(`   > Merkle Root: ${rootSignatureData.merkleRoot}`);
-                        console.log(`   > Executor:    ${this.faucetWallet.address} (Faucet)`);
-
+                    const registrationTask = (async () => {
+                        const nonce = currentNonce++;
+                        console.log(`[Engine][Root] 📝 Queueing Root Registration (Nonce: ${nonce})`);
                         const writerContract = contract.connect(this.faucetWallet);
                         const tx = await writerContract.setBatchRootWithSignature(
                             rootSignatureData.funder,
@@ -210,89 +203,30 @@ class RelayerEngine {
                             rootSignatureData.merkleRoot,
                             BigInt(rootSignatureData.totalTransactions),
                             BigInt(rootSignatureData.totalAmount),
-                            rootSignatureData.signature
+                            rootSignatureData.signature,
+                            { nonce }
                         );
-                        console.log(`[Blockchain][Root] 🚀 Registration TX Sent: ${tx.hash}`);
-
+                        console.log(`[Blockchain][Root] 🚀 Root TX Sent: ${tx.hash}`);
                         const receipt = await tx.wait();
-                        console.log(`[Blockchain][Root] ✅ Registration CONFIRMED (Block: ${receipt.blockNumber})`);
+                        console.log(`[Blockchain][Root] ✅ Root CONFIRMED (Block: ${receipt.blockNumber})`);
 
-                        // TRACK GAS COST (Root)
-                        const gasUsed = BigInt(receipt.gasUsed);
-                        const gasPrice = BigInt(receipt.effectiveGasPrice || 0);
-                        const rootFee = gasUsed * gasPrice;
-
-                        const rootFeeMatic = ethers.formatEther(rootFee);
-                        await this.pool.query(
-                            `UPDATE batches SET funding_amount = COALESCE(funding_amount, 0) + $1 WHERE id = $2`,
-                            [rootFeeMatic, batchId]
-                        );
-                        console.log(`[Engine][Gas] ⛽ Added Root Gas Cost: ${rootFeeMatic} MATIC to Funding.`);
-                    } catch (rootErr) {
-                        console.error(`[Engine] ❌ Failed to set batch root via signature: ${rootErr.message}`);
-                        throw new Error(`Failed to set Batch Root: ${rootErr.message}`);
-                    }
+                        // Gas Tracking
+                        const fee = BigInt(receipt.gasUsed) * BigInt(receipt.effectiveGasPrice || 0);
+                        await this.pool.query(`UPDATE batches SET funding_amount = COALESCE(funding_amount, 0) + $1 WHERE id = $2`, [ethers.formatEther(fee), batchId]);
+                    })();
+                    parallelTasks.push(registrationTask);
                 } else {
-                    console.error(`[Engine] ⛔ CRITICAL: Root not set and no signature provided.`);
-                    throw new Error("Batch Root not registered on-chain. Please sign the root in the UI.");
+                    throw new Error("Batch Root not registered on-chain and no signature provided.");
                 }
-            } else {
-                // Root is set. Verify match.
-                if (dbRoot && onChainRoot !== dbRoot) {
-                    console.error(`[Engine] ⛔ CRITICAL: Root Mismatch! DB: ${dbRoot} vs Chain: ${onChainRoot}`);
-                    throw new Error(`Merkle Root Mismatch. Contact Support.`);
-                }
-                console.log(`[Engine] ✅ Root verified on-chain.`);
             }
 
-            // --- 1.2 FETCH ALLOWANCE & BALANCE (v2.2.8 Added Visibility) ---
-            try {
-                const usdc = new ethers.Contract(this.usdcAddress, [
-                    "function allowance(address,address) view returns (uint256)",
-                    "function balanceOf(address) view returns (uint256)"
-                ], this.provider);
-                const allowance = await usdc.allowance(funderAddress, this.contractAddress);
-                const balance = await usdc.balanceOf(funderAddress);
-                console.log(`[Permit] Funder: ${funderAddress}`);
-                console.log(`         Balance:   ${balance.toString()} raw | ${ethers.formatUnits(balance, 6)} USDC`);
-                console.log(`         Allowance: ${allowance.toString()} raw | ${ethers.formatUnits(allowance, 6)} USDC`);
-
-                // --- CRITICAL: Validate USDC Balance ---
-                const batchTotalRes = await this.pool.query('SELECT total_usdc FROM batches WHERE id = $1', [batchId]);
-                const batchTotalUsdc = BigInt(batchTotalRes.rows[0]?.total_usdc || 0);
-
-                console.log(`[Validation] Batch requires: ${ethers.formatUnits(batchTotalUsdc, 6)} USDC`);
-
-                if (balance < batchTotalUsdc) {
-                    const shortfall = batchTotalUsdc - balance;
-                    console.error(`[Validation] ❌ INSUFFICIENT USDC BALANCE`);
-                    console.error(`   Required: ${ethers.formatUnits(batchTotalUsdc, 6)} USDC`);
-                    console.error(`   Available: ${ethers.formatUnits(balance, 6)} USDC`);
-                    console.error(`   Shortfall: ${ethers.formatUnits(shortfall, 6)} USDC`);
-
-                    throw new Error(
-                        `Fondos insuficientes. ` +
-                        `Necesitas ${ethers.formatUnits(batchTotalUsdc, 6)} USDC pero solo tienes ${ethers.formatUnits(balance, 6)} USDC. ` +
-                        `Faltan ${ethers.formatUnits(shortfall, 6)} USDC.`
-                    );
-                }
-
-                console.log(`[Validation] ✅ Sufficient USDC balance confirmed`);
-
-                if (allowance === 0n && !externalPermit) {
-                    console.warn(`[Permit] ⚠️ Zero allowance and no permit provided. Transactions will fail unless a permit or manual approval is executed.`);
-                }
-            } catch (err) {
-                console.warn(`[Permit] Could not fetch on-chain allowance/balance: ${err.message}`);
-            }
-
-            // 1.3 Handle Permit (Direct submission to USDC contract)
+            // --- 1.2 PERMIT SUBMISSION (IF NEEDED) ---
             if (externalPermit) {
-                console.log(`[Engine][Permit] 📩 Submitting Client Permit for Batch ${batchId} directly to USDC contract...`);
-                try {
+                const permitTask = (async () => {
+                    const nonce = currentNonce++;
+                    console.log(`[Engine][Permit] 📩 Queueing Permit Submission (Nonce: ${nonce})`);
                     const usdc = new ethers.Contract(this.usdcAddress, [
-                        "function permit(address owner, address spender, uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s) external",
-                        "function allowance(address, address) view returns (uint256)"
+                        "function permit(address owner, address spender, uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s) external"
                     ], this.faucetWallet);
 
                     const tx = await usdc.permit(
@@ -302,42 +236,43 @@ class RelayerEngine {
                         BigInt(externalPermit.deadline),
                         externalPermit.v,
                         externalPermit.r,
-                        externalPermit.s
+                        externalPermit.s,
+                        { nonce }
                     );
                     console.log(`[Blockchain][Permit] 🚀 Permit TX Sent: ${tx.hash}`);
                     const receipt = await tx.wait();
                     console.log(`[Blockchain][Permit] ✅ Permit CONFIRMED (Block: ${receipt.blockNumber})`);
 
-                    // TRACK GAS COST (Permit)
-                    const gasUsed = BigInt(receipt.gasUsed);
-                    const gasPrice = BigInt(receipt.effectiveGasPrice || 0);
-                    const permitFee = gasUsed * gasPrice;
-
-                    const permitFeeMatic = ethers.formatEther(permitFee);
-                    await this.pool.query(
-                        `UPDATE batches SET funding_amount = COALESCE(funding_amount, 0) + $1 WHERE id = $2`,
-                        [permitFeeMatic, batchId]
-                    );
-                    console.log(`[Engine][Gas] ⛽ Added Permit Gas Cost: ${permitFeeMatic} MATIC to Funding.`);
-                } catch (permitErr) {
-                    console.error(`[Engine][Permit] ❌ Failed to submit permit: ${permitErr.message}`);
-                    // We don't throw yet, maybe allowance was already set or it's a retry
-                }
-            } else if (process.env.FUNDER_PRIVATE_KEY) {
-                console.log(`[Engine][Permit] FUNDER_PRIVATE_KEY detected, but server-side permit generation is deprecated. Please sign via UI.`);
+                    // Gas Tracking
+                    const fee = BigInt(receipt.gasUsed) * BigInt(receipt.effectiveGasPrice || 0);
+                    await this.pool.query(`UPDATE batches SET funding_amount = COALESCE(funding_amount, 0) + $1 WHERE id = $2`, [ethers.formatEther(fee), batchId]);
+                })();
+                parallelTasks.push(permitTask);
             }
-        }
 
-        // --- C. DELAYED FUNDING ---
-        let needsFunding = !isResumption;
-        if (isResumption && relayers.length > 0) {
-            const firstRelBal = await this.provider.getBalance(relayers[0].address);
-            if (firstRelBal < ethers.parseEther("0.01")) needsFunding = true;
-        }
+            // --- 1.3 RELAYER FUNDING (IF NEEDED) ---
+            let needsFunding = !isResumption;
+            if (isResumption && relayers.length > 0) {
+                const firstRelBal = await this.provider.getBalance(relayers[0].address);
+                if (firstRelBal < ethers.parseEther("0.01")) needsFunding = true;
+            }
 
-        if (needsFunding) {
-            console.log(`[Background] Triggering distributeGasToRelayers...`);
-            await this.distributeGasToRelayers(batchId, relayers);
+            if (needsFunding) {
+                const fundingTask = (async () => {
+                    const nonce = currentNonce++;
+                    console.log(`[Engine][Fund] 🪙 Queueing Relayer Funding (Nonce: ${nonce})`);
+                    // Note: distributeGasToRelayers will internally call fundRelayers which needs adjustment for nonce
+                    await this.distributeGasToRelayers(batchId, relayers, nonce);
+                })();
+                parallelTasks.push(fundingTask);
+            }
+
+            // AWAIT ALL PRE-FLIGHT TASKS IN PARALLEL
+            if (parallelTasks.length > 0) {
+                console.log(`[Engine] ⏳ Waiting for ${parallelTasks.length} parallel pre-flight tasks...`);
+                await Promise.all(parallelTasks);
+                console.log(`[Engine] ✨ All pre-flight tasks confirmed.`);
+            }
         }
 
         // --- E. PHASE 2: PARALLEL SWARM ---
@@ -721,7 +656,7 @@ class RelayerEngine {
         return { totalCostWei: totalCost };
     }
 
-    async distributeGasToRelayers(batchId, relayers) {
+    async distributeGasToRelayers(batchId, relayers, explicitNonce = null) {
         const { totalCostWei } = await this.estimateBatchGas(batchId);
         if (relayers.length === 0 || totalCostWei === 0n) return;
 
@@ -808,7 +743,7 @@ class RelayerEngine {
 
         try {
             // Pass the specific wallet to use
-            await this.fundRelayers(batchId, relayers, perRelayerWei, funderFaucetWallet);
+            await this.fundRelayers(batchId, relayers, perRelayerWei, funderFaucetWallet, explicitNonce);
         } catch (err) {
             // Enhance error for UI (Catch re-thrown errors)
             if (err.message.includes("insufficient funds") || err.code === 'INSUFFICIENT_FUNDS') {
@@ -818,7 +753,7 @@ class RelayerEngine {
         }
     }
 
-    async fundRelayers(batchId, relayers, amountWei, actingFaucetWallet) {
+    async fundRelayers(batchId, relayers, amountWei, actingFaucetWallet, explicitNonce = null) {
         if (!amountWei || amountWei === 0n) return;
         const walletToUse = actingFaucetWallet || this.faucetWallet;
 
@@ -855,7 +790,8 @@ class RelayerEngine {
                 amountWei, // Sending strictly calculated amount
                 {
                     value: totalValueToSend,
-                    gasLimit: safeGasLimit
+                    gasLimit: safeGasLimit,
+                    nonce: explicitNonce !== null ? explicitNonce : undefined
                 }
             );
 
