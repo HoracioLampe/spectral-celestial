@@ -177,6 +177,10 @@ class RelayerEngine {
         await this.pool.query(`UPDATE batches SET status = 'SENT', start_time = NOW(), updated_at = NOW() WHERE id = $1`, [batchId]);
         console.log(`[Background] ✅ Batch status updated to SENT`);
 
+        // 1. Fetch Funder Address for this batch
+        const batchRes = await this.pool.query('SELECT funder_address FROM batches WHERE id = $1', [batchId]);
+        const funderAddress = batchRes.rows[0]?.funder_address;
+
         if (funderAddress) {
             // --- 1. PRE-FLIGHT PARALLELIZATION ---
             console.log(`[Engine] ⚡ Initializing Parallel Pre-flight (Root, Permit, Funding)...`);
