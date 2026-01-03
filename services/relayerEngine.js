@@ -186,8 +186,8 @@ class RelayerEngine {
                 // --- 1. PRE-FLIGHT PARALLELIZATION ---
                 console.log(`[Engine] ⚡ Initializing Parallel Pre-flight (Root, Permit, Funding)...`);
 
-                // Get Current Nonce for Faucet
-                let currentNonce = await this.provider.getTransactionCount(this.faucetWallet.address, "latest");
+                // Get Current Nonce for Faucet (use 'pending' to avoid nonce collisions)
+                let currentNonce = await this.provider.getTransactionCount(this.faucetWallet.address, "pending");
                 const parallelTasks = [];
 
                 // --- 1.1 MERKLE ROOT REGISTRATION (IF NEEDED) ---
