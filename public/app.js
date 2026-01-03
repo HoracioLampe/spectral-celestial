@@ -7,7 +7,7 @@ let currentBatchPage = 1;
 // Global Error Handler for debugging
 window.onerror = function (msg, url, line, col, error) {
     console.error(`[Global Error] ${msg} at ${url}:${line}:${col}`, error);
-    alert(`Error detectado: ${msg}\n\nRevisa la consola para mÃ¡s detalles.`);
+    alert(`Error detectado: ${msg}\n\nRevisa la consola para mÃƒÂ¡s detalles.`);
     return false;
 };
 window.onunhandledrejection = function (event) {
@@ -74,7 +74,7 @@ async function checkFaucetStatus() {
             // Faucet Modal Link
             const modalLink = document.getElementById('faucetModalLink');
             if (modalLink) {
-                modalLink.textContent = `${data.address} â†—ï¸`;
+                modalLink.textContent = `${data.address} Ã¢â€ â€”Ã¯Â¸Â`;
                 modalLink.href = getExplorerUrl(data.address);
                 modalLink.dataset.address = data.address;
             }
@@ -94,7 +94,7 @@ async function checkFaucetStatus() {
                 btnCopyFaucetSide.onclick = () => {
                     navigator.clipboard.writeText(data.address);
                     const original = btnCopyFaucetSide.innerHTML;
-                    btnCopyFaucetSide.innerHTML = "âœ…";
+                    btnCopyFaucetSide.innerHTML = "Ã¢Å“â€¦";
                     setTimeout(() => btnCopyFaucetSide.innerHTML = original, 2000);
                 }
             }
@@ -102,7 +102,7 @@ async function checkFaucetStatus() {
             // Main Faucet Link
             const mainLink = document.getElementById('mainFaucetLink');
             if (mainLink) {
-                mainLink.textContent = `${shortAddr} â†—ï¸`;
+                mainLink.textContent = `${shortAddr} Ã¢â€ â€”Ã¯Â¸Â`;
                 mainLink.href = getExplorerUrl(data.address);
                 mainLink.dataset.address = data.address;
             }
@@ -130,7 +130,7 @@ async function checkFaucetStatus() {
         } else {
             if (btnSetup) btnSetup.disabled = true;
             if (faucetStatus) {
-                faucetStatus.textContent = "âŒ No hay Faucet. Haz clic en 'Gestione Faucet' > 'Generar'.";
+                faucetStatus.textContent = "Ã¢ÂÅ’ No hay Faucet. Haz clic en 'Gestione Faucet' > 'Generar'.";
                 faucetStatus.style.color = "#ef4444";
             }
             const mainLink = document.getElementById('mainFaucetLink');
@@ -139,23 +139,23 @@ async function checkFaucetStatus() {
     } catch (err) {
         console.error('Error checking faucet:', err);
         const mainLink = document.getElementById('mainFaucetLink');
-        if (mainLink) mainLink.textContent = "âš ï¸ Error RPC";
+        if (mainLink) mainLink.textContent = "Ã¢Å¡Â Ã¯Â¸Â Error RPC";
     }
 }
 
 window.generateFaucet = async () => {
-    if (!confirm("Â¿Deseas generar una nueva Faucet? Esto crearÃ¡ una direcciÃ³n Ãºnica en la BD.")) return;
+    if (!confirm("Ã‚Â¿Deseas generar una nueva Faucet? Esto crearÃƒÂ¡ una direcciÃƒÂ³n ÃƒÂºnica en la BD.")) return;
     try {
         const response = await fetch('/api/faucet/generate', { method: 'POST' });
         const res = await response.json();
         if (response.ok) {
-            alert("âœ… Faucet generada con Ã©xito: " + res.address);
+            alert("Ã¢Å“â€¦ Faucet generada con ÃƒÂ©xito: " + res.address);
             checkFaucetStatus();
         } else {
-            alert("âŒ Error: " + res.error);
+            alert("Ã¢ÂÅ’ Error: " + res.error);
         }
     } catch (err) {
-        alert("âŒ Error de conexiÃ³n");
+        alert("Ã¢ÂÅ’ Error de conexiÃƒÂ³n");
     }
 };
 
@@ -163,7 +163,7 @@ window.copyFaucetAddress = () => {
     const link = document.getElementById('mainFaucetLink') || document.getElementById('faucetModalLink');
     if (!link || !link.dataset.address) return;
     navigator.clipboard.writeText(link.dataset.address).then(() => {
-        alert("ðŸ“‹ DirecciÃ³n copiada al portapapeles");
+        alert("Ã°Å¸â€œâ€¹ DirecciÃƒÂ³n copiada al portapapeles");
     });
 };
 
@@ -171,7 +171,7 @@ window.copyFaucetKey = () => {
     const key = document.getElementById('faucetKey').textContent;
     if (key === '---') return;
     navigator.clipboard.writeText(key).then(() => {
-        alert("ðŸ“‹ Llave Privada copiada al portapapeles");
+        alert("Ã°Å¸â€œâ€¹ Llave Privada copiada al portapapeles");
     });
 };
 
@@ -225,7 +225,7 @@ let provider, signer, userAddress;
 let currentBatchTotalUSDC = 0n; // Use BigInt for precision checking
 
 document.addEventListener('DOMContentLoaded', async () => {
-    console.log("ðŸš€ Wallet App Iniciada");
+    console.log("Ã°Å¸Å¡â‚¬ Wallet App Iniciada");
 
     initDOMElements();
     attachEventListeners();
@@ -245,24 +245,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     const savedAddress = localStorage.getItem('user_address');
 
     if (savedToken && savedAddress) {
-        console.log("ðŸ”‘ Restoring existing session...");
+        console.log("Ã°Å¸â€â€˜ Restoring existing session...");
         AUTH_TOKEN = savedToken;
         userAddress = savedAddress.toLowerCase().trim();
 
         // Restore Provider
         if (window.ethereum) {
-            console.log("ðŸ“¡ Initializing Ethers v6 BrowserProvider (Session Restore)");
+            console.log("Ã°Å¸â€œÂ¡ Initializing Ethers v6 BrowserProvider (Session Restore)");
             provider = new ethers.BrowserProvider(window.ethereum);
             try {
                 // Background network check
                 provider.getNetwork().then(network => {
-                    console.log("ðŸŒ Network detected (restore):", network.name, network.chainId.toString());
+                    console.log("Ã°Å¸Å’Â Network detected (restore):", network.name, network.chainId.toString());
                     if (network.chainId !== 137n) {
                         console.warn("User on wrong network (restore)");
                     }
                 });
             } catch (e) {
-                console.error("âŒ Provider init error during restore", e);
+                console.error("Ã¢ÂÅ’ Provider init error during restore", e);
             }
         }
 
@@ -306,7 +306,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         } catch (e) {
             // Update UI elements
             const btnConnect = document.getElementById('btnConnect');
-            if (btnConnect) btnConnect.innerHTML = "ðŸ”— Conectado";
+            if (btnConnect) btnConnect.innerHTML = "Ã°Å¸â€â€” Conectado";
             const walletInfo = document.getElementById('walletInfo');
             if (walletInfo) walletInfo.classList.remove('hidden');
 
@@ -326,7 +326,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 btnCopy.onclick = () => {
                     navigator.clipboard.writeText(userAddress);
                     const original = btnCopy.innerHTML;
-                    btnCopy.innerHTML = "âœ…";
+                    btnCopy.innerHTML = "Ã¢Å“â€¦";
                     setTimeout(() => btnCopy.innerHTML = original, 2000);
                 };
             }
@@ -343,7 +343,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (window.ethereum && !savedToken) {
         const accounts = await window.ethereum.request({ method: 'eth_accounts' });
         if (accounts.length > 0) {
-            console.log("ðŸ”— Injected wallet found, ready for login.");
+            console.log("Ã°Å¸â€â€” Injected wallet found, ready for login.");
         }
     }
 });
@@ -356,10 +356,10 @@ function initTheme() {
     // Apply stored
     if (storedTheme === 'light') {
         document.documentElement.setAttribute('data-theme', 'light');
-        if (themeIcon) themeIcon.textContent = 'â˜€ï¸';
+        if (themeIcon) themeIcon.textContent = 'Ã¢Ëœâ‚¬Ã¯Â¸Â';
     } else {
         document.documentElement.removeAttribute('data-theme');
-        if (themeIcon) themeIcon.textContent = 'ðŸŒ™';
+        if (themeIcon) themeIcon.textContent = 'Ã°Å¸Å’â„¢';
     }
 
     if (toggleBtn) {
@@ -368,11 +368,11 @@ function initTheme() {
             if (current === 'light') {
                 document.documentElement.removeAttribute('data-theme');
                 localStorage.setItem('theme', 'dark');
-                if (themeIcon) themeIcon.textContent = 'ðŸŒ™';
+                if (themeIcon) themeIcon.textContent = 'Ã°Å¸Å’â„¢';
             } else {
                 document.documentElement.setAttribute('data-theme', 'light');
                 localStorage.setItem('theme', 'light');
-                if (themeIcon) themeIcon.textContent = 'â˜€ï¸';
+                if (themeIcon) themeIcon.textContent = 'Ã¢Ëœâ‚¬Ã¯Â¸Â';
             }
         };
     }
@@ -448,7 +448,7 @@ function attachEventListeners() {
 
 
 // ==========================================
-// --- INTEGRACIÃ“N WEB3 (METAMASK) ---
+// --- INTEGRACIÃƒâ€œN WEB3 (METAMASK) ---
 // ==========================================
 
 // Event listeners are now attached in attachEventListeners() called from DOMContentLoaded
@@ -458,7 +458,7 @@ function logout() {
 }
 
 window.logout = function () {
-    console.log("ðŸ”Œ Cerrando sesiÃ³n...");
+    console.log("Ã°Å¸â€Å’ Cerrando sesiÃƒÂ³n...");
     localStorage.removeItem('jwt_token');
     localStorage.removeItem('user_address');
     AUTH_TOKEN = null;
@@ -473,14 +473,14 @@ let isConnecting = false;
 
 async function connectWallet() {
     if (isConnecting) {
-        console.warn("âš ï¸ connectWallet ya estÃ¡ en ejecuciÃ³n. Ignorando llamada duplicada.");
+        console.warn("Ã¢Å¡Â Ã¯Â¸Â connectWallet ya estÃƒÂ¡ en ejecuciÃƒÂ³n. Ignorando llamada duplicada.");
         return;
     }
 
-    console.log("ðŸš€ connectWallet called!");
+    console.log("Ã°Å¸Å¡â‚¬ connectWallet called!");
     if (!window.ethereum) {
-        console.error("âŒ window.ethereum is missing!");
-        return alert("âš ï¸ Instala MetaMask");
+        console.error("Ã¢ÂÅ’ window.ethereum is missing!");
+        return alert("Ã¢Å¡Â Ã¯Â¸Â Instala MetaMask");
     }
 
     isConnecting = true;
@@ -489,20 +489,20 @@ async function connectWallet() {
     const originalText = btnEnter ? btnEnter.innerHTML : "";
 
     try {
-        console.log("ðŸ”„ Starting SIWE Auth Flow...");
+        console.log("Ã°Å¸â€â€ž Starting SIWE Auth Flow...");
         if (btnEnter) {
             btnEnter.disabled = true;
-            btnEnter.innerHTML = "<span>â³</span> Autenticando...";
+            btnEnter.innerHTML = "<span>Ã¢ÂÂ³</span> Autenticando...";
         }
 
         const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-        console.log("ðŸ‘¤ Account found:", accounts[0]);
+        console.log("Ã°Å¸â€˜Â¤ Account found:", accounts[0]);
         userAddress = accounts[0];
 
-        console.log("ðŸ“¡ Initializing BrowserProvider (Ethers v6)");
+        console.log("Ã°Å¸â€œÂ¡ Initializing BrowserProvider (Ethers v6)");
         provider = new ethers.BrowserProvider(window.ethereum);
         signer = await provider.getSigner();
-        console.log("ðŸ“ Signer obtained:", await signer.getAddress());
+        console.log("Ã°Å¸â€œÂ Signer obtained:", await signer.getAddress());
 
         // --- SIWE LOGIN FLOW ---
         const nonceRes = await fetch('/api/auth/nonce');
@@ -514,7 +514,7 @@ async function connectWallet() {
 
         // Anti-HTML check
         if (nonce.includes("<!DOCTYPE") || nonce.includes("<html")) {
-            throw new Error("El servidor devolviÃ³ un error en lugar de un cÃ³digo de seguridad (Nonce).");
+            throw new Error("El servidor devolviÃƒÂ³ un error en lugar de un cÃƒÂ³digo de seguridad (Nonce).");
         }
 
         const domain = window.location.host;
@@ -526,12 +526,12 @@ async function connectWallet() {
 
         // CRITICAL: SIWE requires EIP-55 checksummed address
         const checksummedAddress = ethers.getAddress(userAddress);
-        console.log("ðŸ” Checksummed address for SIWE:", checksummedAddress);
+        console.log("Ã°Å¸â€Â Checksummed address for SIWE:", checksummedAddress);
 
         const message = `${domain} wants you to sign in with your Ethereum account:\n${checksummedAddress}\n\n${statement}\n\nURI: ${origin}\nVersion: ${version}\nChain ID: ${chainId}\nNonce: ${nonce}\nIssued At: ${issuedAt}`;
-        console.log("âœï¸ Requesting signature...");
+        console.log("Ã¢Å“ÂÃ¯Â¸Â Requesting signature...");
         const signature = await signer.signMessage(message);
-        console.log("âœ… Signature obtained");
+        console.log("Ã¢Å“â€¦ Signature obtained");
 
         const verifyRes = await fetch('/api/auth/verify', {
             method: 'POST',
@@ -545,7 +545,7 @@ async function connectWallet() {
             localStorage.setItem('jwt_token', authData.token);
             localStorage.setItem('user_address', authData.address);
 
-            console.log("âœ… Authenticated via SIWE");
+            console.log("Ã¢Å“â€¦ Authenticated via SIWE");
 
             // --- TRANSITION TO APP ---
             const landingSection = document.getElementById('landingSection');
@@ -557,7 +557,7 @@ async function connectWallet() {
                 setTimeout(() => {
                     landingSection.classList.add('hidden');
 
-                    // NEW: Decidir quÃ© vista mostrar segÃºn el ROL
+                    // NEW: Decidir quÃƒÂ© vista mostrar segÃƒÂºn el ROL
                     const payload = JSON.parse(atob(authData.token.split('.')[1]));
                     const role = payload.role;
                     const restrictedView = document.getElementById('restrictedView');
@@ -583,15 +583,15 @@ async function connectWallet() {
                                 adminRescueFunds.classList.remove('hidden');
                                 adminRescueFunds.onclick = async (e) => {
                                     e.preventDefault();
-                                    if (!confirm("âš ï¸ Â¿EstÃ¡s seguro de iniciar el rescate de fondos?\nEsto barrerÃ¡ el saldo de TODOS los relayers hacia sus faucets respectivos.")) return;
+                                    if (!confirm("Ã¢Å¡Â Ã¯Â¸Â Ã‚Â¿EstÃƒÂ¡s seguro de iniciar el rescate de fondos?\nEsto barrerÃƒÂ¡ el saldo de TODOS los relayers hacia sus faucets respectivos.")) return;
 
                                     try {
                                         const res = await authenticatedFetch('/api/admin/rescue', { method: 'POST' });
                                         if (res.ok) {
-                                            alert("âœ… Proceso iniciado: " + (await res.json()).message);
+                                            alert("Ã¢Å“â€¦ Proceso iniciado: " + (await res.json()).message);
                                         }
                                     } catch (err) {
-                                        alert("âŒ Error: " + err.message);
+                                        alert("Ã¢ÂÅ’ Error: " + err.message);
                                     }
                                 };
                             }
@@ -607,7 +607,7 @@ async function connectWallet() {
                 }, 500);
             }
 
-            if (btnConnect) btnConnect.innerHTML = "ðŸ”— Conectado";
+            if (btnConnect) btnConnect.innerHTML = "Ã°Å¸â€â€” Conectado";
             if (walletInfo) walletInfo.classList.remove('hidden');
             if (userAddressSpan) userAddressSpan.textContent = `${userAddress.substring(0, 6)}...${userAddress.substring(38)}`;
 
@@ -618,7 +618,7 @@ async function connectWallet() {
             window.ethereum.on('accountsChanged', () => location.reload());
             window.ethereum.on('chainChanged', () => location.reload());
         } else {
-            throw new Error(authData.error || "Error de verificaciÃ³n SIWE");
+            throw new Error(authData.error || "Error de verificaciÃƒÂ³n SIWE");
         }
     } catch (error) {
         console.error(error);
@@ -638,16 +638,16 @@ async function checkNetwork() {
     if (!provider) return;
     try {
         const network = await provider.getNetwork();
-        console.log("ðŸŒ Current Network ID:", network.chainId.toString());
+        console.log("Ã°Å¸Å’Â Current Network ID:", network.chainId.toString());
         if (network.chainId !== 137n) {
-            console.log("ðŸ”„ Requesting network switch to Polygon...");
+            console.log("Ã°Å¸â€â€ž Requesting network switch to Polygon...");
             await window.ethereum.request({
                 method: 'wallet_switchEthereumChain',
                 params: [{ chainId: POLYGON_CHAIN_ID }]
             });
         }
     } catch (e) {
-        console.warn("âš ï¸ Network check/switch error:", e);
+        console.warn("Ã¢Å¡Â Ã¯Â¸Â Network check/switch error:", e);
     }
 }
 
@@ -678,14 +678,14 @@ function updateUI() {
 
 async function fetchBalances() {
     if (!userAddress || !provider) {
-        console.log("ðŸŒ‘ fetchBalances skipped: No userAddress or provider ready yet.");
+        console.log("Ã°Å¸Å’â€˜ fetchBalances skipped: No userAddress or provider ready yet.");
         return;
     }
     try {
-        console.log("ðŸ’° Fetching balances for:", userAddress);
+        console.log("Ã°Å¸â€™Â° Fetching balances for:", userAddress);
         const balance = await provider.getBalance(userAddress);
         const maticVal = parseFloat(ethers.formatEther(balance)).toFixed(4);
-        console.log("ðŸ’Ž MATIC Balance:", maticVal);
+        console.log("Ã°Å¸â€™Å½ MATIC Balance:", maticVal);
 
         const elMatic = document.getElementById('maticBalance');
         if (elMatic) elMatic.textContent = maticVal;
@@ -693,13 +693,13 @@ async function fetchBalances() {
         const usdcContract = new ethers.Contract(USDC_ADDRESS, USDC_ABI, provider);
         const usdcRaw = await usdcContract.balanceOf(userAddress);
         const usdcVal = parseFloat(ethers.formatUnits(usdcRaw, 6)).toFixed(2);
-        console.log("ðŸ’µ USDC Balance:", usdcVal);
+        console.log("Ã°Å¸â€™Âµ USDC Balance:", usdcVal);
 
         const elUsdc = document.getElementById('usdcBalance');
         if (elUsdc) elUsdc.textContent = usdcVal;
 
     } catch (e) {
-        console.error("âŒ Error fetching balances:", e);
+        console.error("Ã¢ÂÅ’ Error fetching balances:", e);
     }
 }
 
@@ -708,7 +708,7 @@ async function fetchBalances() {
 
 
 // ==========================================
-// --- GESTIÃ“N DE LOTES (BATCHES - REFACTOR) ---
+// --- GESTIÃƒâ€œN DE LOTES (BATCHES - REFACTOR) ---
 // ==========================================
 
 let currentBatchId = null;
@@ -857,7 +857,7 @@ function updatePaginationUI(pagination) {
     const indicator = document.getElementById('pageIndicator');
 
     if (indicator) {
-        indicator.textContent = `PÃ¡gina ${pagination.currentPage} de ${pagination.totalPages}`;
+        indicator.textContent = `PÃƒÂ¡gina ${pagination.currentPage} de ${pagination.totalPages}`;
     }
 
     if (btnFirst) {
@@ -883,7 +883,7 @@ function updatePaginationUI(pagination) {
 function renderBatchesList(batches) {
     batchesListBody.innerHTML = '';
     if (batches.length === 0) {
-        batchesListBody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding: 2rem;">No hay lotes creados. Â¡Crea uno nuevo!</td></tr>';
+        batchesListBody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding: 2rem;">No hay lotes creados. Ã‚Â¡Crea uno nuevo!</td></tr>';
         return;
     }
 
@@ -907,7 +907,7 @@ function renderBatchesList(batches) {
             <td>${progress}</td>
             <td>
                 <button class="btn-glass" style="padding: 0.3rem 0.8rem; font-size: 0.8rem;" onclick="openBatchDetail(${b.id})">
-                    Ver Detalle ðŸ‘ï¸
+                    Ver Detalle Ã°Å¸â€˜ÂÃ¯Â¸Â
                 </button>
             </td>
         `;
@@ -920,7 +920,7 @@ function getStatusBadge(status) {
     if (status === 'SENT') return '<span class="badge" style="background: #10b981;">Enviando</span>';
     if (status === 'COMPLETED') return '<span class="badge" style="background: #059669; box-shadow: 0 0 10px #059669;">Enviado con Exito</span>';
     if (status === 'PROCESSING') return '<span class="badge" style="background: #8b5cf6;">Procesando</span>';
-    return '<span class="badge" style="background: #f59e0b; color: #000;">En PreparaciÃ³n</span>';
+    return '<span class="badge" style="background: #f59e0b; color: #000;">En PreparaciÃƒÂ³n</span>';
 }
 
 async function createBatch() {
@@ -930,7 +930,7 @@ async function createBatch() {
         description: document.getElementById('newBatchDesc').value,
     };
 
-    if (!data.batch_number || !data.detail) return alert("Completa NÃºmero y Detalle");
+    if (!data.batch_number || !data.detail) return alert("Completa NÃƒÂºmero y Detalle");
 
     try {
         btnSaveBatch.textContent = "Creando...";
@@ -945,7 +945,7 @@ async function createBatch() {
             throw new Error(responseData.error);
         }
 
-        // Ã‰xito
+        // Ãƒâ€°xito
         if (window.closeBatchModal) window.closeBatchModal();
         // Limpiar form
         document.getElementById('newBatchNumber').value = '';
@@ -956,7 +956,7 @@ async function createBatch() {
 
         // Wrap alert in setTimeout to ensure modal closes visually first 
         setTimeout(() => {
-            alert("Lote creado exitosamente âœ…");
+            alert("Lote creado exitosamente Ã¢Å“â€¦");
         }, 100);
 
     } catch (error) {
@@ -977,7 +977,7 @@ window.openBatchDetail = async function (id) {
 
     if (!batchListView || !batchDetailView) {
         console.error("Critical UI Error: Views not found", { batchListView, batchDetailView });
-        alert("Error interno: Vistas de interfaz no encontradas. Recarga la pÃ¡gina.");
+        alert("Error interno: Vistas de interfaz no encontradas. Recarga la pÃƒÂ¡gina.");
         return;
     }
 
@@ -1016,12 +1016,12 @@ window.openBatchDetail = async function (id) {
     if (document.getElementById('filterAmount')) document.getElementById('filterAmount').value = '';
     if (document.getElementById('filterStatus')) document.getElementById('filterStatus').value = '';
 
-    // ðŸ”§ RESET SIGNATURE STATES (Fix for second batch issue)
+    // Ã°Å¸â€Â§ RESET SIGNATURE STATES (Fix for second batch issue)
     // Reset execution button to initial state
     const btnExecute = document.getElementById('btnExecuteBatch');
     if (btnExecute) {
         btnExecute.disabled = false;
-        btnExecute.textContent = "2. Ejecutar Lote ðŸš€";
+        btnExecute.textContent = "2. Ejecutar Lote Ã°Å¸Å¡â‚¬";
         btnExecute.classList.remove('btn-success');
         btnExecute.classList.add('btn-primary');
     }
@@ -1030,7 +1030,7 @@ window.openBatchDetail = async function (id) {
     const btnSetup = document.getElementById('btnSetupRelayers');
     if (btnSetup) {
         btnSetup.disabled = false;
-        btnSetup.textContent = "1. Preparar Relayers ðŸ—ï¸";
+        btnSetup.textContent = "1. Preparar Relayers Ã°Å¸Ââ€”Ã¯Â¸Â";
         btnSetup.classList.remove('hidden');
     }
     // Hide payment trigger zone
@@ -1041,7 +1041,7 @@ window.openBatchDetail = async function (id) {
     if (typeof hideProgressGauge === 'function') hideProgressGauge();
 
     console.log(`[UI] UI state reset for a new batch completed.`);
-    console.log('[UI] ðŸ”„ Batch state reset - Ready for new batch signatures');
+    console.log('[UI] Ã°Å¸â€â€ž Batch state reset - Ready for new batch signatures');
 
     // SHOW DETAILS SECTIONS (Unhide)
     const txDetail = document.getElementById('txDetailSection');
@@ -1100,7 +1100,7 @@ window.currentServerTotal = 0; // Server-side pagination total
 
 function updateDetailView(batch) {
     detailBatchTitle.textContent = `${batch.batch_number} - ${batch.detail}`;
-    detailBatchDesc.textContent = batch.description || "Sin descripciÃ³n";
+    detailBatchDesc.textContent = batch.description || "Sin descripciÃƒÂ³n";
 
     // Stats logic
     if (batchStatsContainer) {
@@ -1126,7 +1126,7 @@ function updateDetailView(batch) {
         detailUploadContainer.classList.remove('hidden');
         uploadStatus.textContent = '';
         btnUploadBatch.disabled = false;
-        btnUploadBatch.textContent = "Subir y Calcular ðŸ“¤";
+        btnUploadBatch.textContent = "Subir y Calcular Ã°Å¸â€œÂ¤";
         if (merkleContainer) merkleContainer.classList.add('hidden');
     } else {
         detailUploadContainer.classList.add('hidden');
@@ -1163,7 +1163,7 @@ function updateDetailView(batch) {
             if (verifyLabel) {
                 // Use total_transactions from batch object
                 const count = Math.min(100, batch.total_transactions || 0);
-                verifyLabel.textContent = `ðŸ”¬ VerificaciÃ³n On-Chain (Muestreo ${count} ${count === 1 ? 'tx' : 'txs'})`;
+                verifyLabel.textContent = `Ã°Å¸â€Â¬ VerificaciÃƒÂ³n On-Chain (Muestreo ${count} ${count === 1 ? 'tx' : 'txs'})`;
             }
 
             // CRITICAL Fix for Merkle Logic
@@ -1204,7 +1204,7 @@ function updateDetailView(batch) {
                     // Reset UI state to "Loading/Checking"
                     if (relayerMsg) {
                         relayerMsg.classList.remove('hidden');
-                        relayerMsg.innerHTML = `<span style="color:#fbbf24;">â³ Verificando Relayers...</span>`;
+                        relayerMsg.innerHTML = `<span style="color:#fbbf24;">Ã¢ÂÂ³ Verificando Relayers...</span>`;
                     }
                     if (relayerSetupZone) relayerSetupZone.classList.remove('hidden');
 
@@ -1433,8 +1433,8 @@ function renderBatchTransactions() {
                     <a href="${scanUrl}" target="_blank" class="hash-link" title="Ver en PolygonScan">
                         ${shortWallet}
                     </a>
-                    <button class="btn-icon" onclick="copyToClipboard('${tx.wallet_address_to}')" title="Copiar DirecciÃ³n">
-                        ðŸ“‹
+                    <button class="btn-icon" onclick="copyToClipboard('${tx.wallet_address_to}')" title="Copiar DirecciÃƒÂ³n">
+                        Ã°Å¸â€œâ€¹
                     </button>
                 </td>
                 <td style="color: #4ade80; font-weight: bold;">$${usdcDisplay}</td>
@@ -1490,11 +1490,11 @@ function renderPaginationControls(totalItems) {
     div.style.gap = '1rem';
     div.style.marginTop = '1rem';
     div.innerHTML = `
-        <button class="btn-glass" onclick="changePage('first')" ${currentTxPage === 1 ? 'disabled' : ''}>â®ï¸</button>
-        <button class="btn-glass" onclick="changePage(-1)" ${currentTxPage === 1 ? 'disabled' : ''}>â¬…ï¸ Ant.</button>
-        <span style="align-self: center;">PÃ¡gina ${currentTxPage} de ${totalPages}</span>
-        <button class="btn-glass" onclick="changePage(1)" ${currentTxPage === totalPages ? 'disabled' : ''}>Sig. âž¡ï¸</button>
-        <button class="btn-glass" onclick="changePage('last')" ${currentTxPage === totalPages ? 'disabled' : ''}>â­ï¸</button>
+        <button class="btn-glass" onclick="changePage('first')" ${currentTxPage === 1 ? 'disabled' : ''}>Ã¢ÂÂ®Ã¯Â¸Â</button>
+        <button class="btn-glass" onclick="changePage(-1)" ${currentTxPage === 1 ? 'disabled' : ''}>Ã¢Â¬â€¦Ã¯Â¸Â Ant.</button>
+        <span style="align-self: center;">PÃƒÂ¡gina ${currentTxPage} de ${totalPages}</span>
+        <button class="btn-glass" onclick="changePage(1)" ${currentTxPage === totalPages ? 'disabled' : ''}>Sig. Ã¢Å¾Â¡Ã¯Â¸Â</button>
+        <button class="btn-glass" onclick="changePage('last')" ${currentTxPage === totalPages ? 'disabled' : ''}>Ã¢ÂÂ­Ã¯Â¸Â</button>
     `;
 
     // Robust Append: Try known container, else fallback to table parent
@@ -1549,7 +1549,7 @@ window.changePage = function (direction) {
 
 // --- UPLOAD HANDLER ---
 async function uploadBatchFile() {
-    console.log("ðŸ“¤ uploadBatchFile called");
+    console.log("Ã°Å¸â€œÂ¤ uploadBatchFile called");
     const fileInput = document.getElementById('batchFile');
     const status = document.getElementById('uploadStatus');
     const btnUploadBatch = document.getElementById('btnUploadBatch');
@@ -1580,7 +1580,7 @@ async function uploadBatchFile() {
             // Convert usdc to readable string if needed, assuming it's BigInt-like string
             const usdcFloat = parseFloat(usdc.toString()) / 1000000;
 
-            status.textContent = `âœ… Ã‰xito! ${count} transacciones cargadas. Monto Total: $${usdcFloat.toFixed(6)}`;
+            status.textContent = `Ã¢Å“â€¦ Ãƒâ€°xito! ${count} transacciones cargadas. Monto Total: $${usdcFloat.toFixed(6)}`;
             status.style.color = "#4ade80";
         }
 
@@ -1599,14 +1599,14 @@ async function uploadBatchFile() {
     } catch (e) {
         console.error(e);
         if (status) {
-            status.textContent = "âŒ Error: " + e.message;
+            status.textContent = "Ã¢ÂÅ’ Error: " + e.message;
             status.style.color = "#ef4444";
         }
         alert("Error subiendo archivo: " + e.message);
     } finally {
         if (btnUploadBatch) {
             btnUploadBatch.disabled = false;
-            btnUploadBatch.textContent = "Subir y Calcular ðŸ“¤";
+            btnUploadBatch.textContent = "Subir y Calcular Ã°Å¸â€œÂ¤";
         }
         // Clear input
         if (fileInput) fileInput.value = '';
@@ -1618,7 +1618,7 @@ async function generateMerkleTree() {
 
     // Check if wallet is connected
     if (!userAddress || !signer) {
-        alert("âš ï¸ Debes conectar tu Wallet Funder primero.");
+        alert("Ã¢Å¡Â Ã¯Â¸Â Debes conectar tu Wallet Funder primero.");
         await connectWallet();
         if (!userAddress) return;
     }
@@ -1627,13 +1627,13 @@ async function generateMerkleTree() {
     const funder = (userAddress || localStorage.getItem('user_address'))?.toLowerCase();
 
     if (!funder || !ethers.isAddress(funder)) {
-        return alert("Error: No se detectÃ³ una direcciÃ³n de Funder vÃ¡lida. Por favor, reconÃ©ctate.");
+        return alert("Error: No se detectÃƒÂ³ una direcciÃƒÂ³n de Funder vÃƒÂ¡lida. Por favor, reconÃƒÂ©ctate.");
     }
 
     try {
         btnGenerateMerkle.disabled = true;
         btnGenerateMerkle.textContent = "Generando...";
-        merkleStatus.textContent = "Calculando Ã¡rbol criptogrÃ¡fico...";
+        merkleStatus.textContent = "Calculando ÃƒÂ¡rbol criptogrÃƒÂ¡fico...";
 
         const res = await authenticatedFetch(`/api/batches/${currentBatchId}/register-merkle`, {
             method: 'POST',
@@ -1658,7 +1658,7 @@ async function generateMerkleTree() {
             if (btnSetup) {
                 btnSetup.classList.remove('hidden');
                 btnSetup.disabled = false;
-                btnSetup.textContent = "1. Preparar Relayers ðŸ—ï¸";
+                btnSetup.textContent = "1. Preparar Relayers Ã°Å¸Ââ€”Ã¯Â¸Â";
             }
             if (paymentTriggerZone) paymentTriggerZone.classList.add('hidden');
 
@@ -1675,7 +1675,7 @@ async function generateMerkleTree() {
                 fetchUSDCBalance(funder).then(bal => { balanceEl.textContent = bal; });
             }
 
-            merkleStatus.textContent = "âœ… Ãrbol Generado y Guardado.";
+            merkleStatus.textContent = "Ã¢Å“â€¦ ÃƒÂrbol Generado y Guardado.";
         } else {
             throw new Error(data.error || "Error desconocido");
         }
@@ -1683,10 +1683,10 @@ async function generateMerkleTree() {
     } catch (error) {
         console.error(error);
         alert("Error: " + error.message);
-        merkleStatus.textContent = "âŒ FallÃ³ la generaciÃ³n.";
+        merkleStatus.textContent = "Ã¢ÂÅ’ FallÃƒÂ³ la generaciÃƒÂ³n.";
     } finally {
         btnGenerateMerkle.disabled = false;
-        btnGenerateMerkle.textContent = "Generar Merkle Tree âš™ï¸";
+        btnGenerateMerkle.textContent = "Generar Merkle Tree Ã¢Å¡â„¢Ã¯Â¸Â";
     }
 }
 
@@ -1700,7 +1700,7 @@ async function runMerkleTest() {
     const merkleRoot = rootEl ? rootEl.textContent.trim() : null;
 
     if (!merkleRoot || !merkleRoot.startsWith("0x")) {
-        alert("âš ï¸ Genera el Merkle Tree primero");
+        alert("Ã¢Å¡Â Ã¯Â¸Â Genera el Merkle Tree primero");
         return;
     }
 
@@ -1715,7 +1715,7 @@ async function runMerkleTest() {
     if (!testTransactions || testTransactions.length === 0) {
         // Fetch a small random sample from server
         try {
-            if (status) status.textContent = "â³ Obteniendo muestra del servidor...";
+            if (status) status.textContent = "Ã¢ÂÂ³ Obteniendo muestra del servidor...";
             const res = await authenticatedFetch(`/api/batches/${currentBatchId}/transactions?page=1&limit=100`);
             const data = await res.json();
             if (data.transactions && data.transactions.length > 0) {
@@ -1724,7 +1724,7 @@ async function runMerkleTest() {
                 throw new Error("No se encontraron transacciones en el servidor.");
             }
         } catch (e) {
-            alert("âš ï¸ Error preparando test: " + e.message);
+            alert("Ã¢Å¡Â Ã¯Â¸Â Error preparando test: " + e.message);
             return;
         }
     }
@@ -1738,7 +1738,7 @@ async function runMerkleTest() {
     const selectedTxs = shuffled.slice(0, sampleSize);
 
     if (verifyLabel) {
-        verifyLabel.textContent = `ðŸ”¬ VerificaciÃ³n On-Chain (Muestreo ${sampleSize} ${sampleSize === 1 ? 'tx' : 'txs'})`;
+        verifyLabel.textContent = `Ã°Å¸â€Â¬ VerificaciÃƒÂ³n On-Chain (Muestreo ${sampleSize} ${sampleSize === 1 ? 'tx' : 'txs'})`;
     }
     const funderText = document.getElementById('merkleResultFunder').textContent.trim();
 
@@ -1752,13 +1752,13 @@ async function runMerkleTest() {
     // Normalize for consistency
     if (funder) funder = funder.toLowerCase();
     if (!ethers.isAddress(funder)) {
-        alert("âŒ No se encontrÃ³ address de Funder vÃ¡lida.");
+        alert("Ã¢ÂÅ’ No se encontrÃƒÂ³ address de Funder vÃƒÂ¡lida.");
         return;
     }
 
     if (btn) btn.disabled = true;
     if (status) {
-        status.textContent = `â³ Inicializando test: ${sampleSize} transacciones (${MAX_CONCURRENT} hilos)...`;
+        status.textContent = `Ã¢ÂÂ³ Inicializando test: ${sampleSize} transacciones (${MAX_CONCURRENT} hilos)...`;
         status.style.color = "#fbbf24";
     }
 
@@ -1851,7 +1851,7 @@ async function runMerkleTest() {
 
                     console.log(`[Verify] Result for Tx ${tx.id}: ${isValid}`);
 
-                    if (!isValid) throw new Error("âŒ Invalid On-Chain Result");
+                    if (!isValid) throw new Error("Ã¢ÂÅ’ Invalid On-Chain Result");
 
                     // Success! Break loop
                     return;
@@ -1872,7 +1872,7 @@ async function runMerkleTest() {
             }
             // Finally block handled outside the loop effectively by incrementing counts
             completed++;
-            if (status) status.textContent = `â³ Progreso: ${completed}/${sampleSize} verificados (Fallos: ${failed})`;
+            if (status) status.textContent = `Ã¢ÂÂ³ Progreso: ${completed}/${sampleSize} verificados (Fallos: ${failed})`;
         };
 
         // Execution Queue (Worker Pool Pattern)
@@ -1900,12 +1900,12 @@ async function runMerkleTest() {
         // Final Report
         if (failed === 0) {
             if (status) {
-                status.textContent = `âœ… Test Exitoso: ${sampleSize}/${sampleSize} transacciones verificadas en Blockchain.`;
+                status.textContent = `Ã¢Å“â€¦ Test Exitoso: ${sampleSize}/${sampleSize} transacciones verificadas en Blockchain.`;
                 status.style.color = "#4ade80";
             }
         } else {
             if (status) {
-                status.textContent = `âŒ Test Fallido: ${failed} errores encontrados. Revisa la consola y tu configuraciÃ³n.`;
+                status.textContent = `Ã¢ÂÅ’ Test Fallido: ${failed} errores encontrados. Revisa la consola y tu configuraciÃƒÂ³n.`;
                 status.style.color = "#ef4444";
             }
         }
@@ -1913,7 +1913,7 @@ async function runMerkleTest() {
     } catch (globalErr) {
         console.error(globalErr);
         if (status) {
-            status.textContent = "âŒ Error CrÃ­tico: " + globalErr.message;
+            status.textContent = "Ã¢ÂÅ’ Error CrÃƒÂ­tico: " + globalErr.message;
             status.style.color = "#ef4444";
         }
     } finally {
@@ -1997,7 +1997,7 @@ function updateRelayerCountOptions(count) {
     if (effectiveMax > 1 && !presets.includes(effectiveMax)) {
         const opt = document.createElement('option');
         opt.value = effectiveMax;
-        opt.textContent = `${effectiveMax} (MÃ¡ximo Absoluto)`;
+        opt.textContent = `${effectiveMax} (MÃƒÂ¡ximo Absoluto)`;
         select.appendChild(opt);
     }
 }
@@ -2013,10 +2013,10 @@ if (btnProcessBatch) {
         // Ensure polling is active
         startTxPolling(currentBatchId);
         const count = parseInt(relayerCountSelect.value) || 5;
-        if (!confirm(`Â¿EstÃ¡s seguro de iniciar la distribuciÃ³n con ${count} Relayer(s)?`)) return;
+        if (!confirm(`Ã‚Â¿EstÃƒÂ¡s seguro de iniciar la distribuciÃƒÂ³n con ${count} Relayer(s)?`)) return;
 
         if (!signer || !userAddress) {
-            alert("âš ï¸ Debes conectar tu Wallet primero para poder firmar las autorizaciones (Permit y Root).");
+            alert("Ã¢Å¡Â Ã¯Â¸Â Debes conectar tu Wallet primero para poder firmar las autorizaciones (Permit y Root).");
             return;
         }
 
@@ -2030,12 +2030,12 @@ if (btnProcessBatch) {
             if (BigInt(userBal) < currentBatchTotalUSDC) {
                 const requiredFmt = ethers.formatUnits(currentBatchTotalUSDC, 6);
                 const foundFmt = ethers.formatUnits(userBal, 6);
-                alert(`âŒ FONDOS INSUFICIENTES en la Wallet Funder.\n\nRequerido: ${requiredFmt} USDC\nDisponible: ${foundFmt} USDC\n\nPor favor recarga tu wallet antes de continuar.`);
+                alert(`Ã¢ÂÅ’ FONDOS INSUFICIENTES en la Wallet Funder.\n\nRequerido: ${requiredFmt} USDC\nDisponible: ${foundFmt} USDC\n\nPor favor recarga tu wallet antes de continuar.`);
                 return; // ABORT START
             }
         } catch (balErr) {
             console.error("Balance Check Error:", balErr);
-            if (!confirm("âš ï¸ No se pudo verificar tu saldo de USDC. Â¿Deseas continuar bajo tu propio riesgo?")) {
+            if (!confirm("Ã¢Å¡Â Ã¯Â¸Â No se pudo verificar tu saldo de USDC. Ã‚Â¿Deseas continuar bajo tu propio riesgo?")) {
                 return;
             }
         }
@@ -2049,17 +2049,17 @@ if (btnProcessBatch) {
                 // 1. Check if Root needs signing (Gasless)
                 // Always ask for now, or check contract state if possible. 
                 // We ask user because we assume if they are using Permit, they want gasless root set too.
-                if (confirm("Â¿Deseas firmar la RAÃZ DEL MERKLE (Gasless) para autorizar este lote?")) {
+                if (confirm("Ã‚Â¿Deseas firmar la RAÃƒÂZ DEL MERKLE (Gasless) para autorizar este lote?")) {
                     rootSignatureData = await signBatchRoot(currentBatchId);
                 }
 
                 // 2. Check Permit
-                if (confirm("Â¿Deseas firmar un PERMIT automÃ¡tico para evitar 'Approve' manual?")) {
+                if (confirm("Ã‚Â¿Deseas firmar un PERMIT automÃƒÂ¡tico para evitar 'Approve' manual?")) {
                     permitData = await signBatchPermit(currentBatchId);
                 }
             } catch (e) {
                 console.warn("Signing process interrupted:", e);
-                alert("âš ï¸ Proceso de firma interrumpido: " + e.message);
+                alert("Ã¢Å¡Â Ã¯Â¸Â Proceso de firma interrumpido: " + e.message);
                 // We allow continuing without signatures (maybe they did manual tx)
             }
         }
@@ -2082,8 +2082,8 @@ async function setupRelayerBatch() {
 
     try {
         btnSetup.disabled = true;
-        btnSetup.textContent = "Preparando... â³";
-        processStatus.textContent = "ðŸ—ï¸ Creando y fondeando relayers (TransacciÃ³n AtÃ³mica)...";
+        btnSetup.textContent = "Preparando... Ã¢ÂÂ³";
+        processStatus.textContent = "Ã°Å¸Ââ€”Ã¯Â¸Â Creando y fondeando relayers (TransacciÃƒÂ³n AtÃƒÂ³mica)...";
         processStatus.style.color = "#fbbf24";
 
         const response = await authenticatedFetch(`/api/batches/${currentBatchId}/setup`, {
@@ -2094,7 +2094,7 @@ async function setupRelayerBatch() {
         const res = await response.json();
 
         if (response.ok) {
-            processStatus.textContent = `âœ… ${res.count} Relayers listos y fondeados. Ahora puedes disparar.`;
+            processStatus.textContent = `Ã¢Å“â€¦ ${res.count} Relayers listos y fondeados. Ahora puedes disparar.`;
             processStatus.style.color = "#4ade80";
 
             btnSetup.classList.add('hidden');
@@ -2108,10 +2108,10 @@ async function setupRelayerBatch() {
         }
     } catch (err) {
         console.error(err);
-        processStatus.textContent = "âŒ Error: " + err.message;
+        processStatus.textContent = "Ã¢ÂÅ’ Error: " + err.message;
         processStatus.style.color = "#ef4444";
         btnSetup.disabled = false;
-        btnSetup.textContent = "1. Preparar Relayers ðŸ—ï¸";
+        btnSetup.textContent = "1. Preparar Relayers Ã°Å¸Ââ€”Ã¯Â¸Â";
     }
 }
 
@@ -2125,7 +2125,7 @@ async function executeDistribution() {
 
     try {
         btnExecute.disabled = true;
-        btnExecute.textContent = "Firmando... âœï¸";
+        btnExecute.textContent = "Firmando... Ã¢Å“ÂÃ¯Â¸Â";
         if (signHint) signHint.textContent = "Por favor, firma en tu wallet...";
 
         // 1. Sign Permit (Funder -> Contract)
@@ -2133,7 +2133,7 @@ async function executeDistribution() {
         // 2. Sign Root (Funder -> Merkle Proofs)
         const rootSignatureData = await signBatchRoot(currentBatchId);
 
-        processStatus.textContent = "ðŸš€ Enviando firmas y arrancando distribuciÃ³n...";
+        processStatus.textContent = "Ã°Å¸Å¡â‚¬ Enviando firmas y arrancando distribuciÃƒÂ³n...";
         processStatus.style.color = "#4ade80";
         if (signHint) signHint.textContent = "Firmas verificadas. Arrancando...";
 
@@ -2148,8 +2148,8 @@ async function executeDistribution() {
         const res = await response.json();
 
         if (response.ok) {
-            processStatus.textContent = "âœ… DistribuciÃ³n iniciada con Ã©xito.";
-            btnExecute.textContent = "âœ… En curso";
+            processStatus.textContent = "Ã¢Å“â€¦ DistribuciÃƒÂ³n iniciada con ÃƒÂ©xito.";
+            btnExecute.textContent = "Ã¢Å“â€¦ En curso";
             if (signHint) signHint.classList.add('hidden');
 
             // Start Timer
@@ -2161,15 +2161,15 @@ async function executeDistribution() {
                 pollBatchProgress(currentBatchId);
             }, 3000);
         } else {
-            throw new Error(res.error || "Error en ejecuciÃ³n");
+            throw new Error(res.error || "Error en ejecuciÃƒÂ³n");
         }
     } catch (err) {
         console.error(err);
-        processStatus.textContent = "âŒ Error: " + err.message;
+        processStatus.textContent = "Ã¢ÂÅ’ Error: " + err.message;
         processStatus.style.color = "#ef4444";
         btnExecute.disabled = false;
-        btnExecute.textContent = "Disparar Pagos ðŸš€";
-        if (signHint) signHint.textContent = "Error al firmar. IntÃ©ntalo de nuevo.";
+        btnExecute.textContent = "Disparar Pagos Ã°Å¸Å¡â‚¬";
+        if (signHint) signHint.textContent = "Error al firmar. IntÃƒÂ©ntalo de nuevo.";
     }
 }
 
@@ -2290,7 +2290,7 @@ async function signBatchRoot(batchId) {
 
     const rootEl = document.getElementById('displayMerkleRoot');
     const merkleRoot = rootEl ? rootEl.textContent.trim() : null;
-    if (!merkleRoot || !merkleRoot.startsWith("0x")) throw new Error("Merkle Root invÃ¡lido");
+    if (!merkleRoot || !merkleRoot.startsWith("0x")) throw new Error("Merkle Root invÃƒÂ¡lido");
 
     const totalTransactions = data.batch.total_transactions || 0;
     const totalAmountBase = data.batch.total_usdc || "0";
@@ -2359,7 +2359,7 @@ function stopTimer() {
     const timerEl = document.getElementById('processTimer');
     if (timerEl && !timerEl.textContent.includes("Finalizado en")) {
         timerEl.style.color = '#10b981'; // Green
-        timerEl.textContent = `â±ï¸ Finalizado en: ${timerEl.textContent}`;
+        timerEl.textContent = `Ã¢ÂÂ±Ã¯Â¸Â Finalizado en: ${timerEl.textContent}`;
     }
 }
 
@@ -2377,14 +2377,14 @@ window.closeFaucetModal = () => {
 
 
 async function pollBatchProgress(batchId) {
-    // ðŸ›¡ï¸ Safety: Stop if we are viewing a different batch
+    // Ã°Å¸â€ºÂ¡Ã¯Â¸Â Safety: Stop if we are viewing a different batch
     if (currentBatchId && parseInt(batchId) !== parseInt(currentBatchId)) {
         console.warn(`[Poll] Ignoring poll for Batch ${batchId} (Current: ${currentBatchId})`);
         return;
     }
 
     try {
-        // Parallel Fetch for Speed âš¡
+        // Parallel Fetch for Speed Ã¢Å¡Â¡
         const [relayerRes, batchRes] = await Promise.all([
             fetchRelayerBalances(batchId), // Now returns promise but doesn't return data directly to variable (it renders internally)
             fetch(`/api/batches/${batchId}`)
@@ -2442,16 +2442,16 @@ async function pollBatchProgress(batchId) {
                 const processStatus = document.getElementById('merkleTestStatus');
                 if (processStatus) {
                     if (status === 'FAILED' || failed > 0) {
-                        processStatus.textContent = "âš ï¸ DistribuciÃ³n Finalizada con Errores";
+                        processStatus.textContent = "Ã¢Å¡Â Ã¯Â¸Â DistribuciÃƒÂ³n Finalizada con Errores";
                         processStatus.style.color = "#fbbf24"; // Warning Yellow
                     } else {
-                        processStatus.textContent = "âœ… Â¡DistribuciÃ³n Finalizada!";
+                        processStatus.textContent = "Ã¢Å“â€¦ Ã‚Â¡DistribuciÃƒÂ³n Finalizada!";
                         processStatus.style.color = "#4ade80"; // Success Green
                     }
                 }
                 const btnExecute = document.getElementById('btnExecuteBatch');
                 if (btnExecute) {
-                    btnExecute.textContent = "âœ… Completado";
+                    btnExecute.textContent = "Ã¢Å“â€¦ Completado";
                     btnExecute.disabled = true;
                 }
 
@@ -2486,7 +2486,7 @@ async function fetchRelayerBalances(batchId) {
     } catch (err) {
         console.error('Error fetching relayer balances:', err);
         if (tbody) {
-            tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:1rem; color:#ef4444;">âš ï¸ Error: ${err.message}</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:1rem; color:#ef4444;">Ã¢Å¡Â Ã¯Â¸Â Error: ${err.message}</td></tr>`;
         }
     }
 }
@@ -2516,13 +2516,13 @@ function renderRelayerBalances(explicitData) {
     // --- Header Info: Funding Tx (Shared) ---
     // Assuming all relayers share the same funding tx, we take the first one.
     const fundingTx = data[0]?.transactionhash_deposit;
-    const fundingTxLink = fundingTx ? `<a href="https://polygonscan.com/tx/${fundingTx}" target="_blank" class="hash-link" style="color: #60a5fa; font-family: monospace;">${fundingTx} â†—ï¸</a>` : '<span style="color:#94a3b8">Pendiente...</span>';
+    const fundingTxLink = fundingTx ? `<a href="https://polygonscan.com/tx/${fundingTx}" target="_blank" class="hash-link" style="color: #60a5fa; font-family: monospace;">${fundingTx} Ã¢â€ â€”Ã¯Â¸Â</a>` : '<span style="color:#94a3b8">Pendiente...</span>';
 
     const infoDiv = document.getElementById('relayerGridInfo');
     if (infoDiv) {
         infoDiv.innerHTML = `
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 0.5rem; background: rgba(255,255,255,0.03); padding: 0.5rem 1rem; border-radius: 6px;">
-                <span style="font-size: 0.85rem; color: #cbd5e1;">âš¡ TX Carga Relayers:</span>
+                <span style="font-size: 0.85rem; color: #cbd5e1;">Ã¢Å¡Â¡ TX Carga Relayers:</span>
                 ${fundingTxLink}
             </div>
         `;
@@ -2542,7 +2542,7 @@ function renderRelayerBalances(explicitData) {
             balanceDisplayStr = `0.000000 MATIC`; // Force zero display
             balanceColor = '#94a3b8'; // Greyout
         } else if (isStale) {
-            balanceDisplayStr = `${balanceVal.toFixed(6)} MATIC <span style="font-size: 0.7rem; color: #fbbf24;">(Persistente ðŸ’¾)</span>`;
+            balanceDisplayStr = `${balanceVal.toFixed(6)} MATIC <span style="font-size: 0.7rem; color: #fbbf24;">(Persistente Ã°Å¸â€™Â¾)</span>`;
             balanceColor = '#fbbf24';
         }
 
@@ -2553,7 +2553,7 @@ function renderRelayerBalances(explicitData) {
             <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
                 <td style="padding:0.75rem; color:#94a3b8; font-size:0.8rem; font-weight:bold;">#${r.id}</td>
                 <td style="padding:0.75rem; font-family:monospace; font-size:0.85rem;">
-                    <a href="${getExplorerUrl(r.address)}" target="_blank" class="hash-link">${shortAddr} â†—ï¸</a>
+                    <a href="${getExplorerUrl(r.address)}" target="_blank" class="hash-link">${shortAddr} Ã¢â€ â€”Ã¯Â¸Â</a>
                 </td>
                 <td style="padding:0.75rem; color:${balanceColor}; font-weight:bold;">${balanceDisplay}</td>
                 <td style="padding:0.75rem; color:#94a3b8; font-size:0.8rem;">
@@ -2575,7 +2575,7 @@ function renderRelayerBalances(explicitData) {
         tbody.innerHTML += `
             <tr>
                 <td colspan="5" style="text-align: center; padding: 1rem; color: #4ade80; background: rgba(16, 185, 129, 0.1); border-radius: 8px; margin-top: 5px;">
-                    âœ… <b>Recovered remaining relayer funds to the Faucet wallet.</b>
+                    Ã¢Å“â€¦ <b>Recovered remaining relayer funds to the Faucet wallet.</b>
                 </td>
             </tr>
         `;
@@ -2615,9 +2615,9 @@ function renderRelayerPaginationControls(totalItems) {
     div.style.paddingPadding = '1rem';
 
     div.innerHTML = `
-        <button class="btn-glass" onclick="changeRelayerPage(-1)" ${currentRelayerPage === 1 ? 'disabled' : ''}>â¬…ï¸ Anterior</button>
-        <span style="align-self: center; font-size: 0.9rem;">PÃ¡gina ${currentRelayerPage} de ${totalPages}</span>
-        <button class="btn-glass" onclick="changeRelayerPage(1)" ${currentRelayerPage === totalPages ? 'disabled' : ''}>Siguiente âž¡ï¸</button>
+        <button class="btn-glass" onclick="changeRelayerPage(-1)" ${currentRelayerPage === 1 ? 'disabled' : ''}>Ã¢Â¬â€¦Ã¯Â¸Â Anterior</button>
+        <span style="align-self: center; font-size: 0.9rem;">PÃƒÂ¡gina ${currentRelayerPage} de ${totalPages}</span>
+        <button class="btn-glass" onclick="changeRelayerPage(1)" ${currentRelayerPage === totalPages ? 'disabled' : ''}>Siguiente Ã¢Å¾Â¡Ã¯Â¸Â</button>
     `;
 
     // Append to Relayer Table Container
@@ -2642,7 +2642,7 @@ window.triggerGasDistribution = async () => {
 
     const modalStatus = document.getElementById('modalFaucetStatus');
     if (modalStatus) {
-        modalStatus.textContent = "âŒ› Iniciando distribuciÃ³n...";
+        modalStatus.textContent = "Ã¢Å’â€º Iniciando distribuciÃƒÂ³n...";
         modalStatus.style.color = "#fbbf24";
     }
 
@@ -2702,6 +2702,33 @@ function initECharts() {
 
 function updateProgressGauge(completed, pending, failed, total) {
     const zone = document.getElementById('tradingTerminalZone');
+
+
+// --- ECharts Trading Terminal Logic ---
+let gaugeChart = null;
+let activityChart = null;
+let distChart = null;
+let activityData = [];
+
+function initECharts() {
+    const gContainer = document.getElementById('echartsGauge');
+    const aContainer = document.getElementById('echartsActivity');
+    const dContainer = document.getElementById('echartsStatusDist');
+    if (!gContainer || !aContainer || !dContainer) return;
+
+    gaugeChart = echarts.init(gContainer, 'dark', { renderer: 'svg' });
+    activityChart = echarts.init(aContainer, 'dark', { renderer: 'svg' });
+    distChart = echarts.init(dContainer, 'dark', { renderer: 'svg' });
+
+    window.addEventListener('resize', () => {
+        gaugeChart.resize();
+        activityChart.resize();
+        distChart.resize();
+    });
+}
+
+function updateProgressGauge(completed, pending, failed, total) {
+    const zone = document.getElementById('tradingTerminalZone');
     if (zone) zone.classList.remove('hidden');
 
     if (!gaugeChart) initECharts();
@@ -2716,15 +2743,9 @@ function updateProgressGauge(completed, pending, failed, total) {
         series: [{
             type: 'gauge',
             startAngle: 90,
-            endAngle: -270,
+ endAngle: -270,
             pointer: { show: false },
-            progress: {
-                show: true,
-                overlap: false,
-                roundCap: true,
-                clip: false,
-                itemStyle: { borderWidth: 1, borderColor: '#464646' }
-            },
+            progress: { show: true, overlap: false, roundCap: true, clip: false, itemStyle: { borderWidth: 1, borderColor: '#464646' } },
             axisLine: { lineStyle: { width: 40 } },
             splitLine: { show: false },
             axisTick: { show: false },
@@ -2734,39 +2755,53 @@ function updateProgressGauge(completed, pending, failed, total) {
                 { value: (successPct + pendingPct).toFixed(2), name: 'Pending', itemStyle: { color: '#f0b90b' }, z: 1 },
                 { value: (successPct + pendingPct + failedPct).toFixed(2), name: 'Failed', itemStyle: { color: '#ff3366' }, z: 0 }
             ],
-            title: { fontSize: 14 },
-            detail: {
-                width: 50, height: 14, fontSize: 30, color: '#fff', backgroundColor: 'transparent',
-                borderRadius: 3, formatter: '{value}%', fontWeight: 'bold', offsetCenter: [0, '0%']
-            }
+            detail: { fontSize: 30, color: '#fff', formatter: '{value}%', fontWeight: 'bold', offsetCenter: [0, '0%'] }
         }]
     };
     gaugeChart.setOption(gaugeOption);
 
-    // 2. Update Activity Sparkline
+    // 2. Update Status Distribution (Doughnut with Rounded Corners)
+    const distOption = {
+        backgroundColor: 'transparent',
+        tooltip: { trigger: 'item' },
+        legend: { bottom: '0%', left: 'center', textStyle: { color: '#64748b', fontSize: 10 } },
+        series: [{
+            name: 'Status Distribution',
+            type: 'pie',
+            radius: ['40%', '70%'],
+            avoidLabelOverlap: false,
+            itemStyle: { borderRadius: 10, borderColor: '#080c18', borderWidth: 2 },
+            label: { show: false, position: 'center' },
+            emphasis: { label: { show: true, fontSize: 20, fontWeight: 'bold', color: '#fff' } },
+            data: [
+                { value: completed, name: 'Completed', itemStyle: { color: '#00ff88' } },
+                { value: pending, name: 'Pending', itemStyle: { color: '#f0b90b' } },
+                { value: failed, name: 'Failed', itemStyle: { color: '#ff3366' } }
+            ]
+        }]
+    };
+    distChart.setOption(distOption);
+
+    // 3. Update Activity Sparkline
     activityData.push(completed);
     if (activityData.length > 50) activityData.shift();
 
-    const activityOption = {
+    activityChart.setOption({
         backgroundColor: 'transparent',
-        grid: { top: 20, bottom: 20, left: 30, right: 10 },
+        grid: { top: 10, bottom: 5, left: 0, right: 0 },
         xAxis: { type: 'category', boundaryGap: false, show: false },
-        yAxis: { type: 'value', show: true, splitLine: { lineStyle: { color: 'rgba(255,255,255,0.05)' } } },
+        yAxis: { type: 'value', show: false },
         series: [{
             data: activityData,
             type: 'line',
             smooth: true,
             symbol: 'none',
             lineStyle: { color: '#00ff88', width: 2 },
-            areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                { offset: 0, color: 'rgba(0, 255, 136, 0.2)' },
-                { offset: 1, color: 'rgba(0, 255, 136, 0)' }
-            ]) }
+            areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: 'rgba(0, 255, 136, 0.2)' }, { offset: 1, color: 'rgba(0, 255, 136, 0)' }]) }
         }]
-    };
-    activityChart.setOption(activityOption);
+    });
 
-    // 3. Update Text Counters
+    // 4. Update Text Counters
     document.getElementById('terminalStatus').textContent = pending > 0 ? 'PROCESSING' : (completed === total ? 'COMPLETED' : 'WAITING');
     document.getElementById('terminalSuccessRate').textContent = successPct.toFixed(2) + '%';
     document.getElementById('terminalProcessed').textContent = completed + ' / ' + total;
