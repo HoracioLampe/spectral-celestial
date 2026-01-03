@@ -2600,7 +2600,7 @@ async function pollBatchProgress(batchId) {
                 const processStatus = document.getElementById('merkleTestStatus');
                 if (processStatus) {
                     if (status === 'FAILED' || failed > 0) {
-                        processStatus.textContent = "⚠️ Distribución Finalizada con Errores";
+                        processStatus.textContent = batch.detail || "⚠️ Distribución Finalizada con Errores";
                         processStatus.style.color = "#fbbf24"; // Warning Yellow
                     } else {
                         processStatus.textContent = "✅ ¡Distribución Finalizada!";

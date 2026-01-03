@@ -159,221 +159,229 @@ class RelayerEngine {
     }
 
     async backgroundProcess(batchId, relayers, isResumption = false, externalPermit = null, rootSignatureData = null) {
-        // Track Start Time
-        const startTime = Date.now();
+        try {
+            // Track Start Time
+            const startTime = Date.now();
 
-        console.log('\n========================================');
-        console.log('⚙️  BACKGROUND PROCESS STARTED');
-        console.log('========================================');
-        console.log(`📦 Batch ID:          ${batchId}`);
-        console.log(`⚡ Relayers:          ${relayers.length}`);
-        console.log(`🔄 Is Resumption:     ${isResumption}`);
-        console.log(`📝 Has Permit:        ${!!externalPermit}`);
-        console.log(`✍️  Has Root Sig:      ${!!rootSignatureData}`);
-        console.log(`⏰ Start Time:        ${new Date(startTime).toISOString()}`);
-        console.log('========================================\n');
+            console.log('\n========================================');
+            console.log('⚙️  BACKGROUND PROCESS STARTED');
+            console.log('========================================');
+            console.log(`📦 Batch ID:          ${batchId}`);
+            console.log(`⚡ Relayers:          ${relayers.length}`);
+            console.log(`🔄 Is Resumption:     ${isResumption}`);
+            console.log(`📝 Has Permit:        ${!!externalPermit}`);
+            console.log(`✍️  Has Root Sig:      ${!!rootSignatureData}`);
+            console.log(`⏰ Start Time:        ${new Date(startTime).toISOString()}`);
+            console.log('========================================\n');
 
-        // Update Status to SENT (Enviando) immediately
-        await this.pool.query(`UPDATE batches SET status = 'SENT', start_time = NOW(), updated_at = NOW() WHERE id = $1`, [batchId]);
-        console.log(`[Background] ✅ Batch status updated to SENT`);
+            // Update Status to SENT (Enviando) immediately
+            await this.pool.query(`UPDATE batches SET status = 'SENT', start_time = NOW(), updated_at = NOW() WHERE id = $1`, [batchId]);
+            console.log(`[Background] ✅ Batch status updated to SENT`);
 
-        // 1. Fetch Funder Address for this batch
-        const batchRes = await this.pool.query('SELECT funder_address FROM batches WHERE id = $1', [batchId]);
-        const funderAddress = batchRes.rows[0]?.funder_address;
+            // 1. Fetch Funder Address for this batch
+            const batchRes = await this.pool.query('SELECT funder_address FROM batches WHERE id = $1', [batchId]);
+            const funderAddress = batchRes.rows[0]?.funder_address;
 
-        if (funderAddress) {
-            // --- 1. PRE-FLIGHT PARALLELIZATION ---
-            console.log(`[Engine] ⚡ Initializing Parallel Pre-flight (Root, Permit, Funding)...`);
+            if (funderAddress) {
+                // --- 1. PRE-FLIGHT PARALLELIZATION ---
+                console.log(`[Engine] ⚡ Initializing Parallel Pre-flight (Root, Permit, Funding)...`);
 
-            // Get Current Nonce for Faucet
-            let currentNonce = await this.provider.getTransactionCount(this.faucetWallet.address, "latest");
-            const parallelTasks = [];
+                // Get Current Nonce for Faucet
+                let currentNonce = await this.provider.getTransactionCount(this.faucetWallet.address, "latest");
+                const parallelTasks = [];
 
-            // --- 1.1 MERKLE ROOT REGISTRATION (IF NEEDED) ---
-            const contract = new ethers.Contract(this.contractAddress, this.contractABI, this.provider);
-            const onChainRoot = await contract.batchRoots(funderAddress, batchId);
-            const dbBatchRes = await this.pool.query('SELECT merkle_root FROM batches WHERE id = $1', [batchId]);
-            const dbRoot = dbBatchRes.rows[0]?.merkle_root;
+                // --- 1.1 MERKLE ROOT REGISTRATION (IF NEEDED) ---
+                const contract = new ethers.Contract(this.contractAddress, this.contractABI, this.provider);
+                const onChainRoot = await contract.batchRoots(funderAddress, batchId);
+                const dbBatchRes = await this.pool.query('SELECT merkle_root FROM batches WHERE id = $1', [batchId]);
+                const dbRoot = dbBatchRes.rows[0]?.merkle_root;
 
-            if (onChainRoot === ethers.ZeroHash) {
-                if (rootSignatureData) {
-                    const registrationTask = (async () => {
+                if (onChainRoot === ethers.ZeroHash) {
+                    if (rootSignatureData) {
+                        const registrationTask = (async () => {
+                            const nonce = currentNonce++;
+                            console.log(`[Engine][Root] 📝 Queueing Root Registration (Nonce: ${nonce})`);
+                            const writerContract = contract.connect(this.faucetWallet);
+                            const tx = await writerContract.setBatchRootWithSignature(
+                                rootSignatureData.funder,
+                                BigInt(batchId),
+                                rootSignatureData.merkleRoot,
+                                BigInt(rootSignatureData.totalTransactions),
+                                BigInt(rootSignatureData.totalAmount),
+                                rootSignatureData.signature,
+                                { nonce }
+                            );
+                            console.log(`[Blockchain][Root] 🚀 Root TX Sent: ${tx.hash}`);
+                            const receipt = await tx.wait();
+                            console.log(`[Blockchain][Root] ✅ Root CONFIRMED (Block: ${receipt.blockNumber})`);
+
+                            // Gas Tracking
+                            const fee = BigInt(receipt.gasUsed) * BigInt(receipt.effectiveGasPrice || 0);
+                            await this.pool.query(`UPDATE batches SET funding_amount = COALESCE(funding_amount, 0) + $1 WHERE id = $2`, [ethers.formatEther(fee), batchId]);
+                        })();
+                        parallelTasks.push(registrationTask);
+                    } else {
+                        throw new Error("Batch Root not registered on-chain and no signature provided.");
+                    }
+                }
+
+                // --- 1.2 PERMIT SUBMISSION (IF NEEDED) ---
+                if (externalPermit) {
+                    const permitTask = (async () => {
                         const nonce = currentNonce++;
-                        console.log(`[Engine][Root] 📝 Queueing Root Registration (Nonce: ${nonce})`);
-                        const writerContract = contract.connect(this.faucetWallet);
-                        const tx = await writerContract.setBatchRootWithSignature(
-                            rootSignatureData.funder,
-                            BigInt(batchId),
-                            rootSignatureData.merkleRoot,
-                            BigInt(rootSignatureData.totalTransactions),
-                            BigInt(rootSignatureData.totalAmount),
-                            rootSignatureData.signature,
+                        console.log(`[Engine][Permit] 📩 Queueing Permit Submission (Nonce: ${nonce})`);
+                        const usdc = new ethers.Contract(this.usdcAddress, [
+                            "function permit(address owner, address spender, uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s) external"
+                        ], this.faucetWallet);
+
+                        const tx = await usdc.permit(
+                            externalPermit.owner || funderAddress,
+                            this.contractAddress,
+                            BigInt(externalPermit.amount),
+                            BigInt(externalPermit.deadline),
+                            externalPermit.v,
+                            externalPermit.r,
+                            externalPermit.s,
                             { nonce }
                         );
-                        console.log(`[Blockchain][Root] 🚀 Root TX Sent: ${tx.hash}`);
+                        console.log(`[Blockchain][Permit] 🚀 Permit TX Sent: ${tx.hash}`);
                         const receipt = await tx.wait();
-                        console.log(`[Blockchain][Root] ✅ Root CONFIRMED (Block: ${receipt.blockNumber})`);
+                        console.log(`[Blockchain][Permit] ✅ Permit CONFIRMED (Block: ${receipt.blockNumber})`);
 
                         // Gas Tracking
                         const fee = BigInt(receipt.gasUsed) * BigInt(receipt.effectiveGasPrice || 0);
                         await this.pool.query(`UPDATE batches SET funding_amount = COALESCE(funding_amount, 0) + $1 WHERE id = $2`, [ethers.formatEther(fee), batchId]);
                     })();
-                    parallelTasks.push(registrationTask);
-                } else {
-                    throw new Error("Batch Root not registered on-chain and no signature provided.");
+                    parallelTasks.push(permitTask);
+                }
+
+                // --- 1.3 RELAYER FUNDING (IF NEEDED) ---
+                let needsFunding = !isResumption;
+                if (isResumption && relayers.length > 0) {
+                    const firstRelBal = await this.provider.getBalance(relayers[0].address);
+                    if (firstRelBal < ethers.parseEther("0.01")) needsFunding = true;
+                }
+
+                if (needsFunding) {
+                    const fundingTask = (async () => {
+                        const nonce = currentNonce++;
+                        console.log(`[Engine][Fund] 🪙 Queueing Relayer Funding (Nonce: ${nonce})`);
+                        // Note: distributeGasToRelayers will internally call fundRelayers which needs adjustment for nonce
+                        await this.distributeGasToRelayers(batchId, relayers, nonce);
+                    })();
+                    parallelTasks.push(fundingTask);
+                }
+
+                // AWAIT ALL PRE-FLIGHT TASKS IN PARALLEL
+                if (parallelTasks.length > 0) {
+                    console.log(`[Engine] ⏳ Waiting for ${parallelTasks.length} parallel pre-flight tasks...`);
+                    await Promise.all(parallelTasks);
+                    console.log(`[Engine] ✨ All pre-flight tasks confirmed.`);
                 }
             }
 
-            // --- 1.2 PERMIT SUBMISSION (IF NEEDED) ---
-            if (externalPermit) {
-                const permitTask = (async () => {
-                    const nonce = currentNonce++;
-                    console.log(`[Engine][Permit] 📩 Queueing Permit Submission (Nonce: ${nonce})`);
-                    const usdc = new ethers.Contract(this.usdcAddress, [
-                        "function permit(address owner, address spender, uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s) external"
-                    ], this.faucetWallet);
-
-                    const tx = await usdc.permit(
-                        externalPermit.owner || funderAddress,
-                        this.contractAddress,
-                        BigInt(externalPermit.amount),
-                        BigInt(externalPermit.deadline),
-                        externalPermit.v,
-                        externalPermit.r,
-                        externalPermit.s,
-                        { nonce }
-                    );
-                    console.log(`[Blockchain][Permit] 🚀 Permit TX Sent: ${tx.hash}`);
-                    const receipt = await tx.wait();
-                    console.log(`[Blockchain][Permit] ✅ Permit CONFIRMED (Block: ${receipt.blockNumber})`);
-
-                    // Gas Tracking
-                    const fee = BigInt(receipt.gasUsed) * BigInt(receipt.effectiveGasPrice || 0);
-                    await this.pool.query(`UPDATE batches SET funding_amount = COALESCE(funding_amount, 0) + $1 WHERE id = $2`, [ethers.formatEther(fee), batchId]);
-                })();
-                parallelTasks.push(permitTask);
-            }
-
-            // --- 1.3 RELAYER FUNDING (IF NEEDED) ---
-            let needsFunding = !isResumption;
-            if (isResumption && relayers.length > 0) {
-                const firstRelBal = await this.provider.getBalance(relayers[0].address);
-                if (firstRelBal < ethers.parseEther("0.01")) needsFunding = true;
-            }
-
-            if (needsFunding) {
-                const fundingTask = (async () => {
-                    const nonce = currentNonce++;
-                    console.log(`[Engine][Fund] 🪙 Queueing Relayer Funding (Nonce: ${nonce})`);
-                    // Note: distributeGasToRelayers will internally call fundRelayers which needs adjustment for nonce
-                    await this.distributeGasToRelayers(batchId, relayers, nonce);
-                })();
-                parallelTasks.push(fundingTask);
-            }
-
-            // AWAIT ALL PRE-FLIGHT TASKS IN PARALLEL
-            if (parallelTasks.length > 0) {
-                console.log(`[Engine] ⏳ Waiting for ${parallelTasks.length} parallel pre-flight tasks...`);
-                await Promise.all(parallelTasks);
-                console.log(`[Engine] ✨ All pre-flight tasks confirmed.`);
-            }
-        }
-
-        // --- E. PHASE 2: PARALLEL SWARM ---
-        console.log(`[Background] 🚀 Launching Parallel Workers...`);
-        // Add a slight stagger to avoid all workers hitting node at exact same ms
-        const workerPromises = relayers.map((wallet, idx) => {
-            return new Promise(resolve => {
-                // Reduced stagger to 50ms (from 500ms) for faster ramp-up
-                setTimeout(() => resolve(this.workerLoop(wallet, batchId)), idx * 50);
+            // --- E. PHASE 2: PARALLEL SWARM ---
+            console.log(`[Background] 🚀 Launching Parallel Workers...`);
+            // Add a slight stagger to avoid all workers hitting node at exact same ms
+            const workerPromises = relayers.map((wallet, idx) => {
+                return new Promise(resolve => {
+                    // Reduced stagger to 50ms (from 500ms) for faster ramp-up
+                    setTimeout(() => resolve(this.workerLoop(wallet, batchId)), idx * 50);
+                });
             });
-        });
 
-        try {
-            await Promise.all(workerPromises);
-        } catch (err) {
-            console.error(`[Engine] ⚠️ Worker Swarm Error: ${err.message}`);
-        }
-
-        // 5. Retry Phase (Auto-Repair dropped txs) - ALWAYS RUN
-        try {
-            console.log(`[Engine] 🔄 Entering Retry Phase...`);
-            await this.retryFailedTransactions(batchId, relayers);
-        } catch (err) {
-            console.error(`[Engine] ⚠️ Retry Phase Error: ${err.message}`);
-        }
-
-        // G. Refund & Cleanup (ALWAYS RUN)
-        try {
-            // CHECK: Only refund if ALL transactions are COMPLETED.
-            const pendingCountRes = await this.pool.query(
-                `SELECT COUNT(*) FROM batch_transactions WHERE batch_id = $1 AND status IN ('PENDING', 'FAILED', 'ENVIANDO', 'WAITING_CONFIRMATION')`,
-                [batchId]
-            );
-            const pendingCount = parseInt(pendingCountRes.rows[0].count);
-
-            if (pendingCount > 0) {
-                console.warn(`[Engine] ⚠️ Skipping Fund Recovery: ${pendingCount} transactions are still PENDING/FAILED.`);
-            } else {
-                console.log(`[Engine] 🧹 All clear. Cleaning up & Returning Funds...`);
-                try {
-                    await this.returnFundsToFaucet(relayers, batchId);
-                } catch (cleanupErr) {
-                    console.error(`[Engine] ⚠️ Refund failed (ignoring to save metrics): ${cleanupErr.message}`);
-                }
+            try {
+                await Promise.all(workerPromises);
+            } catch (err) {
+                console.error(`[Engine] ⚠️ Worker Swarm Error: ${err.message}`);
             }
 
-            // --- CALCULATE FINAL METRICS ---
-            const endTime = Date.now();
-            const durationMs = endTime - startTime;
+            // 5. Retry Phase (Auto-Repair dropped txs) - ALWAYS RUN
+            try {
+                console.log(`[Engine] 🔄 Entering Retry Phase...`);
+                await this.retryFailedTransactions(batchId, relayers);
+            } catch (err) {
+                console.error(`[Engine] ⚠️ Retry Phase Error: ${err.message}`);
+            }
 
-            // Format duration (e.g., "2m 15s")
-            const minutes = Math.floor(durationMs / 60000);
-            const seconds = ((durationMs % 60000) / 1000).toFixed(0);
-            const durationStr = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
-
-            // Aggregate Total Gas from Database (Net Calculation)
-            const metricsRes = await this.pool.query(
-                `SELECT funding_amount, refund_amount FROM batches WHERE id = $1`,
-                [batchId]
-            );
-            const funding = metricsRes.rows[0]?.funding_amount || 0;
-            const refunded = metricsRes.rows[0]?.refund_amount || 0;
-
-            // Calculate Net Cost: Funding - Refunded (Includes Distribution Cost if we added it to Funding, or just Value)
-            // If funding is 0 (legacy), fallback to sum(gas_cost)
-            let totalGasMatic = "0";
-
-            if (funding > 0) {
-                const netCost = parseFloat(funding) - parseFloat(refunded);
-                totalGasMatic = Math.max(0, netCost).toFixed(6);
-                console.log(`[Engine] 🧮 Net Gas Calc: ${funding} (Funded) - ${refunded} (Refunded) = ${totalGasMatic}`);
-            } else {
-                // Fallback to old summation method
-                const gasRes = await this.pool.query(
-                    `SELECT SUM(gas_cost::numeric) as total_gas FROM relayers WHERE batch_id = $1`,
+            // G. Refund & Cleanup (ALWAYS RUN)
+            try {
+                // CHECK: Only refund if ALL transactions are COMPLETED.
+                const pendingCountRes = await this.pool.query(
+                    `SELECT COUNT(*) FROM batch_transactions WHERE batch_id = $1 AND status IN ('PENDING', 'FAILED', 'ENVIANDO', 'WAITING_CONFIRMATION')`,
                     [batchId]
                 );
-                totalGasMatic = gasRes.rows[0].total_gas || "0";
-            }
+                const pendingCount = parseInt(pendingCountRes.rows[0].count);
 
-            console.log(`[Engine] 🏁 Metrics | Time: ${durationStr} | Gas: ${totalGasMatic} MATIC`);
+                if (pendingCount > 0) {
+                    console.warn(`[Engine] ⚠️ Skipping Fund Recovery: ${pendingCount} transactions are still PENDING/FAILED.`);
+                } else {
+                    console.log(`[Engine] 🧹 All clear. Cleaning up & Returning Funds...`);
+                    try {
+                        await this.returnFundsToFaucet(relayers, batchId);
+                    } catch (cleanupErr) {
+                        console.error(`[Engine] ⚠️ Refund failed (ignoring to save metrics): ${cleanupErr.message}`);
+                    }
+                }
 
-            // Update Batch with Metrics and Final Status
-            await this.pool.query(
-                `UPDATE batches SET 
+                // --- CALCULATE FINAL METRICS ---
+                const endTime = Date.now();
+                const durationMs = endTime - startTime;
+
+                // Format duration (e.g., "2m 15s")
+                const minutes = Math.floor(durationMs / 60000);
+                const seconds = ((durationMs % 60000) / 1000).toFixed(0);
+                const durationStr = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+
+                // Aggregate Total Gas from Database (Net Calculation)
+                const metricsRes = await this.pool.query(
+                    `SELECT funding_amount, refund_amount FROM batches WHERE id = $1`,
+                    [batchId]
+                );
+                const funding = metricsRes.rows[0]?.funding_amount || 0;
+                const refunded = metricsRes.rows[0]?.refund_amount || 0;
+
+                // Calculate Net Cost: Funding - Refunded (Includes Distribution Cost if we added it to Funding, or just Value)
+                // If funding is 0 (legacy), fallback to sum(gas_cost)
+                let totalGasMatic = "0";
+
+                if (funding > 0) {
+                    const netCost = parseFloat(funding) - parseFloat(refunded);
+                    totalGasMatic = Math.max(0, netCost).toFixed(6);
+                    console.log(`[Engine] 🧮 Net Gas Calc: ${funding} (Funded) - ${refunded} (Refunded) = ${totalGasMatic}`);
+                } else {
+                    // Fallback to old summation method
+                    const gasRes = await this.pool.query(
+                        `SELECT SUM(gas_cost::numeric) as total_gas FROM relayers WHERE batch_id = $1`,
+                        [batchId]
+                    );
+                    totalGasMatic = gasRes.rows[0].total_gas || "0";
+                }
+
+                console.log(`[Engine] 🏁 Metrics | Time: ${durationStr} | Gas: ${totalGasMatic} MATIC`);
+
+                // Update Batch with Metrics and Final Status
+                await this.pool.query(
+                    `UPDATE batches SET 
                     status = 'COMPLETED', 
                     total_gas_used = $1, 
                     execution_time = $2, 
                     end_time = NOW(),
                     updated_at = NOW() 
                  WHERE id = $3`,
-                [totalGasMatic, durationStr, batchId]
-            );
+                    [totalGasMatic, durationStr, batchId]
+                );
 
-            console.log(`✅ Batch ${batchId} Processing Complete. metrics saved.`);
-        } catch (finalErr) {
-            console.error(`[Engine] ⚠️ Final Cleanup/Metrics Error: ${finalErr.message}`);
+                console.log(`✅ Batch ${batchId} Processing Complete. metrics saved.`);
+            } catch (finalErr) {
+                console.error(`[Engine] ⚠️ Final Cleanup/Metrics Error: ${finalErr.message}`);
+            }
+        } catch (criticalErr) {
+            console.error(`❌ [Background] Critical Error for Batch ${batchId}:`, criticalErr);
+            await this.pool.query(
+                `UPDATE batches SET status = 'FAILED', detail = $1, updated_at = NOW() WHERE id = $2`,
+                [`❌ ERROR CRÍTICO: ${criticalErr.message}`, batchId]
+            );
         }
     }
 
