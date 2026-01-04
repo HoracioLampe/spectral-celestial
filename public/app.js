@@ -396,8 +396,10 @@ function initDOMElements() {
     window.batchTableBody = document.getElementById('batchTableBody');
 
     // Initialize Batch UI Elements (Safe Pattern)
-    initBatchUI();
+    // initBatchUI(); // Seemingly missing or optional, removing to avoid RefError if it doesn't exist.
     initSummaryModal(); // Inject Modal HTML
+    renderBatchFilters(); // Inject Filters
+
 }
 
 function attachEventListeners() {
@@ -828,10 +830,26 @@ window.showBatchList = function () {
 // Cargar lista al iniciar o cambiar tab
 async function fetchBatches(page = 1) {
     try {
+        // Collect Filter Values
+        const dateVal = document.getElementById('filterDate')?.value || '';
+        const descVal = document.getElementById('filterDesc')?.value || '';
+        const statusVal = document.getElementById('filterStatus')?.value || '';
+        const amountVal = document.getElementById('filterAmount')?.value || '';
+
+        // Constuct Query
+        const params = new URLSearchParams({
+            page: page,
+            limit: BATCCH_PAGE_SIZE,
+            date: dateVal,
+            description: descVal,
+            status: statusVal,
+            amount: amountVal
+        });
+
         // Show loading state if needed, though usually silent update is better or specific loader
         // batchesListBody.innerHTML = '<tr><td colspan="9" style="text-align:center;">Cargando...</td></tr>';
 
-        const res = await authenticatedFetch(`/api/batches?page=${page}&limit=${BATCCH_PAGE_SIZE}`);
+        const res = await authenticatedFetch(`/api/batches?${params.toString()}`);
         const data = await res.json();
 
         if (data.error) throw new Error(data.error);
@@ -848,6 +866,64 @@ async function fetchBatches(page = 1) {
         batchesListBody.innerHTML = `<tr><td colspan="9" style="text-align:center; color: #ef4444; padding: 2rem;">Error al cargar lotes: ${error.message} <br> <button onclick="fetchBatches(1)" class="btn btn-sm btn-primary mt-2">Reintentar</button></td></tr>`;
     }
 }
+
+function renderBatchFilters() {
+    // Only inject if not exists
+    const container = document.querySelector('.card-body'); // Assuming this wraps the table or top section
+    // Actually better to inject before the table-responsive div in 'batchListView'
+    const batchList = document.getElementById('batchListView');
+    if (!batchList || document.querySelector('.filter-bar')) return;
+
+    const filterHTML = `
+    <div class="filter-bar">
+        <div class="filter-group">
+            <label>📅 Fecha</label>
+            <input type="date" id="filterDate" onchange="fetchBatches(1)">
+        </div>
+        <div class="filter-group" style="flex: 2;">
+            <label>🔍 Buscar (Desc, Detalle, #)</label>
+            <input type="text" id="filterDesc" placeholder="Ej: Lote 345..." onkeyup="debounceFetch()">
+        </div>
+        <div class="filter-group">
+            <label>📊 Estado</label>
+            <select id="filterStatus" onchange="fetchBatches(1)">
+                <option value="">Todos</option>
+                <option value="READY">Preparado 🔵</option>
+                <option value="SENT">Enviando 🟢</option>
+                <option value="COMPLETED">Completado ✅</option>
+                <option value="PREPARING">En Preparación 🟠</option>
+            </select>
+        </div>
+        <div class="filter-group">
+            <label>💰 Monto USDC (±10%)</label>
+            <input type="number" id="filterAmount" placeholder="Ej: 100" onkeyup="debounceFetch()">
+        </div>
+        <div class="filter-group" style="justify-content: flex-end;">
+            <label>&nbsp;</label>
+            <button class="btn-glass btn-sm" onclick="clearFilters()">Limpiar 🧹</button>
+        </div>
+    </div>
+    `;
+
+    // Insert after the existing header/controls if possible
+    // Looking at structure, maybe prepend to batchListView or insert before table
+    // Let's insert as first child of batchListView
+    batchList.insertAdjacentHTML('afterbegin', filterHTML);
+}
+
+let debounceTimer;
+function debounceFetch() {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => fetchBatches(1), 500);
+}
+
+window.clearFilters = function () {
+    document.getElementById('filterDate').value = '';
+    document.getElementById('filterDesc').value = '';
+    document.getElementById('filterStatus').value = '';
+    document.getElementById('filterAmount').value = '';
+    fetchBatches(1);
+};
 
 function updatePaginationUI(pagination) {
     const btnFirst = document.getElementById('firstPage');

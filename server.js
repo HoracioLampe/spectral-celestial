@@ -179,30 +179,67 @@ app.get('/api/batches', authenticateToken, async (req, res) => {
 
         console.log(`[GET Batches] User: ${userAddress} | Role: ${userRole}`);
 
-        // SELF-HEAL CHECK: Ensure faucet exists when loading dashboard
-        // This covers cases where user exists but faucet doesn't (legacy/manual insert)
         await ensureUserFaucet(userAddress);
 
         const limit = parseInt(req.query.limit) || 20;
         const page = parseInt(req.query.page) || 1;
         const offset = (page - 1) * limit;
 
-        // Data Isolation Logic (Case Insensitive)
+        // --- FILTER PARAMETERS ---
+        const { date, description, status, amount } = req.query;
+
+        // Base Where
         let whereClause = 'WHERE 1=1';
         let queryParams = [];
 
+        // 1. Role Isolation
         if (userRole !== 'SUPER_ADMIN') {
-            whereClause = 'WHERE LOWER(b.funder_address) = $1';
             queryParams.push(userAddress);
+            whereClause += ` AND LOWER(b.funder_address) = $${queryParams.length}`;
         }
 
-        const countQuery = `SELECT COUNT(*) FROM batches b ${whereClause}`;
-        console.log(`[GET Batches] Count Query: ${countQuery} Params: ${JSON.stringify(queryParams)}`);
+        // 2. Date Filter (Exact Match YYYY-MM-DD on created_at)
+        if (date && date.trim() !== '') {
+            queryParams.push(date.trim());
+            whereClause += ` AND DATE(b.created_at) = $${queryParams.length}`;
+        }
 
+        // 3. Status Filter (Exact Match)
+        if (status && status.trim() !== '' && status !== 'ALL') {
+            queryParams.push(status.trim());
+            whereClause += ` AND b.status = $${queryParams.length}`;
+        }
+
+        // 4. Description/Text Filter (Partial match on description, detail, or batch_number)
+        if (description && description.trim() !== '') {
+            queryParams.push(`%${description.trim()}%`);
+            whereClause += ` AND (b.description ILIKE $${queryParams.length} OR b.detail ILIKE $${queryParams.length} OR b.batch_number ILIKE $${queryParams.length})`;
+        }
+
+        // 5. Amount Filter (Range +/- 10%)
+        // Amount stored as INTEGER (microUSDC) or STRING in some contexts? 
+        // Based on app.js rendering, it seems total_usdc is stored as the atomic value (e.g. 1000000 = 1 USDC).
+        // User inputs "100" (USDC). We must convert to 100000000 atomic units then apply +/- 10%.
+        if (amount && !isNaN(parseFloat(amount))) {
+            const inputVal = parseFloat(amount);
+            const lowerBound = Math.floor((inputVal * 0.9) * 1000000); // 90%
+            const upperBound = Math.ceil((inputVal * 1.1) * 1000000);  // 110%
+
+            queryParams.push(lowerBound);
+            queryParams.push(upperBound);
+            // Cast total_usdc to numeric for safe comparison
+            whereClause += ` AND (CAST(b.total_usdc AS NUMERIC) BETWEEN $${queryParams.length - 1} AND $${queryParams.length})`;
+        }
+
+        // Debug Query Construction
+        // console.log(`[GET Batches] Constructed Where: ${whereClause} Params: ${JSON.stringify(queryParams)}`);
+
+        // Count Total (with filters)
+        const countQuery = `SELECT COUNT(*) FROM batches b ${whereClause}`;
         const countRes = await pool.query(countQuery, queryParams);
         const totalItems = parseInt(countRes.rows[0].count);
-        console.log(`[GET Batches] Total Items Found: ${totalItems}`);
 
+        // Fetch Data (with filters)
         const dataQuery = `
             SELECT b.*,
             COUNT(CASE WHEN t.status = 'COMPLETED' THEN 1 END)::int as sent_transactions,
@@ -215,9 +252,9 @@ app.get('/api/batches', authenticateToken, async (req, res) => {
             LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}
         `;
 
-        queryParams.push(limit, offset);
-        const result = await pool.query(dataQuery, queryParams);
-        console.log(`[GET Batches] Returning ${result.rows.length} rows`);
+        // Add Pagination Params
+        const fullParams = [...queryParams, limit, offset];
+        const result = await pool.query(dataQuery, fullParams);
 
         res.json({
             batches: result.rows,
