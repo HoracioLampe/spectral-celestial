@@ -41,25 +41,44 @@ pool.on('error', (err, client) => {
     console.error('❌ Unexpected Error on Idle DB Client:', err.message);
 });
 
-// AUTO-CREATE SESSION TABLE (Resilient)
-const initSessionTable = async () => {
-    try {
-        await pool.query('SELECT 1');
-        await pool.query(`
-            CREATE TABLE IF NOT EXISTS "session" (
-                "sid" varchar NOT NULL PRIMARY KEY,
-                "sess" json NOT NULL,
-                "expire" timestamp(6) NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS "IDX_session_expire" ON "session" ("expire");
-        `);
-        console.log("📊 Session table verified/created");
-        return true;
-    } catch (err) {
-        console.error(`⚠️ DB Init Failed: ${err.message}`);
-        return false;
+// AUTO-CREATE SESSION TABLE (Resilient with Retry for Railway Private Network)
+const initSessionTable = async (maxRetries = 5, delayMs = 2000) => {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            console.log(`[DB] Connection attempt ${attempt}/${maxRetries}...`);
+            await pool.query('SELECT 1');
+            await pool.query(`
+                CREATE TABLE IF NOT EXISTS "session" (
+                    "sid" varchar NOT NULL PRIMARY KEY,
+                    "sess" json NOT NULL,
+                    "expire" timestamp(6) NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS "IDX_session_expire" ON "session" ("expire");
+            `);
+            console.log("✅ Session table verified/created");
+            return true;
+        } catch (err) {
+            console.error(`⚠️ DB Init Failed (attempt ${attempt}/${maxRetries}): ${err.message}`);
+            if (attempt < maxRetries) {
+                console.log(`   Retrying in ${delayMs}ms...`);
+                await new Promise(resolve => setTimeout(resolve, delayMs));
+            } else {
+                console.error("❌ DB connection failed after all retries. Using MemoryStore.");
+                return false;
+            }
+        }
     }
+    return false;
 };
+
+// Warm up the connection (don't block server start)
+let dbReady = false;
+initSessionTable().then(ready => {
+    dbReady = ready;
+    if (ready) {
+        console.log("🔥 Database connection warmed up successfully");
+    }
+});
 
 // Middleware
 app.set('trust proxy', 1);
@@ -69,22 +88,21 @@ app.use(express.static(path.join(__dirname, 'public')));
 // Session Store Setup (Resilient)
 let sessionStore;
 try {
-    // Attempt to create PG Store
+    // Always try to create PG Store - it will handle connection issues internally
     sessionStore = new pgSession({
         pool: pool,
         tableName: 'session',
         createTableIfMissing: true,
-        errorLog: (err) => console.error('❌ Session Store Error:', err.message)
+        errorLog: (err) => {
+            console.error('❌ Session Store Error:', err.message);
+            // Don't crash, pg-simple will retry
+        }
     });
-    console.log("✅ PG Session Store initialized");
+    console.log("✅ PG Session Store initialized (will connect when DB ready)");
 } catch (e) {
     console.error("⚠️ Failed to create PG Store, fallback to Memory:", e.message);
     sessionStore = new session.MemoryStore();
 }
-
-// Global Safety Fallback: If DB is known strictly bad, ensure MemoryStore?
-// The try-catch above handles the constructor error. 
-// If pool fails LATER, pg-simple might log but not crash if errorLog is set.
 
 app.use(session({
     store: sessionStore,
