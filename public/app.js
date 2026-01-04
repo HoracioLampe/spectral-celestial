@@ -977,9 +977,15 @@ function updatePaginationUI(pagination) {
 }
 
 function renderBatchesList(batches) {
-    batchesListBody.innerHTML = '';
+    const tableBody = document.getElementById('batchesListBody') || window.batchesListBody;
+    if (!tableBody) {
+        console.error("CRITICAL: batchesListBody not found in render.");
+        return;
+    }
+
+    tableBody.innerHTML = '';
     if (batches.length === 0) {
-        batchesListBody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding: 2rem;">No hay lotes creados. ¡Crea uno nuevo!</td></tr>';
+        tableBody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding: 2rem;">No hay lotes creados. ¡Crea uno nuevo!</td></tr>';
         return;
     }
 
@@ -1007,7 +1013,7 @@ function renderBatchesList(batches) {
                 </button>
             </td>
         `;
-        batchesListBody.appendChild(tr);
+        tableBody.appendChild(tr);
     });
 }
 
