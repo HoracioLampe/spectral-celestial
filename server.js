@@ -255,6 +255,61 @@ app.get('/api/config', (req, res) => {
     });
 });
 
+// Batch summary endpoints
+app.get('/api/batches/:id', async (req, res) => {
+    try {
+        const batchId = parseInt(req.params.id);
+
+        const batchRes = await pool.query(`
+            SELECT 
+                id, batch_number, funder_address, total_transactions,
+                total_usdc, total_gas_used, execution_time,
+                start_time, end_time, status, merkle_root
+            FROM batches WHERE id = $1
+        `, [batchId]);
+
+        if (batchRes.rows.length === 0) {
+            return res.status(404).json({ error: 'Batch not found' });
+        }
+
+        const batch = batchRes.rows[0];
+
+        const statsRes = await pool.query(`
+            SELECT 
+                COUNT(*) FILTER (WHERE status = 'COMPLETED') as completed,
+                COUNT(*) FILTER (WHERE status = 'FAILED') as failed,
+                COUNT(*) FILTER (WHERE status = 'PENDING') as pending
+            FROM batch_transactions WHERE batch_id = $1
+        `, [batchId]);
+
+        batch.stats = statsRes.rows[0];
+        res.json(batch);
+    } catch (error) {
+        console.error('Error fetching batch:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/batches/:id/transactions', async (req, res) => {
+    try {
+        const batchId = parseInt(req.params.id);
+
+        const txRes = await pool.query(`
+            SELECT 
+                id, wallet_address_to, amount_usdc, tx_hash,
+                status, updated_at, retry_count
+            FROM batch_transactions
+            WHERE batch_id = $1
+            ORDER BY id ASC
+        `, [batchId]);
+
+        res.json(txRes.rows);
+    } catch (error) {
+        console.error('Error fetching batch transactions:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 app.get('/api/auth/nonce', async (req, res) => {
     try {
         console.log(`[Auth] Generating Nonce for SessionID: ${req.sessionID}`);
