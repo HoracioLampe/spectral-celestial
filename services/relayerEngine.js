@@ -848,10 +848,11 @@ class RelayerEngine {
                 if (e.message && e.message.includes("Merkle")) {
                     console.log(`[Engine]   > Sample Tx ${tx.id}: Using safe fallback (Root not set).`);
                 } else {
-                    console.warn(`[Engine]   > Sample Tx ${tx.id} estimation failed, using fallback 150k. Error: ${e.message}`);
+                    console.warn(`[Engine]   > Sample Tx ${tx.id} estimation failed, using fallback 60k. Error: ${e.message}`);
                 }
-                // Reduced from 150k to 80k based on real usage (16 MATIC / 1000 txs)
-                totalSampleGas += 80000n;
+                // Reduced from 80k to 60k based on real usage (16 MATIC / 1000 txs = 0.016 per tx)
+                // At 50 gwei: 60k * 50 = 0.003 MATIC per tx
+                totalSampleGas += 60000n;
             }
         }
 
@@ -862,7 +863,10 @@ class RelayerEngine {
         const bufferPercent = BigInt(process.env.GAS_BUFFER_PERCENT || 15);
         const bufferedGas = (averageGas * BigInt(txs.length)) * (100n + bufferPercent) / 100n;
         const feeData = await this.getProvider().getFeeData();
-        const gasPrice = feeData.gasPrice || 50000000000n;
+
+        // Cap gas price at 100 gwei to prevent overestimation
+        const maxGasPrice = 100000000000n; // 100 gwei
+        const gasPrice = feeData.gasPrice ? (feeData.gasPrice > maxGasPrice ? maxGasPrice : feeData.gasPrice) : 50000000000n;
 
         // Configurable Safety Cushion (default 0.02 MATIC)
         // Set via GAS_CUSHION_MATIC environment variable (e.g., 0.02)
@@ -870,6 +874,13 @@ class RelayerEngine {
         const safetyCushion = ethers.parseEther(cushionMatic);
         const totalCost = (bufferedGas * gasPrice) + safetyCushion;
 
+        // Detailed logging
+        console.log(`[Engine]   > Average gas per tx: ${averageGas.toString()}`);
+        console.log(`[Engine]   > Total transactions: ${txs.length}`);
+        console.log(`[Engine]   > Gas price: ${ethers.formatUnits(gasPrice, 'gwei')} gwei`);
+        console.log(`[Engine]   > Buffered gas total: ${bufferedGas.toString()}`);
+        console.log(`[Engine]   > Gas cost: ${ethers.formatEther(bufferedGas * gasPrice)} MATIC`);
+        console.log(`[Engine]   > Safety cushion: ${cushionMatic} MATIC`);
         console.log(`[Engine]   > Total estimated cost: ${ethers.formatEther(totalCost)} MATIC (buffer: ${bufferPercent}%, cushion: ${cushionMatic} MATIC)`);
         return { totalCostWei: totalCost };
     }
