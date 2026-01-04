@@ -3,6 +3,7 @@ const { Pool } = require('pg');
 const { ethers } = require('ethers');
 const path = require('path');
 const RelayerEngine = require('../services/relayerEngine');
+const RpcManager = require('../services/rpcManager');
 require('dotenv').config();
 
 const pool = new Pool({
@@ -10,7 +11,11 @@ const pool = new Pool({
     ssl: { rejectUnauthorized: false }
 });
 
-const RPC_URL = "https://polygon-mainnet.core.chainstack.com/05aa9ef98aa83b585c14fa0438ed53a9";
+// RPC Configuration (Failover) - Consistent with server.js
+const RPC_PRIMARY = process.env.RPC_URL || "https://polygon-mainnet.core.chainstack.com/05aa9ef98aa83b585c14fa0438ed53a9";
+const RPC_FALLBACK = process.env.RPC_FALLBACK_URL || "https://fluent-clean-orb.matic.quiknode.pro/d95e5af7a69e7b5f8c09a440a5985865d6f4ae93/";
+
+const globalRpcManager = new RpcManager(RPC_PRIMARY, RPC_FALLBACK);
 const BATCH_ID = process.argv[2] || 170;
 
 async function resume() {
@@ -38,8 +43,9 @@ async function resume() {
 
         if (!faucetKey) throw new Error("No Faucet Private Key found in DB.");
 
-        // 2. Instantiate Engine
-        const engine = new RelayerEngine(pool, RPC_URL, faucetKey);
+        // 2. Instantiate Engine with RpcManager
+        console.log(`🔌 Engine inicializado con RPC Principal: ${RPC_PRIMARY.substring(0, 20)}...`);
+        const engine = new RelayerEngine(pool, globalRpcManager, faucetKey);
 
         // 3. Fetch Existing Relayers for this batch
         const relayersRes = await pool.query('SELECT private_key FROM relayers WHERE batch_id = $1 AND status = \'active\'', [BATCH_ID]);

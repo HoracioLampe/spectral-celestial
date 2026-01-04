@@ -68,7 +68,7 @@ class RelayerEngine {
     async syncRelayerBalance(address) {
         try {
             await new Promise(r => setTimeout(r, 100)); // Throttle
-            const balWei = await this.provider.getBalance(address);
+            const balWei = await this.getProvider().getBalance(address);
             const balanceStr = ethers.formatEther(balWei);
             await this.pool.query(
                 `UPDATE relayers SET last_balance = $1, last_activity = NOW() WHERE address = $2`,
@@ -187,7 +187,7 @@ class RelayerEngine {
                 console.log(`[Engine] ⚡ Initializing Parallel Pre-flight (Root, Permit, Funding)...`);
 
                 // Get Current Nonce for Faucet (use 'pending' to avoid nonce collisions)
-                let currentNonce = await this.provider.getTransactionCount(this.faucetWallet.address, "pending");
+                let currentNonce = await this.getProvider().getTransactionCount(this.faucetWallet.address, "pending");
                 const parallelTasks = [];
 
                 // --- 1.1 MERKLE ROOT REGISTRATION (IF NEEDED) ---
@@ -258,7 +258,7 @@ class RelayerEngine {
                 // --- 1.3 RELAYER FUNDING (IF NEEDED) ---
                 let needsFunding = !isResumption;
                 if (isResumption && relayers.length > 0) {
-                    const firstRelBal = await this.provider.getBalance(relayers[0].address);
+                    const firstRelBal = await this.getProvider().getBalance(relayers[0].address);
                     if (firstRelBal < ethers.parseEther("0.01")) needsFunding = true;
                 }
 
@@ -392,7 +392,7 @@ class RelayerEngine {
     async workerLoop(wallet, batchId) {
         let processedCount = 0;
         let totalGasWei = 0n;
-        const startBal = await this.provider.getBalance(wallet.address);
+        const startBal = await this.getProvider().getBalance(wallet.address);
         console.log(`👷 Worker ${wallet.address.substring(0, 6)} started | Relayer: ${wallet.address} | Balance: ${ethers.formatEther(startBal)} MATIC`);
 
         while (true) {
@@ -499,10 +499,17 @@ class RelayerEngine {
 
     async processTransaction(wallet, txDB, isRetry) {
         try {
+            // Dynamic Provider Reconnection (Failover Support)
+            const currentProvider = this.getProvider();
+            if (wallet.provider !== currentProvider) {
+                // console.log(`[Engine] 🔄 Reconnecting wallet ${wallet.address.substring(0,6)} to active provider...`);
+                wallet = wallet.connect(currentProvider);
+            }
+
             const contract = new ethers.Contract(this.contractAddress, this.contractABI, wallet);
 
             if (!this.cachedChainId) {
-                const network = await this.provider.getNetwork();
+                const network = await this.getProvider().getNetwork();
                 this.cachedChainId = network.chainId;
             }
             const chainId = this.cachedChainId;
@@ -567,7 +574,7 @@ class RelayerEngine {
             const gasLimit = await contract.executeTransaction.estimateGas(
                 txDB.batch_id, txDB.id, funder, txDB.wallet_address_to, amountVal, proof
             );
-            const feeData = await this.provider.getFeeData();
+            const feeData = await this.getProvider().getFeeData();
             const gasPrice = (feeData.gasPrice * 120n) / 100n; // 20% boost
 
             const txResponse = await contract.executeTransaction(
@@ -638,7 +645,7 @@ class RelayerEngine {
         const sampleTxs = txs.slice(0, sampleSize);
         let totalSampleGas = 0n;
 
-        const contract = new ethers.Contract(this.contractAddress, this.contractABI, this.provider);
+        const contract = new ethers.Contract(this.contractAddress, this.contractABI, this.getProvider());
         for (const tx of sampleTxs) {
             try {
                 const gas = await contract.executeTransaction.estimateGas(
@@ -660,7 +667,7 @@ class RelayerEngine {
         // Use Configurable Buffer
         const bufferPercent = RelayerEngine.GAS_BUFFER_PERCENTAGE || 30n; // Reduced from 60n
         const bufferedGas = (averageGas * BigInt(txs.length)) * (100n + bufferPercent) / 100n;
-        const feeData = await this.provider.getFeeData();
+        const feeData = await this.getProvider().getFeeData();
         const gasPrice = feeData.gasPrice || 50000000000n;
 
         // Use Configurable Cushion
@@ -703,10 +710,10 @@ class RelayerEngine {
         }
 
         // Check Faucet Balance BEFORE calculating per-relayer split
-        const faucetBalance = await this.provider.getBalance(funderFaucetAddress);
+        const faucetBalance = await this.getProvider().getBalance(funderFaucetAddress);
 
         // --- DYNAMIC RESERVE CALCULATION ---
-        const feeData = await this.provider.getFeeData();
+        const feeData = await this.getProvider().getFeeData();
         const gasPrice = feeData.gasPrice || ethers.parseUnits("50", "gwei"); // Fallback higher for safety
 
         // Calculate Gas accurately for the Distribution Transaction itself
@@ -786,7 +793,7 @@ class RelayerEngine {
             const totalValueToSend = amountWei * BigInt(relayers.length);
 
             // Double check balance (Race condition safety)
-            const faucetBalance = await this.provider.getBalance(walletToUse.address);
+            const faucetBalance = await this.getProvider().getBalance(walletToUse.address);
             console.log(`[Engine][Fund] Faucet Balance (${walletToUse.address.substring(0, 6)}..): ${ethers.formatEther(faucetBalance)} MATIC`);
 
             // Add slight tolerance check

@@ -327,8 +327,8 @@ app.post('/api/admin/unblock-faucets', authenticateToken, async (req, res) => {
 
         console.log(`[Admin] Found ${faucets.length} faucets to check`);
 
-        const rpcUrl = process.env.POLYGON_RPC_URL || process.env.RPC_URL || 'https://polygon-rpc.com';
-        const provider = new ethers.JsonRpcProvider(rpcUrl);
+        // Use Global RPC Manager for redundancy
+        const provider = globalRpcManager.getProvider();
 
         const results = [];
 
@@ -616,8 +616,7 @@ app.post('/api/batches/:id/register-merkle', authenticateToken, async (req, res)
 
         if (txs.length === 0) throw new Error("No transactions in batch");
 
-        const providerUrl = process.env.PROVIDER_URL || "https://polygon-mainnet.core.chainstack.com/05aa9ef98aa83b585c14fa0438ed53a9";
-        const provider = new ethers.JsonRpcProvider(providerUrl);
+        const provider = globalRpcManager.getProvider();
         const { chainId } = await provider.getNetwork();
         const contractAddress = process.env.CONTRACT_ADDRESS || "0x7B25Ce9800CCE4309E92e2834E09bD89453d90c5";
 
@@ -874,8 +873,7 @@ app.get('/api/faucet', authenticateToken, async (req, res) => {
 
         if (result.rows.length > 0) {
             const row = result.rows[0];
-            const rpcUrl = process.env.RPC_URL || QUICKNODE_URL;
-            const provider = new ethers.JsonRpcProvider(rpcUrl);
+            const provider = globalRpcManager.getProvider();
             const balance = await provider.getBalance(row.address);
             res.json({
                 address: row.address,
@@ -1258,8 +1256,8 @@ app.get('/api/admin/rescue-status', authenticateToken, async (req, res) => {
         const result = await pool.query(query, params);
 
         // Get balances from blockchain
-        const rpcUrl = process.env.POLYGON_RPC_URL || process.env.RPC_URL || 'https://polygon-rpc.com';
-        const provider = new ethers.JsonRpcProvider(rpcUrl);
+        // Get balances from blockchain
+        const provider = globalRpcManager.getProvider();
 
         const relayersWithBalance = await Promise.all(
             result.rows.map(async (r) => {
@@ -1323,8 +1321,8 @@ app.post('/api/admin/rescue-execute', authenticateToken, async (req, res) => {
         console.log(`[Admin] 💰 User ${req.user.address} starting rescue${batchId ? ` for batch ${batchId}` : ' for all relayers'}...`);
 
         // Execute rescue inline (not background) for better control
-        const rpcUrl = process.env.POLYGON_RPC_URL || process.env.RPC_URL || 'https://polygon-rpc.com';
-        const provider = new ethers.JsonRpcProvider(rpcUrl);
+        // Execute rescue inline (not background) for better control
+        const provider = globalRpcManager.getProvider();
 
         // Get relayers to rescue
         let query = `
