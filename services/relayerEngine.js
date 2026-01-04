@@ -814,17 +814,21 @@ class RelayerEngine {
         }
 
         const averageGas = totalSampleGas / BigInt(sampleSize);
-        // Use Configurable Buffer (reduced from 30% to 15% based on real-world data)
-        const bufferPercent = RelayerEngine.GAS_BUFFER_PERCENTAGE || 15n;
+
+        // Configurable Buffer Percentage (default 15%)
+        // Set via GAS_BUFFER_PERCENT environment variable (e.g., 15 for 15%)
+        const bufferPercent = BigInt(process.env.GAS_BUFFER_PERCENT || 15);
         const bufferedGas = (averageGas * BigInt(txs.length)) * (100n + bufferPercent) / 100n;
         const feeData = await this.getProvider().getFeeData();
         const gasPrice = feeData.gasPrice || 50000000000n;
 
-        // Use Configurable Cushion (reduced from 0.1 to 0.02 MATIC)
-        const safetyCushion = RelayerEngine.GAS_CUSHION_MATIC || ethers.parseEther("0.02");
+        // Configurable Safety Cushion (default 0.02 MATIC)
+        // Set via GAS_CUSHION_MATIC environment variable (e.g., 0.02)
+        const cushionMatic = process.env.GAS_CUSHION_MATIC || "0.02";
+        const safetyCushion = ethers.parseEther(cushionMatic);
         const totalCost = (bufferedGas * gasPrice) + safetyCushion;
 
-        console.log(`[Engine]   > Total estimated cost: ${ethers.formatEther(totalCost)} MATIC (inc. 15% buffer + 0.02 cushion)`);
+        console.log(`[Engine]   > Total estimated cost: ${ethers.formatEther(totalCost)} MATIC (buffer: ${bufferPercent}%, cushion: ${cushionMatic} MATIC)`);
         return { totalCostWei: totalCost };
     }
 
