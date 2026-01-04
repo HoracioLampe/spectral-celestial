@@ -86,16 +86,24 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Session Store Setup (Resilient)
+// TEMPORARY: Force MemoryStore due to Railway network connectivity issues
+// TODO: Re-enable PG Store once Railway private network is configured correctly
 let sessionStore;
+
+console.warn("⚠️ TEMPORARY: Using MemoryStore due to Railway network issues");
+console.warn("   Sessions will be lost on server restart");
+console.warn("   To fix: Ensure DB and App are in same Railway Project with Private Networking enabled");
+sessionStore = new session.MemoryStore();
+
+/* 
+// Original PG Store code (re-enable after fixing Railway network):
 try {
-    // Always try to create PG Store - it will handle connection issues internally
     sessionStore = new pgSession({
         pool: pool,
         tableName: 'session',
         createTableIfMissing: true,
         errorLog: (err) => {
             console.error('❌ Session Store Error:', err.message);
-            // Don't crash, pg-simple will retry
         }
     });
     console.log("✅ PG Session Store initialized (will connect when DB ready)");
@@ -103,6 +111,7 @@ try {
     console.error("⚠️ Failed to create PG Store, fallback to Memory:", e.message);
     sessionStore = new session.MemoryStore();
 }
+*/
 
 app.use(session({
     store: sessionStore,
@@ -194,16 +203,27 @@ app.get('/api/auth/nonce', async (req, res) => {
         console.log(`[Auth] Generating Nonce for SessionID: ${req.sessionID}`);
         if (!req.session) {
             console.error("❌ Session undefined in /api/auth/nonce");
-            return res.status(500).send("Session configuration error");
+            return res.status(500).json({ error: "Session configuration error" });
         }
         req.session.nonce = generateNonce();
-        await req.session.save(); // FORCE SAVE
-        console.log(`[Auth] Nonce generated: ${req.session.nonce}`);
-        res.setHeader('Content-Type', 'text/plain');
-        res.send(req.session.nonce);
+
+        // Save session and wait for confirmation
+        await new Promise((resolve, reject) => {
+            req.session.save((err) => {
+                if (err) {
+                    console.error("❌ Session save error:", err);
+                    reject(err);
+                } else {
+                    resolve();
+                }
+            });
+        });
+
+        console.log(`[Auth] Nonce generated and saved: ${req.session.nonce}`);
+        res.json({ nonce: req.session.nonce });
     } catch (err) {
         console.error("❌ Nonce Error:", err);
-        res.status(500).send("Internal Server Error");
+        res.status(500).json({ error: "Failed to generate nonce: " + err.message });
     }
 });
 
