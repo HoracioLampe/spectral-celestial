@@ -541,7 +541,19 @@ async function connectWallet() {
             body: JSON.stringify({ message, signature })
         });
 
-        const authData = await verifyRes.json();
+        const responseText = await verifyRes.text();
+        let authData;
+        try {
+            authData = JSON.parse(responseText);
+        } catch (jsonErr) {
+            console.error("❌ Login Failed. Server Response:", responseText);
+            throw new Error(`Error de Servidor (No JSON). Respuesta: ${responseText.substring(0, 50)}...`);
+        }
+
+        if (authData.error) {
+            throw new Error(authData.error);
+        }
+
         if (authData.token) {
             AUTH_TOKEN = authData.token;
             localStorage.setItem('jwt_token', authData.token);
