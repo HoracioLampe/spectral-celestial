@@ -66,22 +66,25 @@ app.set('trust proxy', 1);
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Session Store Setup
-// We use a flexible strategy: Try PG, if it blows up, PGStore usually handles it by buffering or failing.
-// To avoid 500s on login, we wrap the store creation.
-
+// Session Store Setup (Resilient)
 let sessionStore;
 try {
+    // Attempt to create PG Store
     sessionStore = new pgSession({
         pool: pool,
         tableName: 'session',
         createTableIfMissing: true,
         errorLog: (err) => console.error('❌ Session Store Error:', err.message)
     });
+    console.log("✅ PG Session Store initialized");
 } catch (e) {
     console.error("⚠️ Failed to create PG Store, fallback to Memory:", e.message);
     sessionStore = new session.MemoryStore();
 }
+
+// Global Safety Fallback: If DB is known strictly bad, ensure MemoryStore?
+// The try-catch above handles the constructor error. 
+// If pool fails LATER, pg-simple might log but not crash if errorLog is set.
 
 app.use(session({
     store: sessionStore,
