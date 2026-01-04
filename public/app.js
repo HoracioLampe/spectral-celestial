@@ -803,21 +803,32 @@ window.closeBatchModal = function () {
 };
 
 window.showBatchList = function () {
+    console.log("[UI] Returning to batch list...");
     stopTxPolling();
     if (window.balanceInterval) {
         clearInterval(window.balanceInterval);
         window.balanceInterval = null;
     }
-    batchDetailView.classList.add('hidden');
-    batchListView.classList.remove('hidden');
+
+    const batchListView = document.getElementById('batchListView');
+    const batchDetailView = document.getElementById('batchDetailView');
+
+    if (batchDetailView) batchDetailView.classList.add('hidden');
+    if (batchListView) batchListView.classList.remove('hidden');
+
     // Force Hide Details Sections
     document.getElementById('txDetailSection')?.classList.add('hidden');
     document.getElementById('txTableContainer')?.classList.add('hidden');
     document.getElementById('relayerGridSection')?.classList.add('hidden');
-    // Explicitly hide filters just in case
-    document.querySelector('.filter-bar')?.classList.add('hidden');
 
-    fetchBatches(); // Refresh list
+    // Explicitly hide filters logic? No, filters are part of the list view.
+    // The previous code had: document.querySelector('.filter-bar')?.classList.add('hidden');
+    // But filters SHOULD be visible in list view. Removing that line or verifying intent.
+    // Actually, renderBatchFilters injects it into batchListView, so it should be visible along with it.
+    // Making sure it is visible if it was hidden:
+    document.querySelector('.filter-bar')?.classList.remove('hidden');
+
+    fetchBatches(currentBatchPage || 1); // Refresh list
 };
 
 // Pagination State
@@ -1098,11 +1109,14 @@ window.openBatchDetail = async function (id) {
     // Start Polling
     startTxPolling(id);
 
+    // Explicitly Get Elements to avoid RefError
+    const detailBatchTitle = document.getElementById('detailBatchTitle');
+    const batchTableBody = document.getElementById('batchTableBody');
 
     // Reset view
     // Reset view (Chaotic State Killer)
-    detailBatchTitle.textContent = "Cargando...";
-    batchTableBody.innerHTML = '<tr><td colspan="6" style="text-align: center;">Cargando...</td></tr>';
+    if (detailBatchTitle) detailBatchTitle.textContent = "Cargando...";
+    if (batchTableBody) batchTableBody.innerHTML = '<tr><td colspan="6" style="text-align: center;">Cargando...</td></tr>';
 
     // Force Hide All Sections
     document.getElementById('merkleContainer')?.classList.add('hidden');
