@@ -397,6 +397,7 @@ function initDOMElements() {
 
     // Initialize Batch UI Elements (Safe Pattern)
     initBatchUI();
+    initSummaryModal(); // Inject Modal HTML
 }
 
 function attachEventListeners() {
@@ -1259,6 +1260,23 @@ function startProgressPolling(batchId) {
                 // If status is not active anymore, stop
                 if (data.batch.status !== 'SENT' && data.batch.status !== 'PROCESSING') {
                     stopProgressPolling();
+
+                    // Trigger Completion Popup and UI Update
+                    if (data.batch.status === 'COMPLETED') {
+                        // Update Button State to "Realizado" (Blue)
+                        const btnExecute = document.getElementById('btnExecuteBatch');
+                        if (btnExecute) {
+                            btnExecute.textContent = "Realizado ✅";
+                            btnExecute.className = "btn w-full btn-completed"; // Apply new class
+                            btnExecute.disabled = true; // Disable click
+                        }
+
+                        // Show Summary Modal
+                        showBatchSummaryModal(data.batch);
+
+                        // Refresh balances one last time
+                        fetchBalances();
+                    }
                 }
             }
         } catch (err) {
@@ -3016,3 +3034,120 @@ function hideProgressGauge() {
 
 window.updateProgressGauge = updateProgressGauge;
 window.hideProgressGauge = hideProgressGauge;
+
+// ==========================================
+// --- BATCH SUMMARY POPUP ---
+// ==========================================
+
+function initSummaryModal() {
+    if (document.getElementById('batchSummaryModal')) return;
+
+    const modalHTML = `
+    <div id="batchSummaryModal" class="summary-modal">
+        <div class="summary-content">
+            <div class="summary-header">
+                <div class="summary-title">🎉 Lote Completado</div>
+                <div class="summary-subtitle">Resumen de Ejecución y Métricas</div>
+            </div>
+
+            <div class="summary-grid">
+                <!-- Card 1: Sent -->
+                <div class="summary-card">
+                    <div class="summary-label">Total Enviado</div>
+                    <div class="summary-value success" id="sumTotalSent">---</div>
+                </div>
+                 <!-- Card 2: Cost -->
+                <div class="summary-card">
+                    <div class="summary-label">Costo Total Gas</div>
+                    <div class="summary-value highlight" id="sumTotalGas">---</div>
+                    <div class="unit-label" id="sumGasAvg" style="margin-top:5px; font-size:0.7rem;">Promedio: ---</div>
+                </div>
+            </div>
+
+            <div class="summary-card" style="margin-bottom: 2rem; text-align:left;">
+                <div class="summary-label" style="text-align:center; margin-bottom:1rem;"> IMPACTO FINANCIERO </div>
+                
+                <div class="balance-row">
+                    <span style="color:var(--text-muted)">Funder Wallet (Inicio)</span>
+                    <span id="sumFunderStart">---</span>
+                </div>
+                <div class="balance-row">
+                    <span style="color:var(--text-muted)">Funder Wallet (Final)</span>
+                    <span id="sumFunderEnd" style="color:var(--text-primary); font-weight:bold;">---</span>
+                </div>
+                <div style="height:1px; background:rgba(255,255,255,0.1); margin: 0.5rem 0;"></div>
+                 <div class="balance-row">
+                    <span style="color:var(--text-muted)">Faucet (Inicio)</span>
+                    <span id="sumFaucetStart">---</span>
+                </div>
+                 <div class="balance-row">
+                    <span style="color:var(--text-muted)">Faucet (Final)</span>
+                    <span id="sumFaucetEnd" style="color:var(--text-primary); font-weight:bold;">---</span>
+                </div>
+            </div>
+            
+            <div style="text-align:center; margin-bottom: 2rem; color: var(--text-muted); font-size: 0.8rem;">
+                ⏱️ Tiempo de Ejecución: <span id="sumDuration" style="color:var(--accent);">---</span>
+            </div>
+
+            <div class="summary-footer">
+                <button class="btn-close-summary" onclick="closeSummaryModal()">
+                    ¡Excelente! 🚀
+                </button>
+            </div>
+        </div>
+    </div>
+    `;
+
+    document.body.insertAdjacentHTML('beforeend', modalHTML);
+}
+
+window.showBatchSummaryModal = function (batch) {
+    const modal = document.getElementById('batchSummaryModal');
+    if (!modal) return;
+
+    // Parse Metrics
+    let metrics = {};
+    if (batch.metrics && typeof batch.metrics === 'object') {
+        metrics = batch.metrics;
+    } else if (batch.metrics) {
+        try { metrics = JSON.parse(batch.metrics); } catch (e) { }
+    }
+
+    // Populate Data
+    // 1. Total Sent
+    const totalUSDC = (parseFloat(batch.total_usdc || 0) / 1000000).toFixed(2);
+    document.getElementById('sumTotalSent').textContent = `$${totalUSDC} USDC`;
+
+    // 2. Gas
+    const totalGas = parseFloat(batch.total_gas_used || 0).toFixed(6);
+    document.getElementById('sumTotalGas').textContent = `${totalGas} MATIC`;
+
+    // Avg Gas
+    const txCount = parseInt(batch.total_transactions || 1);
+    const avgGas = (parseFloat(batch.total_gas_used || 0) / txCount).toFixed(6);
+    document.getElementById('sumGasAvg').textContent = `Avg: ${avgGas} MATIC/tx`;
+
+    // 3. Duration
+    document.getElementById('sumDuration').textContent = batch.execution_time || "---";
+
+    // 4. Balances
+    const initial = metrics.initial || {};
+    const final = metrics.final || {};
+
+    const fmt = (val) => val ? parseFloat(val).toFixed(4) + ' MATIC' : '---';
+
+    document.getElementById('sumFunderStart').textContent = fmt(initial.funderBalance);
+    document.getElementById('sumFunderEnd').textContent = fmt(final.funderBalance);
+
+    document.getElementById('sumFaucetStart').textContent = fmt(initial.faucetBalance);
+    document.getElementById('sumFaucetEnd').textContent = fmt(final.faucetBalance);
+
+    // Show
+    modal.classList.add('active');
+};
+
+window.closeSummaryModal = function () {
+    const modal = document.getElementById('batchSummaryModal');
+    if (modal) modal.classList.remove('active');
+};

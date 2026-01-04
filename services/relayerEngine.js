@@ -201,6 +201,33 @@ class RelayerEngine {
             // Track Start Time
             const startTime = Date.now();
 
+            // --- METRICS SNAPSHOT (START) ---
+            const startMetrics = {
+                funderBalance: '0',
+                faucetBalance: '0',
+                startTime: startTime
+            };
+
+            try {
+                // 1. Fetch Funder Address for this batch
+                const batchRes = await this.pool.query('SELECT funder_address FROM batches WHERE id = $1', [batchId]);
+                const funderAddress = batchRes.rows[0]?.funder_address;
+
+                if (funderAddress) {
+                    const fBal = await this.getProvider().getBalance(funderAddress);
+                    startMetrics.funderBalance = ethers.formatEther(fBal);
+                }
+                const faucetBal = await this.getProvider().getBalance(this.faucetWallet.address);
+                startMetrics.faucetBalance = ethers.formatEther(faucetBal);
+
+                await this.pool.query(
+                    `UPDATE batches SET metrics = metrics || $1 WHERE id = $2`,
+                    [JSON.stringify({ initial: startMetrics }), batchId]
+                );
+            } catch (metricErr) {
+                console.warn("[Engine] Metric snapshot start failed:", metricErr.message);
+            }
+
             console.log('\n========================================');
             console.log('⚙️  BACKGROUND PROCESS STARTED');
             console.log('========================================');
@@ -400,6 +427,30 @@ class RelayerEngine {
                     totalGasMatic = gasRes.rows[0].total_gas || "0";
                 }
 
+                // --- METRICS SNAPSHOT (END) ---
+                const endMetrics = {
+                    funderBalance: '0',
+                    faucetBalance: '0',
+                    endTime: Date.now(),
+                    duration: durationStr,
+                    totalGas: totalGasMatic,
+                    funding: funding,
+                    refunded: refunded
+                };
+
+                try {
+                    // Re-fetch funder address just in case
+                    const batchRes = await this.pool.query('SELECT funder_address FROM batches WHERE id = $1', [batchId]);
+                    const funderAddress = batchRes.rows[0]?.funder_address;
+
+                    if (funderAddress) {
+                        const fBal = await this.getProvider().getBalance(funderAddress);
+                        endMetrics.funderBalance = ethers.formatEther(fBal);
+                    }
+                    const faucetBal = await this.getProvider().getBalance(this.faucetWallet.address);
+                    endMetrics.faucetBalance = ethers.formatEther(faucetBal);
+                } catch (e) { console.warn("Metric snapshot end failed", e); }
+
                 console.log(`[Engine] 🏁 Metrics | Time: ${durationStr} | Gas: ${totalGasMatic} MATIC`);
 
                 // Update Batch with Metrics and Final Status
@@ -409,9 +460,10 @@ class RelayerEngine {
                     total_gas_used = $1, 
                     execution_time = $2, 
                     end_time = NOW(),
+                    metrics = metrics || $3,
                     updated_at = NOW() 
-                 WHERE id = $3`,
-                    [totalGasMatic, durationStr, batchId]
+                 WHERE id = $4`,
+                    [totalGasMatic, durationStr, JSON.stringify({ final: endMetrics }), batchId]
                 );
 
                 console.log(`✅ Batch ${batchId} Processing Complete. metrics saved.`);
