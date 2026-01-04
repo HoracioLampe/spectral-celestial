@@ -67,6 +67,7 @@ const initSessionTable = async (retries = 3) => {
 
 
 // Middleware
+app.set('trust proxy', 1); // Essential for Railway/Proxies
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -149,11 +150,14 @@ app.get('/api/config', (req, res) => {
 
 app.get('/api/auth/nonce', async (req, res) => {
     try {
+        console.log(`[Auth] Generating Nonce for SessionID: ${req.sessionID}`);
         if (!req.session) {
             console.error("❌ Session undefined in /api/auth/nonce");
             return res.status(500).send("Session configuration error");
         }
         req.session.nonce = generateNonce();
+        await req.session.save(); // FORCE SAVE
+        console.log(`[Auth] Nonce generated: ${req.session.nonce}`);
         res.setHeader('Content-Type', 'text/plain');
         res.send(req.session.nonce);
     } catch (err) {
@@ -184,12 +188,20 @@ app.post('/api/auth/verify', async (req, res) => {
         const { message, signature } = req.body;
         const siweMessage = new SiweMessage(message);
 
+        console.log(`[Auth] Verifying Signature. SessionID: ${req.sessionID}`);
+        console.log(`[Auth] Stored Nonce: ${req.session ? req.session.nonce : 'UNDEFINED'}`);
+
+        if (!req.session || !req.session.nonce) {
+            console.error("[Auth] Missing nonce in session. Potential Cookie/Session mismatch.");
+            return res.status(422).json({ error: "Sesión expirada o inválida (Nonce perdido). Recarga la página." });
+        }
+
         const { data: fields } = await siweMessage.verify({
             signature,
             nonce: req.session.nonce,
         });
 
-        if (!fields) return res.status(400).json({ error: 'Signature verification failed' });
+        if (!fields) return res.status(400).json({ error: 'Firma inválida' });
 
         const normalizedAddress = fields.address.toLowerCase().trim();
 
