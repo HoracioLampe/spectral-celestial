@@ -5,6 +5,12 @@ class RelayerEngine {
     constructor(pool, rpcManager, faucetPrivateKey) {
         this.pool = pool; // Postgres Pool
         this.rpcManager = rpcManager;
+
+        // TIMEOUT CONFIGURATION
+        // Variable: STUCK_TX_TIMEOUT_MINUTES
+        // Unit: Minutes
+        // Default: 3
+        this.stuckTxTimeoutMinutes = parseInt(process.env.STUCK_TX_TIMEOUT_MINUTES || '3', 10);
         // Legacy support: if rpcManager is string, wrap it (handled in server.js ideally, but safe check here)
         this.provider = rpcManager.provider || new ethers.JsonRpcProvider(rpcManager);
 
@@ -65,6 +71,35 @@ class RelayerEngine {
      */
     // (REMOVED ensureBatchPermit as we use Direct Permit Submission)
 
+    /**
+     * Identifies and Resets Stale 'ENVIANDO' transactions.
+     * Criteria: Status = 'ENVIANDO' AND updated_at < NOW() - timeout
+     */
+    async recoverStaleTransactions(batchId) {
+        const timeoutMinutes = this.stuckTxTimeoutMinutes;
+        console.log(`[Engine] 🧹 Checking for stale transactions (Timeout: ${timeoutMinutes} mins)...`);
+
+        try {
+            const res = await this.pool.query(`
+                UPDATE batch_transactions
+                SET status = 'PENDING', relayer_address = NULL, updated_at = NOW(), retry_count = COALESCE(retry_count, 0) + 1
+                WHERE batch_id = $1 
+                AND status = 'ENVIANDO' 
+                AND updated_at < NOW() - ($2 || ' minutes')::INTERVAL
+                RETURNING id, tx_hash
+            `, [batchId, timeoutMinutes]);
+
+            if (res.rowCount > 0) {
+                console.warn(`[Engine] ⚠️  RECOVERED ${res.rowCount} STUCK TRANSACTIONS! Reset to PENDING.`);
+                // Optional: log IDs if few, or count if many
+            } else {
+                console.log(`[Engine] ✨ No stale transactions found.`);
+            }
+        } catch (e) {
+            console.error(`[Engine] ❌ Error recovering stale transactions:`, e.message);
+        }
+    }
+
     async syncRelayerBalance(address) {
         try {
             await new Promise(r => setTimeout(r, 100)); // Throttle
@@ -86,6 +121,9 @@ class RelayerEngine {
      */
     async prepareRelayers(batchId, numRelayers) {
         console.log(`[Engine] 🏗️ prepareRelayers(id = ${batchId}, count = ${numRelayers})`);
+
+        // Step -1: Recover Stale Transactions (Self-Healing)
+        await this.recoverStaleTransactions(batchId);
 
         // Step 0: Ensure Faucet is healthy (Nonce Repair)
         // This prevents collisions if a previous batch is still finishing up or if Faucet state is stuck.
@@ -317,6 +355,10 @@ class RelayerEngine {
                     console.warn(`[Engine] ⚠️ Skipping Fund Recovery: ${pendingCount} transactions are still PENDING/FAILED.`);
                 } else {
                     console.log(`[Engine] 🧹 All clear. Cleaning up & Returning Funds...`);
+
+                    // Final Stale Check before closing (Just in case workers died mid-last-mile)
+                    await this.recoverStaleTransactions(batchId);
+
                     try {
                         await this.returnFundsToFaucet(relayers, batchId);
                     } catch (cleanupErr) {
