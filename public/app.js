@@ -829,6 +829,7 @@ window.showBatchList = function () {
 
 // Cargar lista al iniciar o cambiar tab
 async function fetchBatches(page = 1) {
+    console.log(`[fetchBatches] Fetching page ${page}...`);
     try {
         // Collect Filter Values
         const dateVal = document.getElementById('filterDate')?.value || '';
@@ -846,11 +847,15 @@ async function fetchBatches(page = 1) {
             amount: amountVal
         });
 
+        const url = `/api/batches?${params.toString()}`;
+        console.log(`[fetchBatches] Requesting: ${url}`);
+
         // Show loading state if needed, though usually silent update is better or specific loader
         // batchesListBody.innerHTML = '<tr><td colspan="9" style="text-align:center;">Cargando...</td></tr>';
 
-        const res = await authenticatedFetch(`/api/batches?${params.toString()}`);
+        const res = await authenticatedFetch(url);
         const data = await res.json();
+        console.log(`[fetchBatches] Response:`, data);
 
         if (data.error) throw new Error(data.error);
 
@@ -863,7 +868,9 @@ async function fetchBatches(page = 1) {
         currentBatchPage = page;
     } catch (error) {
         console.error("Error fetching batches:", error);
-        batchesListBody.innerHTML = `<tr><td colspan="9" style="text-align:center; color: #ef4444; padding: 2rem;">Error al cargar lotes: ${error.message} <br> <button onclick="fetchBatches(1)" class="btn btn-sm btn-primary mt-2">Reintentar</button></td></tr>`;
+        if (window.batchesListBody) {
+            batchesListBody.innerHTML = `<tr><td colspan="9" style="text-align:center; color: #ef4444; padding: 2rem;">Error al cargar lotes: ${error.message} <br> <button onclick="fetchBatches(1)" class="btn btn-sm btn-primary mt-2">Reintentar</button></td></tr>`;
+        }
     }
 }
 
@@ -1008,8 +1015,11 @@ async function createBatch() {
 
     if (!data.batch_number || !data.detail) return alert("Completa Número y Detalle");
 
+    const btnSaveBatch = document.getElementById('btnSaveBatch');
+
     try {
-        btnSaveBatch.textContent = "Creando...";
+        if (btnSaveBatch) btnSaveBatch.textContent = "Creando...";
+
         const res = await authenticatedFetch('/api/batches', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1028,7 +1038,7 @@ async function createBatch() {
         document.getElementById('newBatchDetail').value = '';
         document.getElementById('newBatchDesc').value = '';
 
-        fetchBatches(); // Recargar lista
+        fetchBatches(1); // Recargar lista al inicio
 
         // Wrap alert in setTimeout to ensure modal closes visually first 
         setTimeout(() => {
@@ -1039,7 +1049,7 @@ async function createBatch() {
         console.error(error);
         alert("Error creando lote: " + error.message);
     } finally {
-        btnSaveBatch.textContent = "Crear Lote";
+        if (btnSaveBatch) btnSaveBatch.textContent = "Crear Lote";
     }
 }
 
