@@ -112,7 +112,7 @@ app.use(session({
     cookie: {
         secure: false,
         httpOnly: true,
-        maxAge: 7200000 // 2 hours (2 * 60 * 60 * 1000)
+        maxAge: (parseInt(process.env.SESSION_TIMEOUT_MINUTES) || 120) * 60 * 1000 // Default: 120 minutes (2 hours)
     }
 }));
 
