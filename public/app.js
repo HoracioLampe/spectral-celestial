@@ -851,10 +851,10 @@ async function fetchBatches(page = 1) {
 
     try {
         // Collect Filter Values
-        const dateVal = document.getElementById('filterDate')?.value || '';
-        const descVal = document.getElementById('filterDesc')?.value || '';
-        const statusVal = document.getElementById('filterStatus')?.value || '';
-        const amountVal = document.getElementById('filterAmount')?.value || '';
+        const dateVal = document.getElementById('batchFilterDate')?.value || '';
+        const descVal = document.getElementById('batchFilterDesc')?.value || '';
+        const statusVal = document.getElementById('batchFilterStatus')?.value || '';
+        const amountVal = document.getElementById('batchFilterAmount')?.value || '';
 
         // Constuct Query
         const params = new URLSearchParams({
@@ -909,15 +909,15 @@ function renderBatchFilters() {
     <div class="filter-bar">
         <div class="filter-group">
             <label>📅 Fecha</label>
-            <input type="date" id="filterDate" onchange="fetchBatches(1)">
+            <input type="date" id="batchFilterDate" onchange="fetchBatches(1)">
         </div>
         <div class="filter-group" style="flex: 2;">
             <label>🔍 Buscar (Desc, Detalle, #)</label>
-            <input type="text" id="filterDesc" placeholder="Ej: Lote 345..." onkeyup="debounceFetch()">
+            <input type="text" id="batchFilterDesc" placeholder="Ej: Lote 345..." onkeyup="debounceFetch()">
         </div>
         <div class="filter-group">
             <label>📊 Estado</label>
-            <select id="filterStatus" onchange="fetchBatches(1)">
+            <select id="batchFilterStatus" onchange="fetchBatches(1)">
                 <option value="">Todos</option>
                 <option value="READY">Preparado 🔵</option>
                 <option value="SENT">Enviando 🟢</option>
@@ -927,7 +927,7 @@ function renderBatchFilters() {
         </div>
         <div class="filter-group">
             <label>💰 Monto USDC (±10%)</label>
-            <input type="number" id="filterAmount" placeholder="Ej: 100" onkeyup="debounceFetch()">
+            <input type="number" id="batchFilterAmount" placeholder="Ej: 100" onkeyup="debounceFetch()">
         </div>
         <div class="filter-group" style="justify-content: flex-end;">
             <label>&nbsp;</label>
@@ -949,10 +949,10 @@ function debounceFetch() {
 }
 
 window.clearFilters = function () {
-    const fDate = document.getElementById('filterDate');
-    const fDesc = document.getElementById('filterDesc');
-    const fStatus = document.getElementById('filterStatus');
-    const fAmount = document.getElementById('filterAmount');
+    const fDate = document.getElementById('batchFilterDate');
+    const fDesc = document.getElementById('batchFilterDesc');
+    const fStatus = document.getElementById('batchFilterStatus');
+    const fAmount = document.getElementById('batchFilterAmount');
 
     if (fDate) fDate.value = '';
     if (fDesc) fDesc.value = '';
@@ -1846,15 +1846,18 @@ async function uploadBatchFile() {
     const fileInput = document.getElementById('batchFile');
     const status = document.getElementById('uploadStatus');
     const btnUploadBatch = document.getElementById('btnUploadBatch');
-    if (!currentBatchId) return alert("No batch selected");
-    if (!fileInput.files[0]) return alert("Selecciona un archivo Excel");
 
-    const formData = new FormData();
-    formData.append('file', fileInput.files[0]);
+    if (!currentBatchId) return alert("No batch selected");
+    if (!fileInput || !fileInput.files[0]) return alert("Selecciona un archivo Excel");
 
     try {
-        btnUploadBatch.disabled = true;
-        btnUploadBatch.textContent = "Subiendo...";
+        const formData = new FormData();
+        formData.append('file', fileInput.files[0]);
+
+        if (btnUploadBatch) {
+            btnUploadBatch.disabled = true;
+            btnUploadBatch.textContent = "Subiendo...";
+        }
         if (status) status.textContent = "Procesando archivo...";
 
         const res = await authenticatedFetch(`/api/batches/${currentBatchId}/upload`, {
