@@ -117,6 +117,61 @@ class RelayerEngine {
     }
 
     /**
+     * SELF-HEALING: Verify Faucet integrity and unclog stuck transactions
+     * Use this before any critical Faucet operation.
+     */
+    async verifyAndRepairNonce() {
+        console.log("[Engine] 🛡️ Verifying Faucet integrity...");
+        try {
+            const address = this.faucetWallet.address;
+            const nonce = await this.getProvider().getTransactionCount(address, 'latest');
+            const pending = await this.getProvider().getTransactionCount(address, 'pending');
+
+            if (pending > nonce) {
+                console.warn(`[Engine] ⚠️  GAP DETECTED in Faucet Nonce! Latest: ${nonce}, Pending: ${pending}. Sanitizing...`);
+                // Sanitize: Clear everything from nonce to pending
+                // Actually, often it's just one stuck tx or a gap. safely replacing 'nonce' is usually enough.
+                // We will loop just in case.
+
+                await this.sanitizeFaucet(nonce, pending);
+            } else {
+                console.log("[Engine] ✅ Faucet Nonce is healthy.");
+            }
+        } catch (e) {
+            console.error("[Engine] Nonce Check Failed:", e);
+        }
+    }
+
+    /**
+     * Aggressively clears stuck transactions from the Faucet
+     */
+    async sanitizeFaucet(startNonce, endNonce) {
+        console.log(`[Engine] 🧹 Sanitizing Faucet (Nonces ${startNonce} to ${endNonce - 1})...`);
+        const feeData = await this.getProvider().getFeeData();
+        // Use aggressive gas to ensure replacement
+        const aggressivePrice = (feeData.gasPrice || 30000000000n) * 10n; // 10x market price or fallback 300 gwei
+
+        for (let n = startNonce; n < endNonce; n++) {
+            try {
+                console.log(`[Engine] Killing stuck nonce ${n}...`);
+                const tx = await this.faucetWallet.sendTransaction({
+                    to: this.faucetWallet.address,
+                    value: 0,
+                    nonce: n,
+                    gasPrice: aggressivePrice,
+                    gasLimit: 21000
+                });
+                console.log(`[Engine] 🔪 Kill Tx Sent: ${tx.hash}`);
+                await tx.wait(1);
+                console.log(`[Engine] ✨ Nonce ${n} cleared.`);
+            } catch (err) {
+                console.error(`[Engine] Failed to clear nonce ${n}: ${err.message}`);
+                // If replacement underpriced, go higher? For now, log.
+            }
+        }
+    }
+
+    /**
      * PHASE 1: Setup relayers and fund them.
      */
     async prepareRelayers(batchId, numRelayers) {
