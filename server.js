@@ -18,8 +18,9 @@ const JWT_SECRET = process.env.JWT_SECRET || 'dappsfactory-secret-key-2026';
 
 
 // RPC Configuration (Failover)
-const RPC_PRIMARY = process.env.PROVIDER_URL || process.env.RPC_URL || "https://polygon-mainnet.core.chainstack.com/05aa9ef98aa83b585c14fa0438ed53a9";
-const RPC_FALLBACK = process.env.RPC_FALLBACK_URL || "https://polygon-mainnet.core.chainstack.com/05aa9ef98aa83b585c14fa0438ed53a9"; // Quicknode Fallback
+// RPC Configuration (Failover)
+const RPC_PRIMARY = process.env.RPC_URL || "https://polygon-mainnet.core.chainstack.com/05aa9ef98aa83b585c14fa0438ed53a9";
+const RPC_FALLBACK = process.env.RPC_FALLBACK_URL || "https://fluent-clean-orb.matic.quiknode.pro/d95e5af7a69e7b5f8c09a440a5985865d6f4ae93/"; // Quicknode Fallback
 const globalRpcManager = new RpcManager(RPC_PRIMARY, RPC_FALLBACK);
 
 const app = express();
