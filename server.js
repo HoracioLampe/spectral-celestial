@@ -37,6 +37,12 @@ const pool = new Pool({
     idleTimeoutMillis: 10000
 });
 
+// Capture unexpected errors on idle clients to prevent crash
+pool.on('error', (err, client) => {
+    console.error('❌ Unexpected Error on Idle DB Client:', err.message);
+    // process.exit(-1); // Don't exit, try to recover
+});
+
 // AUTO-CREATE SESSION TABLE (With Retry)
 const initSessionTable = async (retries = 5) => {
     for (let i = 0; i < retries; i++) {
@@ -63,12 +69,24 @@ initSessionTable();
 // Middleware
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
-app.use(session({
-    store: new pgSession({
+
+// Session Store Setup (Resilient)
+let sessionStore;
+try {
+    sessionStore = new pgSession({
         pool: pool,
         tableName: 'session',
-        createTableIfMissing: true // Added as a secondary safeguard
-    }),
+        createTableIfMissing: true,
+        errorLog: (err) => console.error('❌ Session Store Error:', err.message)
+    });
+    console.log("✅ PG Session Store initialized");
+} catch (e) {
+    console.error("⚠️ Failed to init PG Session Store, falling back to MemoryStore:", e.message);
+    sessionStore = new session.MemoryStore();
+}
+
+app.use(session({
+    store: sessionStore,
     name: 'dappsfactory_session',
     secret: process.env.SESSION_SECRET || 'siwe-session-secret',
     resave: false,
@@ -78,6 +96,11 @@ app.use(session({
 
 // --- Authentication Middleware ---
 const authenticateToken = (req, res, next) => {
+    // Fail fast if DB is down for auth routes
+    if (pool.totalCount === 0 && !process.env.UseMemoryStore) {
+        // Optional: specific check? For now, standard flow.
+    }
+
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
 
