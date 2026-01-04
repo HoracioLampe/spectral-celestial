@@ -1654,10 +1654,92 @@ app.post('/api/admin/rescue-execute', authenticateToken, async (req, res) => {
 const VERSION = "2.3.0";
 const PORT_LISTEN = process.env.PORT || 3000;
 
+// ============================================
+// AUTOMATIC TRANSACTION MONITOR
+// ============================================
+async function monitorStuckTransactions() {
+    try {
+        const rpcUrl = process.env.RPC_URL || "https://polygon-mainnet.core.chainstack.com/05aa9ef98aa83b585c14fa0438ed53a9";
+        const provider = new ethers.JsonRpcProvider(rpcUrl);
+
+        // 1. Reset WAITING_CONFIRMATION with no tx_hash (never sent)
+        const stuckResult = await pool.query(`
+            UPDATE batch_transactions
+            SET status = 'PENDING', retry_count = COALESCE(retry_count, 0) + 1
+            WHERE status = 'WAITING_CONFIRMATION'
+            AND tx_hash IS NULL
+            AND updated_at < NOW() - INTERVAL '1 minute'
+            RETURNING id
+        `);
+
+        if (stuckResult.rowCount > 0) {
+            console.log(`[Monitor] ✅ Reset ${stuckResult.rowCount} stuck WAITING_CONFIRMATION → PENDING`);
+        }
+
+        // 2. Check blockchain for WAITING_CONFIRMATION with tx_hash
+        const waitingRes = await pool.query(`
+            SELECT id, tx_hash
+            FROM batch_transactions
+            WHERE status = 'WAITING_CONFIRMATION'
+            AND tx_hash IS NOT NULL
+            AND updated_at < NOW() - INTERVAL '2 minutes'
+            LIMIT 50
+        `);
+
+        let recovered = 0;
+        for (const tx of waitingRes.rows) {
+            try {
+                const receipt = await provider.getTransactionReceipt(tx.tx_hash);
+                if (receipt) {
+                    const newStatus = receipt.status === 1 ? 'COMPLETED' : 'FAILED';
+                    await pool.query(`UPDATE batch_transactions SET status = $1 WHERE id = $2`, [newStatus, tx.id]);
+                    recovered++;
+                } else {
+                    const pendingTx = await provider.getTransaction(tx.tx_hash);
+                    if (!pendingTx) {
+                        // Dropped from mempool
+                        await pool.query(`UPDATE batch_transactions SET status = 'PENDING', tx_hash = NULL WHERE id = $1`, [tx.id]);
+                    }
+                }
+            } catch (err) {
+                // RPC error, skip
+            }
+        }
+
+        if (recovered > 0) {
+            console.log(`[Monitor] ✅ Recovered ${recovered} transactions from blockchain`);
+        }
+
+        // 3. Reset stale ENVIANDO
+        const staleResult = await pool.query(`
+            UPDATE batch_transactions
+            SET status = 'PENDING', retry_count = COALESCE(retry_count, 0) + 1
+            WHERE status = 'ENVIANDO'
+            AND updated_at < NOW() - INTERVAL '30 seconds'
+            RETURNING id
+        `);
+
+        if (staleResult.rowCount > 0) {
+            console.log(`[Monitor] ✅ Reset ${staleResult.rowCount} stale ENVIANDO → PENDING`);
+        }
+
+    } catch (error) {
+        console.error("[Monitor] ❌ Error:", error.message);
+    }
+}
+
+// Start monitoring loop
+setInterval(monitorStuckTransactions, 60000); // Every 60 seconds
+console.log("🔄 Transaction Monitor: Enabled (checks every 60s)");
+
 app.listen(PORT_LISTEN, () => {
     console.log(`Server is running on port ${PORT_LISTEN} `);
-    console.log(`🚀 Version: ${VERSION} (Self - Healing & Performance Record)`);
+    console.log(`🚀 Version: ${VERSION} (Self-Healing & Performance Record)`);
+
+    // Run first check immediately
+    setTimeout(monitorStuckTransactions, 5000); // Wait 5s for server to be ready
 });
+
 
 
 
