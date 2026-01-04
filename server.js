@@ -86,17 +86,8 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Session Store Setup (Resilient)
-// TEMPORARY: Force MemoryStore due to Railway network connectivity issues
-// TODO: Re-enable PG Store once Railway private network is configured correctly
 let sessionStore;
 
-console.warn("⚠️ TEMPORARY: Using MemoryStore due to Railway network issues");
-console.warn("   Sessions will be lost on server restart");
-console.warn("   To fix: Ensure DB and App are in same Railway Project with Private Networking enabled");
-sessionStore = new session.MemoryStore();
-
-/* 
-// Original PG Store code (re-enable after fixing Railway network):
 try {
     sessionStore = new pgSession({
         pool: pool,
@@ -106,12 +97,11 @@ try {
             console.error('❌ Session Store Error:', err.message);
         }
     });
-    console.log("✅ PG Session Store initialized (will connect when DB ready)");
+    console.log("✅ PG Session Store initialized");
 } catch (e) {
     console.error("⚠️ Failed to create PG Store, fallback to Memory:", e.message);
     sessionStore = new session.MemoryStore();
 }
-*/
 
 app.use(session({
     store: sessionStore,
