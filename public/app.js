@@ -1217,52 +1217,66 @@ let allRelayers = [];
 window.currentServerTotal = 0; // Server-side pagination total
 
 
+
 function updateDetailView(batch) {
-    detailBatchTitle.textContent = `${batch.batch_number} - ${batch.detail}`;
-    detailBatchDesc.textContent = batch.description || "Sin descripción";
+    // Explicitly Get Elements to avoid RefError
+    const detailBatchTitle = document.getElementById('detailBatchTitle');
+    const detailBatchDesc = document.getElementById('detailBatchDesc');
+    const batchStatsContainer = document.getElementById('batchStatsContainer');
+    const detailTotalTx = document.getElementById('detailTotalTx');
+    const detailTotalAmount = document.getElementById('detailTotalAmount');
+    const detailUploadContainer = document.getElementById('detailUploadContainer');
+    const uploadStatus = document.getElementById('uploadStatus');
+    const btnUploadBatch = document.getElementById('btnUploadBatch');
+    const merkleContainer = document.getElementById('merkleContainer');
+    const merkleStatus = document.getElementById('merkleStatus');
+    const merkleTotalAmount = document.getElementById('merkleTotalAmount');
+    const merkleInputZone = document.getElementById('merkleInputZone');
+    const merkleResultZone = document.getElementById('merkleResultZone');
+    const displayMerkleRoot = document.getElementById('displayMerkleRoot');
+    const merkleResultFunder = document.getElementById('merkleResultFunder');
+    const merkleResultBalance = document.getElementById('merkleResultBalance');
+
+    if (detailBatchTitle) detailBatchTitle.textContent = `${batch.batch_number} - ${batch.detail}`;
+    if (detailBatchDesc) detailBatchDesc.textContent = batch.description || "Sin descripción";
 
     // Stats logic
     if (batchStatsContainer) {
         batchStatsContainer.classList.remove('hidden');
-        detailTotalTx.textContent = batch.total_transactions || 0;
-
-        detailTotalTx.textContent = batch.total_transactions || 0;
+        if (detailTotalTx) detailTotalTx.textContent = batch.total_transactions || 0;
 
         let totalValString = (batch.total_usdc !== null && batch.total_usdc !== undefined) ? batch.total_usdc.toString() : "0";
-        // Parse directly to BigInt assuming it's stored as base units (WEI/microUSDC) in DB? 
-        // Wait, DB usually stores integers.
-        // Let's assume it is stored as "6 decimals integer" in DB if it was inserted correctly.
-        // But render logic divides by 1000000.
-        // So totalValString IS the integer value.
         currentBatchTotalUSDC = BigInt(totalValString);
 
         const totalDisplay = (parseFloat(totalValString) / 1000000).toFixed(6);
-        detailTotalAmount.textContent = `$${totalDisplay}`;
+        if (detailTotalAmount) detailTotalAmount.textContent = `$${totalDisplay}`;
     }
 
     // Show/Hide Upload based on status
     if (batch.status === 'PREPARING') {
-        detailUploadContainer.classList.remove('hidden');
-        uploadStatus.textContent = '';
-        btnUploadBatch.disabled = false;
-        btnUploadBatch.textContent = "Subir y Calcular 📤";
+        if (detailUploadContainer) detailUploadContainer.classList.remove('hidden');
+        if (uploadStatus) uploadStatus.textContent = '';
+        if (btnUploadBatch) {
+            btnUploadBatch.disabled = false;
+            btnUploadBatch.textContent = "Subir y Calcular 📤";
+        }
         if (merkleContainer) merkleContainer.classList.add('hidden');
     } else {
-        detailUploadContainer.classList.add('hidden');
+        if (detailUploadContainer) detailUploadContainer.classList.add('hidden');
 
         // Merkle Logic (For Ready/Sent batches)
         if (merkleContainer) {
             merkleContainer.classList.remove('hidden');
-            merkleStatus.textContent = '';
+            if (merkleStatus) merkleStatus.textContent = '';
 
-            // Populate Total in Input Section (still Total Amount)
+            // Populate Total in Input Section
             let totalVal = (batch.total_usdc !== null && batch.total_usdc !== undefined) ? parseFloat(batch.total_usdc) : 0;
             const totalDisplay = `$${(totalVal / 1000000).toFixed(6)}`;
             if (merkleTotalAmount) merkleTotalAmount.textContent = totalDisplay;
             const totalRequiredEl = document.getElementById('merkleResultTotalRequired');
             if (totalRequiredEl) totalRequiredEl.textContent = `$${(totalVal / 1000000).toFixed(6)} USDC`;
 
-            // Update Relayer Options Limit (Use batch.total_transactions since we don't have full tx array here)
+            // Update Relayer Options Limit
             updateRelayerCountOptions(batch.total_transactions || 100);
 
             // Populate Funder Info in Merkle Zone
@@ -1277,10 +1291,9 @@ function updateDetailView(batch) {
                 }
             }
 
-            // Update Verification Label with fixed 100 cap or actual count
+            // Update Verification Label
             const verifyLabel = document.getElementById('merkleVerifyLabel');
             if (verifyLabel) {
-                // Use total_transactions from batch object
                 const count = Math.min(100, batch.total_transactions || 0);
                 verifyLabel.textContent = `🔄 Verificación On-Chain (Muestreo ${count} ${count === 1 ? 'tx' : 'txs'})`;
             }
@@ -1288,11 +1301,11 @@ function updateDetailView(batch) {
             // CRITICAL Fix for Merkle Logic
             if (batch.merkle_root && batch.merkle_root !== 'NULL') {
                 // Already generated
-                merkleInputZone.classList.add('hidden');
-                merkleResultZone.classList.remove('hidden');
+                if (merkleInputZone) merkleInputZone.classList.add('hidden');
+                if (merkleResultZone) merkleResultZone.classList.remove('hidden');
                 document.getElementById('merkleVerifyZone')?.classList.remove('hidden');
                 document.getElementById('executionZone')?.classList.remove('hidden');
-                displayMerkleRoot.textContent = batch.merkle_root;
+                if (displayMerkleRoot) displayMerkleRoot.textContent = batch.merkle_root;
 
                 if (batch.funder_address) {
                     if (merkleResultFunder) merkleResultFunder.textContent = batch.funder_address;
@@ -1301,7 +1314,7 @@ function updateDetailView(batch) {
                     if (merkleResultBalance) {
                         merkleResultBalance.textContent = "Cargando...";
                         fetchUSDCBalance(batch.funder_address).then(bal => {
-                            merkleResultBalance.textContent = bal;
+                            if (merkleResultBalance) merkleResultBalance.textContent = bal;
                         });
                     }
                     // Fetch Allowance
@@ -1311,51 +1324,52 @@ function updateDetailView(batch) {
                 // Progress Bar Handling
                 const progressZone = document.getElementById('batchProgressZone');
                 // Status is either PROCESSING (currently running) or SENT (started)
-                if (batch.status === 'SENT' || batch.status === 'PROCESSING') {
+                if (batch.status === 'SENT' || batch.status.includes('PROCESSING')) {
                     if (progressZone) progressZone.classList.remove('hidden');
-                    startProgressPolling(batch.id);
-                    // Fix: Ensure relayer setup zone is reset/visible if needed
-                    const relayerMsg = document.getElementById('relayerMsg');
-                    const relayerSetupZone = document.getElementById('relayerSetupZone');
-
-                    // Determine if we need to show setup options
-                    // IF relayers exist, show them (via refreshRelayerBalances). ELSE show setup button.
-                    // Reset UI state to "Loading/Checking"
-                    if (relayerMsg) {
-                        relayerMsg.classList.remove('hidden');
-                        relayerMsg.innerHTML = `<span style="color:#fbbf24;">⏳ Verificando Relayers...</span>`;
+                } else if (batch.status === 'COMPLETED') {
+                    if (progressZone) {
+                        progressZone.classList.remove('hidden'); // Show 100%
+                        const bar = document.getElementById('batchProgressBar');
+                        const txt = document.getElementById('batchProgressText');
+                        const per = document.getElementById('batchProgressPercent');
+                        if (bar) bar.style.width = '100%';
+                        if (txt) txt.textContent = "Completado";
+                        if (per) per.textContent = "100%";
                     }
-                    if (relayerSetupZone) relayerSetupZone.classList.remove('hidden');
-
-                } else {
-                    if (progressZone) progressZone.classList.add('hidden');
-                    stopProgressPolling();
                 }
             } else {
-                // Not generated yet (or reset)
-                console.log("[UI] Merkle Root missing, showing generation zone.");
-                merkleInputZone.classList.remove('hidden'); // Show Generation Button
-                merkleResultZone.classList.add('hidden');
+                // Not Generated yet
+                if (merkleInputZone) merkleInputZone.classList.remove('hidden');
+                if (merkleResultZone) merkleResultZone.classList.add('hidden');
                 document.getElementById('merkleVerifyZone')?.classList.add('hidden');
                 document.getElementById('executionZone')?.classList.add('hidden');
-
-                // Clear leftovers
-                if (batchFunderAddress) batchFunderAddress.value = '';
-                if (merkleFounderBalance) merkleFounderBalance.textContent = '---';
-                if (displayMerkleRoot) displayMerkleRoot.textContent = "Not Generated";
-                stopProgressPolling();
             }
         }
     }
+}
+console.log("[UI] Merkle Root missing, showing generation zone.");
+merkleInputZone.classList.remove('hidden'); // Show Generation Button
+merkleResultZone.classList.add('hidden');
+document.getElementById('merkleVerifyZone')?.classList.add('hidden');
+document.getElementById('executionZone')?.classList.add('hidden');
 
-    // Clear filter inputs on new batch load
-    if (document.getElementById('filterWallet')) document.getElementById('filterWallet').value = '';
-    if (document.getElementById('filterAmount')) document.getElementById('filterAmount').value = '';
-    if (document.getElementById('filterStatus')) document.getElementById('filterStatus').value = '';
+// Clear leftovers
+if (batchFunderAddress) batchFunderAddress.value = '';
+if (merkleFounderBalance) merkleFounderBalance.textContent = '---';
+if (displayMerkleRoot) displayMerkleRoot.textContent = "Not Generated";
+stopProgressPolling();
+}
+        }
+    }
 
-    // Reset Filter Count
-    const filterCountEl = document.getElementById('filterResultCount');
-    if (filterCountEl) filterCountEl.textContent = '';
+// Clear filter inputs on new batch load
+if (document.getElementById('filterWallet')) document.getElementById('filterWallet').value = '';
+if (document.getElementById('filterAmount')) document.getElementById('filterAmount').value = '';
+if (document.getElementById('filterStatus')) document.getElementById('filterStatus').value = '';
+
+// Reset Filter Count
+const filterCountEl = document.getElementById('filterResultCount');
+if (filterCountEl) filterCountEl.textContent = '';
 
     // renderBatchTransactions(); // Don't render here, it's done after fetch
 }
