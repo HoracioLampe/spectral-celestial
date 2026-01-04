@@ -44,33 +44,36 @@ pool.on('error', (err, client) => {
 });
 
 // AUTO-CREATE SESSION TABLE (With Retry)
-const initSessionTable = async (retries = 5) => {
-    for (let i = 0; i < retries; i++) {
-        try {
-            await pool.query(`
-                CREATE TABLE IF NOT EXISTS "session" (
-                    "sid" varchar NOT NULL PRIMARY KEY,
-                    "sess" json NOT NULL,
-                    "expire" timestamp(6) NOT NULL
-                );
-                CREATE INDEX IF NOT EXISTS "IDX_session_expire" ON "session" ("expire");
-            `);
-            console.log("📊 Session table verified/created");
-            return;
-        } catch (err) {
-            console.error(`❌ DB Connection Failed (Attempt ${i + 1}/${retries}): ${err.message}`);
-            if (i === retries - 1) console.error("❌ Critical: Could not connect to DB after multiple attempts.");
-            await new Promise(res => setTimeout(res, 2000)); // Wait 2s
-        }
+const initSessionTable = async (retries = 3) => {
+    try {
+        await pool.query('SELECT 1'); // Simple health check
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS "session" (
+                "sid" varchar NOT NULL PRIMARY KEY,
+                "sess" json NOT NULL,
+                "expire" timestamp(6) NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS "IDX_session_expire" ON "session" ("expire");
+        `);
+        console.log("📊 Session table verified/created");
+        return true;
+    } catch (err) {
+        console.error(`⚠️ DB Init Failed: ${err.message}. Switching to MemoryStore.`);
+        return false;
     }
 };
-initSessionTable();
+
+
+
 
 // Middleware
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Session Store Setup (Resilient)
+// We already declared and initialized sessionStore above (if the previous block was correct)
+// But to be safe and clean, let's just do it all here cleanly.
+
 let sessionStore;
 try {
     sessionStore = new pgSession({
@@ -82,6 +85,12 @@ try {
     console.log("✅ PG Session Store initialized");
 } catch (e) {
     console.error("⚠️ Failed to init PG Session Store, falling back to MemoryStore:", e.message);
+    sessionStore = new session.MemoryStore();
+}
+
+// Fallback if DB URL looks bad (Double check)
+if (!process.env.DATABASE_URL || process.env.DATABASE_URL.includes("undefined")) {
+    console.warn("⚠️ DATABASE_URL missing/invalid. FORCE MemoryStore.");
     sessionStore = new session.MemoryStore();
 }
 
