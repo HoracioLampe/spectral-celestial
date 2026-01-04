@@ -766,7 +766,15 @@ class RelayerEngine {
                 txDB.batch_id, txDB.id, funder, txDB.wallet_address_to, amountVal, proof
             );
             const feeData = await this.getProvider().getFeeData();
-            const gasPrice = (feeData.gasPrice * 120n) / 100n; // 20% boost
+
+            // Hard cap gas price to prevent "Insufficient Funds" errors during spikes
+            const maxExecGasPrice = BigInt((process.env.MAX_GAS_PRICE_GWEI || 150)) * 1000000000n;
+            let gasPrice = (feeData.gasPrice * 120n) / 100n; // 20% boost
+
+            if (gasPrice > maxExecGasPrice) {
+                console.log(`[Engine] 🚀 Capping gas price at ${process.env.MAX_GAS_PRICE_GWEI || 150} gwei (was ${(Number(gasPrice) / 1e9).toFixed(2)} gwei)`);
+                gasPrice = maxExecGasPrice;
+            }
 
             const txResponse = await contract.executeTransaction(
                 txDB.batch_id, txDB.id, funder, txDB.wallet_address_to, amountVal, proof,
@@ -872,7 +880,19 @@ class RelayerEngine {
         // Set via GAS_CUSHION_MATIC environment variable (e.g., 0.02)
         const cushionMatic = process.env.GAS_CUSHION_MATIC || "0.02";
         const safetyCushion = ethers.parseEther(cushionMatic);
-        const totalCost = (bufferedGas * gasPrice) + safetyCushion;
+
+        let totalCost = (bufferedGas * gasPrice) + safetyCushion;
+
+        // Minimum MATIC per Relayer enforcement
+        const minMaticPerRelayerStr = process.env.MIN_MATIC_PER_RELAYER || "0.5";
+        const minMaticPerRelayer = ethers.parseEther(minMaticPerRelayerStr);
+        const minTotalCost = minMaticPerRelayer * BigInt(txs.length);
+
+        if (totalCost < minTotalCost) {
+            console.log(`[Engine] ⚠️ Estimation (${ethers.formatEther(totalCost)} MATIC) is below minimum threshold (${minMaticPerRelayerStr} MATIC per relayer).`);
+            console.log(`[Engine]   > Adjusting total cost to ${ethers.formatEther(minTotalCost)} MATIC.`);
+            totalCost = minTotalCost;
+        }
 
         // Detailed logging
         console.log(`[Engine]   > Average gas per tx: ${averageGas.toString()}`);
@@ -881,7 +901,7 @@ class RelayerEngine {
         console.log(`[Engine]   > Buffered gas total: ${bufferedGas.toString()}`);
         console.log(`[Engine]   > Gas cost: ${ethers.formatEther(bufferedGas * gasPrice)} MATIC`);
         console.log(`[Engine]   > Safety cushion: ${cushionMatic} MATIC`);
-        console.log(`[Engine]   > Total estimated cost: ${ethers.formatEther(totalCost)} MATIC (buffer: ${bufferPercent}%, cushion: ${cushionMatic} MATIC)`);
+        console.log(`[Engine]   > Total estimated cost: ${ethers.formatEther(totalCost)} MATIC (min relayer: ${minMaticPerRelayerStr} MATIC)`);
         return { totalCostWei: totalCost };
     }
 
