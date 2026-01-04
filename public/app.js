@@ -830,6 +830,14 @@ window.showBatchList = function () {
 // Cargar lista al iniciar o cambiar tab
 async function fetchBatches(page = 1) {
     console.log(`[fetchBatches] Fetching page ${page}...`);
+
+    // Safety Force-Get Element
+    const tableBody = document.getElementById('batchesListBody');
+    if (!tableBody) {
+        console.error("CRITICAL: 'batchesListBody' element not found in DOM!");
+        return;
+    }
+
     try {
         // Collect Filter Values
         const dateVal = document.getElementById('filterDate')?.value || '';
@@ -850,8 +858,8 @@ async function fetchBatches(page = 1) {
         const url = `/api/batches?${params.toString()}`;
         console.log(`[fetchBatches] Requesting: ${url}`);
 
-        // Show loading state if needed, though usually silent update is better or specific loader
-        // batchesListBody.innerHTML = '<tr><td colspan="9" style="text-align:center;">Cargando...</td></tr>';
+        // Only set loading if empty, to avoid flickering on filters?
+        // tableBody.innerHTML = '<tr><td colspan="9" style="text-align:center;">Cargando...</td></tr>';
 
         const res = await authenticatedFetch(url);
         const data = await res.json();
@@ -863,13 +871,18 @@ async function fetchBatches(page = 1) {
         const batches = data.batches || [];
         const pagination = data.pagination || { currentPage: 1, totalPages: 1 };
 
+        // Pass the element explicitly if needed, but renderBatchesList uses the global. 
+        // Let's update renderBatchesList too or rely on window.batchesListBody being updated by initDOMElements?
+        // SAFE: Update the global if it's missing (though local 'tableBody' is better context)
+        window.batchesListBody = tableBody;
+
         renderBatchesList(batches);
         updatePaginationUI(pagination);
         currentBatchPage = page;
     } catch (error) {
         console.error("Error fetching batches:", error);
-        if (window.batchesListBody) {
-            batchesListBody.innerHTML = `<tr><td colspan="9" style="text-align:center; color: #ef4444; padding: 2rem;">Error al cargar lotes: ${error.message} <br> <button onclick="fetchBatches(1)" class="btn btn-sm btn-primary mt-2">Reintentar</button></td></tr>`;
+        if (tableBody) {
+            tableBody.innerHTML = `<tr><td colspan="9" style="text-align:center; color: #ef4444; padding: 2rem;">Error al cargar lotes: ${error.message} <br> <button onclick="fetchBatches(1)" class="btn btn-sm btn-primary mt-2">Reintentar</button></td></tr>`;
         }
     }
 }
