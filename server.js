@@ -109,7 +109,11 @@ app.use(session({
     secret: process.env.SESSION_SECRET || 'siwe-session-secret',
     resave: false,
     saveUninitialized: false,
-    cookie: { secure: false, httpOnly: true, maxAge: 600000 }
+    cookie: {
+        secure: false,
+        httpOnly: true,
+        maxAge: 7200000 // 2 hours (2 * 60 * 60 * 1000)
+    }
 }));
 
 // --- Authentication Middleware ---
