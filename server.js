@@ -27,26 +27,24 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Database Connection
+// Database Connection
 const dbUrl = process.env.DATABASE_URL;
-console.log(`[DB] Attempting connection to: ${dbUrl ? dbUrl.replace(/:[^:@]*@/, ':****@') : 'UNDEFINED'}`);
+console.log(`[DB] Using Database URL: ${dbUrl ? 'DEFINED (Masked)' : 'UNDEFINED'}`);
 
 const pool = new Pool({
     connectionString: dbUrl,
-    ssl: { rejectUnauthorized: false },
-    connectionTimeoutMillis: 5000,
-    idleTimeoutMillis: 10000
+    ssl: { rejectUnauthorized: false }
 });
 
 // Capture unexpected errors on idle clients to prevent crash
 pool.on('error', (err, client) => {
     console.error('❌ Unexpected Error on Idle DB Client:', err.message);
-    // process.exit(-1); // Don't exit, try to recover
 });
 
-// AUTO-CREATE SESSION TABLE (With Retry)
-const initSessionTable = async (retries = 3) => {
+// AUTO-CREATE SESSION TABLE (Resilient)
+const initSessionTable = async () => {
     try {
-        await pool.query('SELECT 1'); // Simple health check
+        await pool.query('SELECT 1');
         await pool.query(`
             CREATE TABLE IF NOT EXISTS "session" (
                 "sid" varchar NOT NULL PRIMARY KEY,
@@ -58,22 +56,19 @@ const initSessionTable = async (retries = 3) => {
         console.log("📊 Session table verified/created");
         return true;
     } catch (err) {
-        console.error(`⚠️ DB Init Failed: ${err.message}. Switching to MemoryStore.`);
+        console.error(`⚠️ DB Init Failed: ${err.message}`);
         return false;
     }
 };
 
-
-
-
 // Middleware
-app.set('trust proxy', 1); // Essential for Railway/Proxies
+app.set('trust proxy', 1);
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Session Store Setup (Resilient)
-// We already declared and initialized sessionStore above (if the previous block was correct)
-// But to be safe and clean, let's just do it all here cleanly.
+// Session Store Setup
+// We use a flexible strategy: Try PG, if it blows up, PGStore usually handles it by buffering or failing.
+// To avoid 500s on login, we wrap the store creation.
 
 let sessionStore;
 try {
@@ -83,15 +78,8 @@ try {
         createTableIfMissing: true,
         errorLog: (err) => console.error('❌ Session Store Error:', err.message)
     });
-    console.log("✅ PG Session Store initialized");
 } catch (e) {
-    console.error("⚠️ Failed to init PG Session Store, falling back to MemoryStore:", e.message);
-    sessionStore = new session.MemoryStore();
-}
-
-// Fallback if DB URL looks bad (Double check)
-if (!process.env.DATABASE_URL || process.env.DATABASE_URL.includes("undefined")) {
-    console.warn("⚠️ DATABASE_URL missing/invalid. FORCE MemoryStore.");
+    console.error("⚠️ Failed to create PG Store, fallback to Memory:", e.message);
     sessionStore = new session.MemoryStore();
 }
 
