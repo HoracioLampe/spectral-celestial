@@ -512,10 +512,12 @@ async function connectWallet() {
             const errorText = await nonceRes.text();
             throw new Error(`Error al obtener nonce: ${errorText.substring(0, 100)}`);
         }
-        const nonce = await nonceRes.text();
+
+        const nonceData = await nonceRes.json();
+        const nonce = nonceData.nonce;
 
         // Anti-HTML check
-        if (nonce.includes("<!DOCTYPE") || nonce.includes("<html")) {
+        if (!nonce || nonce.includes("<!DOCTYPE") || nonce.includes("<html")) {
             throw new Error("El servidor devolvió un error en lugar de un código de seguridad (Nonce).");
         }
 
