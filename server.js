@@ -27,25 +27,35 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Database Connection
+const dbUrl = process.env.DATABASE_URL;
+console.log(`[DB] Attempting connection to: ${dbUrl ? dbUrl.replace(/:[^:@]*@/, ':****@') : 'UNDEFINED'}`);
+
 const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false }
+    connectionString: dbUrl,
+    ssl: { rejectUnauthorized: false },
+    connectionTimeoutMillis: 5000,
+    idleTimeoutMillis: 10000
 });
 
-// AUTO-CREATE SESSION TABLE (Simplified for compatibility)
-const initSessionTable = async () => {
-    try {
-        await pool.query(`
-            CREATE TABLE IF NOT EXISTS "session" (
-                "sid" varchar NOT NULL PRIMARY KEY,
-                "sess" json NOT NULL,
-                "expire" timestamp(6) NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS "IDX_session_expire" ON "session" ("expire");
-        `);
-        console.log("📊 Session table verified/created");
-    } catch (err) {
-        console.error("❌ Critical Session Table Error:", err);
+// AUTO-CREATE SESSION TABLE (With Retry)
+const initSessionTable = async (retries = 5) => {
+    for (let i = 0; i < retries; i++) {
+        try {
+            await pool.query(`
+                CREATE TABLE IF NOT EXISTS "session" (
+                    "sid" varchar NOT NULL PRIMARY KEY,
+                    "sess" json NOT NULL,
+                    "expire" timestamp(6) NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS "IDX_session_expire" ON "session" ("expire");
+            `);
+            console.log("📊 Session table verified/created");
+            return;
+        } catch (err) {
+            console.error(`❌ DB Connection Failed (Attempt ${i + 1}/${retries}): ${err.message}`);
+            if (i === retries - 1) console.error("❌ Critical: Could not connect to DB after multiple attempts.");
+            await new Promise(res => setTimeout(res, 2000)); // Wait 2s
+        }
     }
 };
 initSessionTable();
@@ -89,7 +99,14 @@ const upload = multer({ dest: os.tmpdir() });
 
 // --- Authentication API ---
 
-app.get('/api/health', (req, res) => res.json({ status: 'ok', uptime: process.uptime() }));
+app.get('/api/health', async (req, res) => {
+    try {
+        await pool.query('SELECT 1');
+        res.json({ status: 'ok', db: 'connected', uptime: process.uptime() });
+    } catch (e) {
+        res.status(500).json({ status: 'error', db: e.message, uptime: process.uptime() });
+    }
+});
 
 app.get('/api/config', (req, res) => {
     res.json({
