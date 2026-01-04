@@ -1681,7 +1681,12 @@ async function fetchBatchTransactions(batchId) {
 
 // Render with Pagination
 function renderBatchTransactions() {
-    batchTableBody.innerHTML = '';
+    const batchTableBody = document.getElementById('batchTableBody');
+    if (!batchTableBody) {
+        console.error("CRITICAL: batchTableBody not found in renderBatchTransactions");
+        return;
+    }
+
     batchTableBody.innerHTML = '';
     const totalItems = window.currentServerTotal || filteredTransactions.length;
 
