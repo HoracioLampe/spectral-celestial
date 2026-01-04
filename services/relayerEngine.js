@@ -808,22 +808,23 @@ class RelayerEngine {
                 } else {
                     console.warn(`[Engine]   > Sample Tx ${tx.id} estimation failed, using fallback 150k. Error: ${e.message}`);
                 }
-                totalSampleGas += 150000n;
+                // Reduced from 150k to 80k based on real usage (16 MATIC / 1000 txs)
+                totalSampleGas += 80000n;
             }
         }
 
         const averageGas = totalSampleGas / BigInt(sampleSize);
-        // Use Configurable Buffer
-        const bufferPercent = RelayerEngine.GAS_BUFFER_PERCENTAGE || 30n; // Reduced from 60n
+        // Use Configurable Buffer (reduced from 30% to 15% based on real-world data)
+        const bufferPercent = RelayerEngine.GAS_BUFFER_PERCENTAGE || 15n;
         const bufferedGas = (averageGas * BigInt(txs.length)) * (100n + bufferPercent) / 100n;
         const feeData = await this.getProvider().getFeeData();
         const gasPrice = feeData.gasPrice || 50000000000n;
 
-        // Use Configurable Cushion
-        const safetyCushion = RelayerEngine.GAS_CUSHION_MATIC || ethers.parseEther("0.1"); // Reduced from 0.25
+        // Use Configurable Cushion (reduced from 0.1 to 0.02 MATIC)
+        const safetyCushion = RelayerEngine.GAS_CUSHION_MATIC || ethers.parseEther("0.02");
         const totalCost = (bufferedGas * gasPrice) + safetyCushion;
 
-        console.log(`[Engine]   > Total estimated cost: ${ethers.formatEther(totalCost)} MATIC (inc. 0.05 buffer)`);
+        console.log(`[Engine]   > Total estimated cost: ${ethers.formatEther(totalCost)} MATIC (inc. 15% buffer + 0.02 cushion)`);
         return { totalCostWei: totalCost };
     }
 
