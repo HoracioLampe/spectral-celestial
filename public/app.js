@@ -1941,9 +1941,18 @@ async function generateMerkleTree() {
     }
 
     try {
-        btnGenerateMerkle.disabled = true;
-        btnGenerateMerkle.textContent = "Generando...";
-        merkleStatus.textContent = "Calculando árbol criptográfico...";
+        const btnGenerateMerkle = document.getElementById('btnGenerateMerkle');
+        const merkleStatus = document.getElementById('merkleStatus');
+        const merkleInputZone = document.getElementById('merkleInputZone');
+        const merkleResultZone = document.getElementById('merkleResultZone');
+        const displayMerkleRoot = document.getElementById('displayMerkleRoot');
+        const merkleResultFunder = document.getElementById('merkleResultFunder');
+
+        if (btnGenerateMerkle) {
+            btnGenerateMerkle.disabled = true;
+            btnGenerateMerkle.textContent = "Generando...";
+        }
+        if (merkleStatus) merkleStatus.textContent = "Calculando árbol criptográfico...";
 
         const res = await authenticatedFetch(`/api/batches/${currentBatchId}/register-merkle`, {
             method: 'POST',
@@ -1954,11 +1963,11 @@ async function generateMerkleTree() {
 
         if (data.root) {
             // Update UI directly to avoid full reload flicker, or just reload logic
-            merkleInputZone.classList.add('hidden');
-            merkleResultZone.classList.remove('hidden');
+            if (merkleInputZone) merkleInputZone.classList.add('hidden');
+            if (merkleResultZone) merkleResultZone.classList.remove('hidden');
             document.getElementById('merkleVerifyZone')?.classList.remove('hidden');
             document.getElementById('executionZone')?.classList.remove('hidden');
-            displayMerkleRoot.textContent = data.root;
+            if (displayMerkleRoot) displayMerkleRoot.textContent = data.root;
 
             // --- FIX FOR "SECOND RUN" VISIBILITY ---
             // Ensure Helper/Setup button is visible and Trigger is hidden (Reset State)
@@ -1985,7 +1994,7 @@ async function generateMerkleTree() {
                 fetchUSDCBalance(funder).then(bal => { balanceEl.textContent = bal; });
             }
 
-            merkleStatus.textContent = "✅ Árbol Generado y Guardado.";
+            if (merkleStatus) merkleStatus.textContent = "✅ Árbol Generado y Guardado.";
         } else {
             throw new Error(data.error || "Error desconocido");
         }
@@ -1993,10 +2002,14 @@ async function generateMerkleTree() {
     } catch (error) {
         console.error(error);
         alert("Error: " + error.message);
-        merkleStatus.textContent = "❌ Falló la generación.";
+        const merkleStatus = document.getElementById('merkleStatus');
+        if (merkleStatus) merkleStatus.textContent = "❌ Falló la generación.";
     } finally {
-        btnGenerateMerkle.disabled = false;
-        btnGenerateMerkle.textContent = "Generar Merkle Tree 🛡️";
+        const btnGenerateMerkle = document.getElementById('btnGenerateMerkle');
+        if (btnGenerateMerkle) {
+            btnGenerateMerkle.disabled = false;
+            btnGenerateMerkle.textContent = "Generar Merkle Tree 🛡️";
+        }
     }
 }
 
