@@ -132,6 +132,38 @@ app.get('/api/health', async (req, res) => {
     }
 });
 
+app.get('/api/debug', async (req, res) => {
+    const dbUrlMasked = dbUrl ? dbUrl.replace(/:[^:@]*@/, ':****@') : 'UNDEFINED';
+    let dbStatus = 'unknown';
+    let dbError = null;
+
+    try {
+        await pool.query('SELECT NOW()');
+        dbStatus = 'connected';
+    } catch (e) {
+        dbStatus = 'failed';
+        dbError = e.message;
+    }
+
+    res.json({
+        database: {
+            url: dbUrlMasked,
+            status: dbStatus,
+            error: dbError,
+            poolSize: pool.totalCount,
+            idleCount: pool.idleCount,
+            waitingCount: pool.waitingCount
+        },
+        session: {
+            storeType: sessionStore.constructor.name
+        },
+        environment: {
+            nodeEnv: process.env.NODE_ENV || 'not set',
+            port: PORT
+        }
+    });
+});
+
 app.get('/api/config', (req, res) => {
     res.json({
         CONTRACT_ADDRESS: process.env.CONTRACT_ADDRESS || "0x7B25Ce9800CCE4309E92e2834E09bD89453d90c5",
