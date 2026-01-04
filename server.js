@@ -191,6 +191,69 @@ app.get('/api/debug', async (req, res) => {
     });
 });
 
+app.get('/testConnection', async (req, res) => {
+    const html = `
+<!DOCTYPE html>
+<html>
+<head>
+    <title>DB Connection Test</title>
+    <style>
+        body { font-family: monospace; padding: 20px; background: #1a1a1a; color: #00ff00; }
+        .success { color: #00ff00; }
+        .error { color: #ff0000; }
+        .info { color: #ffaa00; }
+        pre { background: #000; padding: 10px; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <h1>🔌 Database Connection Test</h1>
+    <pre id="output">Testing connection...</pre>
+    <script>
+        (async () => {
+            const output = document.getElementById('output');
+            let result = '';
+            
+            try {
+                result += '📡 Fetching /api/debug...\\n\\n';
+                const res = await fetch('/api/debug');
+                const data = await res.json();
+                
+                result += '=== DATABASE INFO ===\\n';
+                result += 'URL: ' + data.database.url + '\\n';
+                result += 'Status: ' + data.database.status + '\\n';
+                
+                if (data.database.error) {
+                    result += '❌ Error: ' + data.database.error + '\\n';
+                } else {
+                    result += '✅ Connection OK\\n';
+                }
+                
+                result += '\\nPool Size: ' + data.database.poolSize + '\\n';
+                result += 'Idle Connections: ' + data.database.idleCount + '\\n';
+                result += 'Waiting: ' + data.database.waitingCount + '\\n';
+                
+                result += '\\n=== SESSION INFO ===\\n';
+                result += 'Store Type: ' + data.session.storeType + '\\n';
+                
+                result += '\\n=== ENVIRONMENT ===\\n';
+                result += 'Node ENV: ' + data.environment.nodeEnv + '\\n';
+                result += 'Port: ' + data.environment.port + '\\n';
+                
+                output.className = data.database.status === 'connected' ? 'success' : 'error';
+            } catch (err) {
+                result += '\\n❌ FETCH ERROR: ' + err.message;
+                output.className = 'error';
+            }
+            
+            output.textContent = result;
+        })();
+    </script>
+</body>
+</html>
+    `;
+    res.send(html);
+});
+
 app.get('/api/config', (req, res) => {
     res.json({
         CONTRACT_ADDRESS: process.env.CONTRACT_ADDRESS || "0x7B25Ce9800CCE4309E92e2834E09bD89453d90c5",
