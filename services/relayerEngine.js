@@ -521,7 +521,49 @@ class RelayerEngine {
                     [totalGasMatic, durationStr, JSON.stringify({ final: endMetrics }), batchId]
                 );
 
-                console.log(`✅ Batch ${batchId} Processing Complete. metrics saved.`);
+                // Get final batch stats for summary
+                const statsRes = await this.pool.query(`
+                    SELECT 
+                        b.id,
+                        b.batch_name,
+                        b.start_time,
+                        b.end_time,
+                        b.total_transactions,
+                        b.total_usdc,
+                        b.total_gas_used,
+                        b.execution_time,
+                        (SELECT COUNT(*) FROM batch_transactions WHERE batch_id = b.id AND status = 'COMPLETED') as completed_count,
+                        (SELECT COUNT(*) FROM batch_transactions WHERE batch_id = b.id AND status = 'FAILED') as failed_count
+                    FROM batches b
+                    WHERE b.id = $1
+                `, [batchId]);
+
+                const stats = statsRes.rows[0];
+                const startDate = new Date(stats.start_time);
+                const endDate = new Date(stats.end_time);
+
+                // Print comprehensive summary
+                console.log('\n');
+                console.log('╔════════════════════════════════════════════════════════════╗');
+                console.log('║           📊 BATCH COMPLETION SUMMARY                      ║');
+                console.log('╠════════════════════════════════════════════════════════════╣');
+                console.log(`║ Batch ID:           ${String(stats.id).padEnd(38)} ║`);
+                console.log(`║ Batch Name:         ${(stats.batch_name || 'N/A').substring(0, 38).padEnd(38)} ║`);
+                console.log('╠════════════════════════════════════════════════════════════╣');
+                console.log(`║ Start Time:         ${startDate.toLocaleString('es-AR').padEnd(38)} ║`);
+                console.log(`║ End Time:           ${endDate.toLocaleString('es-AR').padEnd(38)} ║`);
+                console.log(`║ Duration:           ${(stats.execution_time || durationStr).padEnd(38)} ║`);
+                console.log('╠════════════════════════════════════════════════════════════╣');
+                console.log(`║ Total Transactions: ${String(stats.total_transactions).padEnd(38)} ║`);
+                console.log(`║ ✅ Completed:       ${String(stats.completed_count).padEnd(38)} ║`);
+                console.log(`║ ❌ Failed:          ${String(stats.failed_count).padEnd(38)} ║`);
+                console.log('╠════════════════════════════════════════════════════════════╣');
+                console.log(`║ Total USDC Sent:    ${(parseFloat(stats.total_usdc || 0) / 1000000).toFixed(2).padEnd(38)} ║`);
+                console.log(`║ Total Gas Used:     ${String(totalGasMatic).padEnd(30)} MATIC ║`);
+                console.log('╚════════════════════════════════════════════════════════════╝');
+                console.log('\n');
+
+                console.log(`✅ Batch ${batchId} Processing Complete. Metrics saved.`);
             } catch (finalErr) {
                 console.error(`[Engine] ⚠️ Final Cleanup/Metrics Error: ${finalErr.message}`);
             }
