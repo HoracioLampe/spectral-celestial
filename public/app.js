@@ -949,10 +949,16 @@ function debounceFetch() {
 }
 
 window.clearFilters = function () {
-    document.getElementById('filterDate').value = '';
-    document.getElementById('filterDesc').value = '';
-    document.getElementById('filterStatus').value = '';
-    document.getElementById('filterAmount').value = '';
+    const fDate = document.getElementById('filterDate');
+    const fDesc = document.getElementById('filterDesc');
+    const fStatus = document.getElementById('filterStatus');
+    const fAmount = document.getElementById('filterAmount');
+
+    if (fDate) fDate.value = '';
+    if (fDesc) fDesc.value = '';
+    if (fStatus) fStatus.value = '';
+    if (fAmount) fAmount.value = '';
+
     fetchBatches(1);
 };
 
@@ -1347,32 +1353,7 @@ function updateDetailView(batch) {
         }
     }
 }
-console.log("[UI] Merkle Root missing, showing generation zone.");
-merkleInputZone.classList.remove('hidden'); // Show Generation Button
-merkleResultZone.classList.add('hidden');
-document.getElementById('merkleVerifyZone')?.classList.add('hidden');
-document.getElementById('executionZone')?.classList.add('hidden');
 
-// Clear leftovers
-if (batchFunderAddress) batchFunderAddress.value = '';
-if (merkleFounderBalance) merkleFounderBalance.textContent = '---';
-if (displayMerkleRoot) displayMerkleRoot.textContent = "Not Generated";
-stopProgressPolling();
-}
-        }
-    }
-
-// Clear filter inputs on new batch load
-if (document.getElementById('filterWallet')) document.getElementById('filterWallet').value = '';
-if (document.getElementById('filterAmount')) document.getElementById('filterAmount').value = '';
-if (document.getElementById('filterStatus')) document.getElementById('filterStatus').value = '';
-
-// Reset Filter Count
-const filterCountEl = document.getElementById('filterResultCount');
-if (filterCountEl) filterCountEl.textContent = '';
-
-    // renderBatchTransactions(); // Don't render here, it's done after fetch
-}
 
 let batchProgressInterval = null;
 
