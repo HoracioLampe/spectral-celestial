@@ -1,6 +1,6 @@
 {
   "name": "spectral-celestial-mockup",
-  "version": "1.3.1",
+  "version": "1.3.2",
   "description": "Mockup premium para despliegue en Railway",
   "main": "server.js",
   "scripts": {
