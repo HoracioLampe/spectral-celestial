@@ -788,7 +788,7 @@ class RelayerEngine {
 
             // Update status immediately to sync UI
             await this.pool.query(
-                `UPDATE batch_transactions SET status = 'WAITING_CONFIRMATION', tx_hash = $1, updated_at = NOW() WHERE id = $2`,
+                `UPDATE batch_transactions SET status = 'WAITING_CONFIRMATION', tx_hash = $1, updated = NOW() WHERE id = $2`,
                 [txResponse.hash, txDB.id]
             );
 
@@ -801,7 +801,7 @@ class RelayerEngine {
             if (receipt.status === 1) {
                 console.log(`[Blockchain][Tx] CONFIRMED: ${txResponse.hash} | Batch: ${txDB.batch_id} | TxID: ${txDB.id}`);
                 await this.pool.query(
-                    `UPDATE batch_transactions SET status = 'COMPLETED', tx_hash = $1, amount_transferred = $2, updated_at = NOW() WHERE id = $3`,
+                    `UPDATE batch_transactions SET status = 'COMPLETED', tx_hash = $1, amount_transferred = $2, updated = NOW() WHERE id = $3`,
                     [txResponse.hash, txDB.amount_usdc.toString(), txDB.id]
                 );
             } else {
