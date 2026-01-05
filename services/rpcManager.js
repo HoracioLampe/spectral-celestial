@@ -86,6 +86,57 @@ class RpcManager {
     }
 
     /**
+     * Report an error to the manager to trigger adaptive rate limiting or failover.
+     * returns true if the error was handled (e.g. rate limit detected), false otherwise.
+     */
+    handleError(err) {
+        if (this.isRateLimitError(err)) {
+            this.increaseDelay();
+
+            // Extract suggested wait time from error if available
+            const tryAgainMatch = err.error?.data?.try_again_in;
+            if (tryAgainMatch) {
+                const waitMs = parseFloat(tryAgainMatch) || this.currentDelay;
+                console.log(`[RpcManager] Waiting ${waitMs.toFixed(0)}ms as suggested by RPC...`);
+                // We cannot await here easily without making this async, but the delay state is updated.
+                // The next caller to applyRateLimit() will handle it.
+            }
+
+            // If we've hit RPS limit (Code -32005), switch IMMEDIATELY.
+            // These limits are strict and trying again on the same provider usually fails.
+            const isCriticalRps = err.error?.code === -32005 || (err.message && err.message.includes("-32005"));
+
+            if (isCriticalRps && this.fallbackUrl && !this.isFallback) {
+                console.warn(`[RpcManager] 🚨 Critical RPS Limit hit (-32005). Switching to Fallback IMMEDIATELY.`);
+                this.switchToFallback();
+                return true;
+            }
+
+            // Normal threshold for "soft" rate limits (text based)
+            if (this.rpsErrorCount >= 2 && this.fallbackUrl && !this.isFallback) {
+                console.warn(`[RpcManager] 🔄 Multiple RPS errors (${this.rpsErrorCount}). Switching to Fallback...`);
+                this.switchToFallback();
+                this.rpsErrorCount = 0; // Reset counter for fallback
+            }
+            return true;
+        }
+
+        // Check for other network errors
+        const isNetworkError = err.message.includes("network") ||
+            err.message.includes("timeout") ||
+            err.message.includes("connection reset") ||
+            err.code === 'NETWORK_ERROR';
+
+        if (isNetworkError && this.fallbackUrl && !this.isFallback) {
+            console.warn(`[RpcManager] ⚠️ Network error (${err.message}). Switching to Fallback...`);
+            this.switchToFallback();
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
      * Executes a function with automatic retry on fallback provider if the first one fails.
      * @param {Function} attemptFn - Async function (provider) => Promise<T>
      * @param {number} maxRetries - Maximum number of retries (default: 3)
@@ -108,47 +159,14 @@ class RpcManager {
             } catch (err) {
                 lastError = err;
 
-                // Check for RPS/Rate Limit Error
-                if (this.isRateLimitError(err)) {
-                    this.increaseDelay();
+                const handled = this.handleError(err);
 
-                    // Extract suggested wait time from error if available
-                    const tryAgainMatch = err.error?.data?.try_again_in;
-                    if (tryAgainMatch) {
-                        const waitMs = parseFloat(tryAgainMatch) || this.currentDelay;
-                        console.log(`[RpcManager] Waiting ${waitMs.toFixed(0)}ms as suggested by RPC...`);
-                        await new Promise(resolve => setTimeout(resolve, waitMs));
-                    }
-
-                    // If we've hit too many RPS errors, try fallback
-                    if (this.rpsErrorCount >= 3 && this.fallbackUrl && !this.isFallback) {
-                        console.warn(`[RpcManager] 🔄 Too many RPS errors (${this.rpsErrorCount}). Switching to Fallback...`);
-                        this.switchToFallback();
-                        this.rpsErrorCount = 0; // Reset counter for fallback
-                    }
-
-                    // Retry with exponential backoff
+                if (handled) {
+                    // Retry with exponential backoff if it was a rate limit/network error
                     if (attempt < maxRetries) {
                         const backoffDelay = Math.min(500 * Math.pow(2, attempt), 5000);
                         console.log(`[RpcManager] Retry ${attempt + 1}/${maxRetries} after ${backoffDelay}ms...`);
                         await new Promise(resolve => setTimeout(resolve, backoffDelay));
-                        continue;
-                    }
-                }
-
-                // Check for other network errors
-                const isNetworkError = err.message.includes("network") ||
-                    err.message.includes("timeout") ||
-                    err.message.includes("connection reset") ||
-                    err.code === 'NETWORK_ERROR';
-
-                if (isNetworkError && this.fallbackUrl && !this.isFallback) {
-                    console.warn(`[RpcManager] ⚠️ Network error (${err.message}). Switching to Fallback...`);
-                    this.switchToFallback();
-
-                    // Retry with fallback
-                    if (attempt < maxRetries) {
-                        await new Promise(resolve => setTimeout(resolve, 1000));
                         continue;
                     }
                 }

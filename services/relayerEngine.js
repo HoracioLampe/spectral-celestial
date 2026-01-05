@@ -866,6 +866,14 @@ class RelayerEngine {
             };
 
         } catch (e) {
+            // ERROR HANDLING & RPC FAILOVER TRIGGER
+            if (this.rpcManager && this.rpcManager.handleError) {
+                const handled = this.rpcManager.handleError(e);
+                if (handled) {
+                    console.log(`[Engine] ⚠️ RPC Error triggered failover/wait. Marking Tx ${txDB.id} for retry.`);
+                }
+            }
+
             if (e.message && e.message.includes("Tx already executed")) {
                 console.log(`⚠️ Tx ${txDB.id} already on-chain. Recovered.`);
                 await this.pool.query(`UPDATE batch_transactions SET status = 'COMPLETED', tx_hash = 'RECOVERED', updated_at = NOW() WHERE id = $1`, [txDB.id]);
@@ -912,6 +920,11 @@ class RelayerEngine {
                 // Reduced from 80k to 60k based on real usage (16 MATIC / 1000 txs = 0.016 per tx)
                 // At 50 gwei: 60k * 50 = 0.003 MATIC per tx
                 totalSampleGas += 60000n;
+
+                // Report to RpcManager in case it's a rate limit during estimation
+                if (this.rpcManager && this.rpcManager.handleError) {
+                    this.rpcManager.handleError(e);
+                }
             }
         }
 
@@ -1145,6 +1158,11 @@ class RelayerEngine {
 
         } catch (err) {
             console.error(`❌ Atomic funding FAILED:`, err.message);
+
+            // Trigger RPC Failover if applicable
+            if (this.rpcManager && this.rpcManager.handleError) {
+                this.rpcManager.handleError(err);
+            }
 
             // Save error message to batch for frontend visibility
             try {
