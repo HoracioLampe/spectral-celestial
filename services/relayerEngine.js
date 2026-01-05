@@ -787,9 +787,9 @@ class RelayerEngine {
 
             console.log(`[Blockchain][Tx] SENT: ${txResponse.hash} | TxID: ${txDB.id} | From: ${wallet.address}`);
 
-            // Update status immediately to sync UI - Fix: use 'updated_at' column
+            // Update status immediately to sync UI - Fix: use 'updated' column
             await this.pool.query(
-                `UPDATE batch_transactions SET status = 'WAITING_CONFIRMATION', tx_hash = $1, updated_at = NOW() WHERE id = $2`,
+                `UPDATE batch_transactions SET status = 'WAITING_CONFIRMATION', tx_hash = $1, updated = NOW() WHERE id = $2`,
                 [txResponse.hash, txDB.id]
             );
 
