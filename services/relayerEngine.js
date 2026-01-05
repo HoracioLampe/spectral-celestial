@@ -799,13 +799,24 @@ class RelayerEngine {
 
             // Safety cap check: If env var is too low (e.g. 150 gwei), we MUST ignore it to avoid stuck txs.
             let envMax = parseInt(process.env.MAX_GAS_PRICE_GWEI || "3000");
-            if (envMax < 2000) {
+
+            // DYNAMIC OVERRIDE: If network price is insane, we MUST follow it or we fail.
+            // "arregla las transacciones para que siempre se produzcan"
+            const networkFloorGwei = Number(ethers.formatUnits(feeData.gasPrice, 'gwei'));
+
+            if (envMax < networkFloorGwei) {
+                console.warn(`[Engine] 🛡️ CRITICAL: Configured MAX_GAS (${envMax}) is below Network Price (${networkFloorGwei}). Overriding to ensure execution.`);
+                envMax = Math.ceil(networkFloorGwei * 1.5); // 50% buffer over network to capture
+            } else if (envMax < 2000) {
+                // Keep the hard safety floor for low config
                 console.warn(`[Engine] ⚠️ Configured MAX_GAS_PRICE_GWEI (${envMax}) is dangerously low. Overriding to 2000 Gwei.`);
                 envMax = 2000;
             }
+
             const maxExecGasPrice = BigInt(envMax) * 1000000000n;
 
             if (gasPrice > maxExecGasPrice) {
+                // If aggressive boost is TOO high, cap it, but now we know maxExecGasPrice is at least > network price
                 console.log(`[Engine] 🚀 Capping aggressive gas price at ${envMax} gwei (estimated 2.0x was ${(Number(gasPrice) / 1e9).toFixed(2)} gwei)`);
                 gasPrice = maxExecGasPrice;
             }
