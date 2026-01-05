@@ -780,10 +780,14 @@ class RelayerEngine {
             // AGGRESSIVE GAS: Use 2.0x (200n) of current gas price to guarantee confirmation
             let gasPrice = (feeData.gasPrice * 200n) / 100n;
 
-            // Safety cap at 3000 Gwei (approx 0.15 POL @ 50k gas)
-            const maxExecGasPrice = BigInt((process.env.MAX_GAS_PRICE_GWEI || 3000)) * 1000000000n;
+            // Safety cap at 5000 Gwei (approx 0.25 POL @ 50k gas)
+            // Ensure we don't respect a too-low env var (like 150)
+            const envCap = BigInt(process.env.MAX_GAS_PRICE_GWEI || 5000);
+            const nominalCap = envCap < 3000n ? 5000n : envCap;
+            const maxExecGasPrice = nominalCap * 1000000000n;
+
             if (gasPrice > maxExecGasPrice) {
-                console.log(`[Engine] 🚀 Capping aggressive gas price at ${process.env.MAX_GAS_PRICE_GWEI || 3000} gwei (estimated 2.0x was ${(Number(gasPrice) / 1e9).toFixed(2)} gwei)`);
+                console.log(`[Engine] 🚀 Capping aggressive gas price at ${nominalCap} gwei (estimated 2.0x was ${(Number(gasPrice) / 1e9).toFixed(2)} gwei)`);
                 gasPrice = maxExecGasPrice;
             }
 
@@ -797,9 +801,9 @@ class RelayerEngine {
 
             console.log(`[Blockchain][Tx] SENT: ${txResponse.hash} | TxID: ${txDB.id} | From: ${wallet.address}`);
 
-            // Update status immediately to sync UI - Fix: use 'updated' column
+            // Update status immediately to sync UI
             await this.pool.query(
-                `UPDATE batch_transactions SET status = 'WAITING_CONFIRMATION', tx_hash = $1, updated = NOW() WHERE id = $2`,
+                `UPDATE batch_transactions SET status = 'WAITING_CONFIRMATION', tx_hash = $1, updated_at = NOW() WHERE id = $2`,
                 [txResponse.hash, txDB.id]
             );
 
@@ -812,7 +816,7 @@ class RelayerEngine {
             if (receipt.status === 1) {
                 console.log(`[Blockchain][Tx] CONFIRMED: ${txResponse.hash} | Batch: ${txDB.batch_id} | TxID: ${txDB.id}`);
                 await this.pool.query(
-                    `UPDATE batch_transactions SET status = 'COMPLETED', tx_hash = $1, amount_transferred = $2, updated = NOW() WHERE id = $3`,
+                    `UPDATE batch_transactions SET status = 'COMPLETED', tx_hash = $1, amount_transferred = $2, updated_at = NOW() WHERE id = $3`,
                     [txResponse.hash, txDB.amount_usdc.toString(), txDB.id]
                 );
             } else {
