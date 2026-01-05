@@ -2942,6 +2942,11 @@ function renderRelayerBalances(explicitData) {
                 <td style="padding:0.75rem; text-align:center; font-weight:bold; color: #fff;">
                     ${txCount}
                 </td>
+                <td style="padding:0.75rem; text-align:center;">
+                    ${!isDrained && balanceVal > 0.01 ?
+                `<button class="btn-icon" onclick="triggerRelayerRecovery('${r.address}')" title="Recuperar Gas">🧹</button>` :
+                `<span style="opacity:0.3">Create</span>`}
+                </td>
             </tr>
         `;
     }).join('');
@@ -3296,7 +3301,44 @@ window.showBatchSummaryModal = function (batch) {
     modal.classList.add('active');
 };
 
+
 window.closeSummaryModal = function () {
     const modal = document.getElementById('batchSummaryModal');
     if (modal) modal.classList.remove('active');
+};
+
+window.triggerRelayerRecovery = async (address) => {
+    if (!confirm(`¿Estás seguro de recuperar los fondos de ${address}? Se enviarán de vuelta a la Faucet.`)) return;
+
+    // Visual Feedback (find button by context or ID if possible, but event.target is standard)
+    const btn = event.target;
+    const original = btn.innerHTML;
+    btn.innerHTML = "⏳";
+    btn.disabled = true;
+
+    try {
+        const res = await authenticatedFetch(`/api/relayer/${address}/recover`, { method: 'POST' });
+        const data = await res.json();
+
+        if (res.ok) {
+            alert(`✅ Fondos recuperados con éxito!\nTx: ${data.txHash}\nMonto: ${data.amount} MATIC`);
+            // Update UI Row - Find row by button
+            const row = btn.closest('tr');
+            if (row) {
+                // Update Balance Cell (3rd cell, index 2)
+                row.cells[2].innerHTML = `<span style="color:#94a3b8">0.000000 MATIC</span>`;
+                // Remove Button
+                btn.parentElement.innerHTML = '<span style="color:#4ade80">✅</span>';
+            }
+        } else {
+            alert(`❌ Error: ${data.error}`);
+            btn.innerHTML = original;
+            btn.disabled = false;
+        }
+    } catch (err) {
+        console.error(err);
+        alert("❌ Error de comunicación con el servidor");
+        btn.innerHTML = original;
+        btn.disabled = false;
+    }
 };

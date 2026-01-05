@@ -1651,6 +1651,180 @@ app.post('/api/admin/rescue-execute', authenticateToken, async (req, res) => {
     }
 });
 
+// ADMIN: Unblock Faucets (Dashboard)
+app.post('/api/admin/unblock-faucets', authenticateToken, async (req, res) => {
+    try {
+        if (req.user.role !== 'SUPER_ADMIN') {
+            return res.status(403).json({ error: 'Access denied. SUPER_ADMIN role required.' });
+        }
+
+        const { faucetAddresses } = req.body;
+        if (!faucetAddresses || !Array.isArray(faucetAddresses) || faucetAddresses.length === 0) {
+            return res.status(400).json({ error: 'faucetAddresses array is required.' });
+        }
+
+        console.log(`[Admin] 🔓 User ${req.user.address} attempting to unblock faucets: ${faucetAddresses.join(', ')}`);
+
+        const provider = globalRpcManager.getProvider();
+        const results = [];
+
+        for (const address of faucetAddresses) {
+            let repairResult = { address: address, repaired: false, error: null };
+            try {
+                const dbRes = await pool.query(
+                    `SELECT private_key FROM faucets WHERE LOWER(address) = LOWER($1)`,
+                    [address]
+                );
+
+                if (dbRes.rows.length === 0) {
+                    repairResult.error = 'Faucet not found in DB';
+                    results.push(repairResult);
+                    continue;
+                }
+
+                const faucetPrivateKey = dbRes.rows[0].private_key;
+                const wallet = new ethers.Wallet(faucetPrivateKey, provider);
+
+                // Send a zero-value transaction to self to clear nonce issues
+                const tx = await wallet.sendTransaction({
+                    to: wallet.address,
+                    value: 0,
+                    gasLimit: 21000,
+                    gasPrice: (await provider.getFeeData()).gasPrice
+                });
+
+                console.log(`[Admin] 🛠️ Repair TX sent for ${address}: ${tx.hash}`);
+
+                await Promise.race([
+                    tx.wait(),
+                    new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 60000))
+                ]);
+
+                console.log(`[Admin] ✅ Repair Confirmed: ${tx.hash}`);
+                repairResult.repaired = true;
+                repairResult.txHash = tx.hash;
+
+            } catch (err) {
+                console.error(`[Admin] ❌ Repair Failed: ${err.message}`);
+                repairResult.error = err.message;
+            }
+            results.push(repairResult);
+        }
+
+        res.json({ success: true, results });
+    } catch (err) {
+        console.error("[Admin] Unblock Faucets Error:", err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// --- API: Recover Single Relayer Funds ---
+app.post('/api/relayer/:address/recover', authenticateToken, async (req, res) => {
+    try {
+        const relayerAddress = req.params.address;
+        console.log(`[RelayerRecovery] Request to recover funds from ${relayerAddress}`);
+
+        // 1. Find Relayer and Linked Faucet
+        const query = `
+            SELECT r.address, r.private_key, r.batch_id, f.address as faucet_address
+            FROM relayers r
+            JOIN batches b ON r.batch_id = b.id
+            LEFT JOIN faucets f ON LOWER(f.funder_address) = LOWER(b.funder_address)
+            WHERE LOWER(r.address) = LOWER($1)
+        `;
+        const dbRes = await pool.query(query, [relayerAddress]);
+
+        if (dbRes.rows.length === 0) {
+            return res.status(404).json({ error: "Relayer not found" });
+        }
+
+        const relayer = dbRes.rows[0];
+        if (!relayer.faucet_address) {
+            return res.status(400).json({ error: "No Faucet linked to this relayer's funder." });
+        }
+
+        const provider = globalRpcManager.getProvider();
+        const wallet = new ethers.Wallet(relayer.private_key, provider);
+
+        // 2. Check Balance & Nonce Status
+        const balance = await provider.getBalance(wallet.address);
+        const latestNonce = await provider.getTransactionCount(wallet.address, "latest");
+        const pendingNonce = await provider.getTransactionCount(wallet.address, "pending");
+
+        console.log(`[RelayerRecovery] ${relayerAddress} | Balance: ${ethers.formatEther(balance)} | Latest: ${latestNonce} | Pending: ${pendingNonce}`);
+
+        const feeData = await provider.getFeeData();
+        const gasPrice = (feeData.gasPrice * 150n) / 100n; // 1.5x Gas
+        const gasLimit = 21000n;
+        const minCost = gasPrice * gasLimit;
+
+        if (balance <= minCost) {
+            return res.status(400).json({ error: `Insufficient funds. Balance: ${ethers.formatEther(balance)} MATIC` });
+        }
+
+        // 3. Auto-Unblock (Nuclear Option)
+        if (pendingNonce > latestNonce) {
+            console.log(`[RelayerRecovery] ⚠️ Relayer Blocked (${pendingNonce - latestNonce} txs). Attempting auto-undblock...`);
+
+            // Send 0 MATIC to self with high gas to clear the queue
+            const unblockPrice = (feeData.gasPrice * 250n) / 100n; // 2.5x Gas for unblock
+
+            try {
+                // Determine nonce: Use latest to overwrite/fill the gap
+                const txUnblock = await wallet.sendTransaction({
+                    to: wallet.address,
+                    value: 0n,
+                    gasPrice: unblockPrice,
+                    gasLimit: gasLimit,
+                    nonce: latestNonce // Force the gap to close
+                });
+                console.log(`[RelayerRecovery] 🧹 Unblock Transaction Sent: ${txUnblock.hash}`);
+
+                await Promise.race([
+                    txUnblock.wait(),
+                    new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout waiting for unblock")), 30000))
+                ]);
+                console.log(`[RelayerRecovery] ✅ Unblock Confirmed.`);
+
+            } catch (unblockErr) {
+                console.error(`[RelayerRecovery] ❌ Unblock Failed: ${unblockErr.message}`);
+                // Proceed cautiously or abort? 
+                // If unblock failed (e.g. out of gas), sweep might also fail.
+                // But we try anyway with remaining balance.
+            }
+        }
+
+        // 4. Re-Check Balance after potential unblock cost
+        const finalBalance = await provider.getBalance(wallet.address);
+        if (finalBalance <= minCost) {
+            return res.status(400).json({ error: `Insufficient funds after unblock attempt. Balance: ${ethers.formatEther(finalBalance)} MATIC` });
+        }
+
+        // 5. Send Sweep
+        const amountToSend = finalBalance - minCost;
+        console.log(`[RelayerRecovery] Sweeping ${ethers.formatEther(amountToSend)} MATIC -> ${relayer.faucet_address}`);
+
+        const tx = await wallet.sendTransaction({
+            to: relayer.faucet_address,
+            value: amountToSend,
+            gasPrice: gasPrice,
+            gasLimit: gasLimit
+        });
+
+        console.log(`[RelayerRecovery] Tx Sent: ${tx.hash}`);
+        await tx.wait();
+
+        // 6. Update DB
+        await pool.query("UPDATE relayers SET status = 'drained', last_balance = '0' WHERE address = $1", [relayer.address]);
+
+        res.json({ success: true, txHash: tx.hash, amount: ethers.formatEther(amountToSend) });
+
+    } catch (err) {
+        console.error("[RelayerRecovery] Error:", err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 const VERSION = "2.3.0";
 const PORT_LISTEN = process.env.PORT || 3000;
 
