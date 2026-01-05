@@ -990,11 +990,17 @@ class RelayerEngine {
 
             if (faucetRes.rows.length > 0) {
                 const { address, private_key } = faucetRes.rows[0];
-                funderFaucetWallet = new ethers.Wallet(private_key, this.provider);
+                // ALWAYS use dynamic provider here
+                funderFaucetWallet = new ethers.Wallet(private_key, this.getProvider());
                 funderFaucetAddress = address;
                 console.log(`[Engine][Fund] 🎯 Using Funder-Specific Faucet: ${address}`);
             } else {
                 console.warn(`[Engine][Fund] ⚠️ No specific faucet for batch ${batchId}. Using Global Faucet.`);
+                // Reconnect default wallet to current provider
+                if (this.faucetWallet.provider !== this.getProvider()) {
+                    this.faucetWallet = this.faucetWallet.connect(this.getProvider());
+                }
+                funderFaucetWallet = this.faucetWallet;
             }
         } catch (err) {
             console.error("Faucet lookup error during funding", err);
@@ -1068,7 +1074,14 @@ class RelayerEngine {
 
     async fundRelayers(batchId, relayers, amountWei, actingFaucetWallet, explicitNonce = null) {
         if (!amountWei || amountWei === 0n) return;
-        const walletToUse = actingFaucetWallet || this.faucetWallet;
+
+        let walletToUse = actingFaucetWallet || this.faucetWallet;
+
+        // CRITICAL: Ensure wallet is connected to the ACTIVE provider
+        if (!walletToUse.provider || walletToUse.provider !== this.getProvider()) {
+            console.log(`[Engine] 🔌 Reconnecting Faucet Wallet to active provider...`);
+            walletToUse = walletToUse.connect(this.getProvider());
+        }
 
         try {
             // STEP 0: AUTO-UNBLOCK - Verify and repair nonce BEFORE attempting atomic distribution
