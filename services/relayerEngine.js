@@ -128,9 +128,26 @@ class RelayerEngine {
             const pending = await this.getProvider().getTransactionCount(address, 'pending');
 
             if (pending > nonce) {
-                console.warn(`[Engine] ⚠️  GAP DETECTED in Faucet Nonce! Latest: ${nonce}, Pending: ${pending}. Sanitizing...`);
+                console.warn(`[Engine] ⚠️  GAP DETECTED in Faucet Nonce! Latest: ${nonce}, Pending: ${pending}.`);
 
-                await this.sanitizeFaucet(nonce, pending);
+                // ANTIBLOQUEO: Smart Wait
+                // Give it 5 seconds to resolve naturally (network propagation / mining)
+                console.log(`[Engine] ⏳ Waiting 5s for pending txs to clear naturally...`);
+                await new Promise(r => setTimeout(r, 5000));
+
+                const nonceAfterWait = await this.getProvider().getTransactionCount(address, 'latest');
+
+                // If nonce moved up to covers the pending count we saw, we are good.
+                // Note: pending count might have increased too if new txs came in, 
+                // but we only care about the *gap* we saw closing.
+                if (nonceAfterWait >= pending) {
+                    console.log("[Engine] ✅ Gap resolved naturally.");
+                    return true;
+                }
+
+                console.warn(`[Engine] ⚠️ Gap persists (Stuck at ${nonceAfterWait}). Sanitizing...`);
+
+                await this.sanitizeFaucet(nonceAfterWait, pending);
 
                 // Post-Sanitization Check
                 const noncePost = await this.getProvider().getTransactionCount(address, 'latest');
