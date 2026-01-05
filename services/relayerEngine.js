@@ -1038,15 +1038,20 @@ class RelayerEngine {
             console.log(`[Engine][Fund] 🚀 Atomic Distribution START: ${relayers.length} relayers | ${ethers.formatEther(amountWei)} POL each.`);
             console.log(`[Engine][Fund] Target: ${ethers.formatEther(amountWei)} MATIC each | Total: ${ethers.formatEther(totalValueToSend)} MATIC`);
 
-            // Gas Calculation: Increased Baseline (200k) + 50k per recipient for safety
+            // Gas Calculation: Aggressive Gas Price (3x boost) to ensure atomic inclusion
+            const feeData = await this.getProvider().getFeeData();
+            const gasPrice = (feeData.gasPrice * 300n) / 100n;
             const safeGasLimit = 200000n + (BigInt(relayers.length) * 50000n);
+
+            console.log(`[Engine][Fund] 🚀 Atomic Distribution START: ${relayers.length} relayers | POL each: ${ethers.formatEther(amountWei)} | Gas Price: ${ethers.formatUnits(gasPrice, 'gwei')} gwei`);
 
             const tx = await contract.distributeMatic(
                 relayers.map(r => r.address),
-                amountWei, // Sending strictly calculated amount
+                amountWei,
                 {
                     value: totalValueToSend,
                     gasLimit: safeGasLimit,
+                    gasPrice: gasPrice,
                     nonce: explicitNonce !== null ? explicitNonce : undefined
                 }
             );
@@ -1081,8 +1086,8 @@ class RelayerEngine {
             // Save Funding Total to Batch (Value Sent + Approx Fee)
             // Fee is approx execution gas * gasPrice. Let's precise using receipt.gasUsed
             const gasUsed = BigInt(receipt.gasUsed);
-            const gasPrice = BigInt(receipt.effectiveGasPrice || 0); // Handle potential undefined/null
-            const distributionFeeFn = gasUsed * gasPrice;
+            const effectiveGasPriceVal = BigInt(receipt.effectiveGasPrice || 0);
+            const distributionFeeFn = gasUsed * effectiveGasPriceVal;
 
             // totalValueToSend is already BigInt (calculated above)
             const totalFundingMatic = ethers.formatEther(totalValueToSend + distributionFeeFn);
@@ -1095,7 +1100,17 @@ class RelayerEngine {
 
         } catch (err) {
             console.error(`❌ Atomic funding FAILED:`, err.message);
-            // FAIL FAST: Do not fallback to sequential distribution which causes nonce chaos.
+
+            // Save error message to batch for frontend visibility
+            try {
+                await this.pool.query(
+                    `UPDATE batches SET error_message = $1, status = 'FAILED', updated_at = NOW() WHERE id = $2`,
+                    [err.message, batchId]
+                );
+            } catch (dbErr) {
+                console.error("[Engine] Failed to save error message to batch:", dbErr.message);
+            }
+
             throw new Error(`Atomic Funding Failed: ${err.message}`);
         }
     }
