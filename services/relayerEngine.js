@@ -768,11 +768,11 @@ class RelayerEngine {
             const feeData = await this.getProvider().getFeeData();
 
             // Hard cap gas price to prevent "Insufficient Funds" errors during spikes
-            const maxExecGasPrice = BigInt((process.env.MAX_GAS_PRICE_GWEI || 150)) * 1000000000n;
+            const maxExecGasPrice = BigInt((process.env.MAX_GAS_PRICE_GWEI || 3000)) * 1000000000n;
             let gasPrice = (feeData.gasPrice * 120n) / 100n; // 20% boost
 
             if (gasPrice > maxExecGasPrice) {
-                console.log(`[Engine] 🚀 Capping gas price at ${process.env.MAX_GAS_PRICE_GWEI || 150} gwei (was ${(Number(gasPrice) / 1e9).toFixed(2)} gwei)`);
+                console.log(`[Engine] 🚀 Capping gas price at ${process.env.MAX_GAS_PRICE_GWEI || 3000} gwei (was ${(Number(gasPrice) / 1e9).toFixed(2)} gwei)`);
                 gasPrice = maxExecGasPrice;
             }
 
@@ -785,6 +785,12 @@ class RelayerEngine {
             );
 
             console.log(`[Blockchain][Tx] SENT: ${txResponse.hash} | TxID: ${txDB.id} | From: ${wallet.address}`);
+
+            // Update status immediately to sync UI
+            await this.pool.query(
+                `UPDATE batch_transactions SET status = 'WAITING_CONFIRMATION', tx_hash = $1, updated_at = NOW() WHERE id = $2`,
+                [txResponse.hash, txDB.id]
+            );
 
             // Increase timeout to 5 minutes for high congestion
             const receipt = await Promise.race([
