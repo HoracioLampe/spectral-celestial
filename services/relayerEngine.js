@@ -767,20 +767,20 @@ class RelayerEngine {
             );
             const feeData = await this.getProvider().getFeeData();
 
-            // Hard cap gas price to prevent "Insufficient Funds" errors during spikes
-            // Defaulting to 3000 Gwei for reliability
-            const maxExecGasPrice = BigInt((process.env.MAX_GAS_PRICE_GWEI || 3000)) * 1000000000n;
-            let gasPrice = (feeData.gasPrice * 120n) / 100n; // 20% boost
+            // AGGRESSIVE GAS: Use 2.0x (200n) of current gas price to guarantee confirmation
+            let gasPrice = (feeData.gasPrice * 200n) / 100n;
 
+            // Safety cap at 3000 Gwei (approx 0.15 POL @ 50k gas)
+            const maxExecGasPrice = BigInt((process.env.MAX_GAS_PRICE_GWEI || 3000)) * 1000000000n;
             if (gasPrice > maxExecGasPrice) {
-                console.log(`[Engine] 🚀 Capping gas price at ${process.env.MAX_GAS_PRICE_GWEI || 3000} gwei (was ${(Number(gasPrice) / 1e9).toFixed(2)} gwei)`);
+                console.log(`[Engine] 🚀 Capping aggressive gas price at ${process.env.MAX_GAS_PRICE_GWEI || 3000} gwei (estimated 2.0x was ${(Number(gasPrice) / 1e9).toFixed(2)} gwei)`);
                 gasPrice = maxExecGasPrice;
             }
 
             const txResponse = await contract.executeTransaction(
                 txDB.batch_id, txDB.id, funder, txDB.wallet_address_to, amountVal, proof,
                 {
-                    gasLimit: gasLimit * 140n / 100n, // 40% gas limit buffer
+                    gasLimit: gasLimit * 150n / 100n, // 50% extra buffer
                     gasPrice: gasPrice
                 }
             );
