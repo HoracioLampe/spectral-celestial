@@ -768,6 +768,7 @@ class RelayerEngine {
             const feeData = await this.getProvider().getFeeData();
 
             // Hard cap gas price to prevent "Insufficient Funds" errors during spikes
+            // Defaulting to 3000 Gwei for reliability
             const maxExecGasPrice = BigInt((process.env.MAX_GAS_PRICE_GWEI || 3000)) * 1000000000n;
             let gasPrice = (feeData.gasPrice * 120n) / 100n; // 20% boost
 
@@ -786,9 +787,9 @@ class RelayerEngine {
 
             console.log(`[Blockchain][Tx] SENT: ${txResponse.hash} | TxID: ${txDB.id} | From: ${wallet.address}`);
 
-            // Update status immediately to sync UI
+            // Update status immediately to sync UI - Fix: use 'updated_at' column
             await this.pool.query(
-                `UPDATE batch_transactions SET status = 'WAITING_CONFIRMATION', tx_hash = $1, updated = NOW() WHERE id = $2`,
+                `UPDATE batch_transactions SET status = 'WAITING_CONFIRMATION', tx_hash = $1, updated_at = NOW() WHERE id = $2`,
                 [txResponse.hash, txDB.id]
             );
 
