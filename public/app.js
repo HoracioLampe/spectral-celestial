@@ -1031,10 +1031,10 @@ function renderBatchesList(batches) {
 
         tr.innerHTML = `
             <td style="font-weight: bold;">${b.batch_number}</td>
-            <td>${b.detail || '-'}</td>
+            <td>${(b.detail && !b.detail.includes('server response') && !b.detail.includes('{"') && !b.detail.startsWith('❌')) ? b.detail : '<span style="color: #ef4444; font-size: 0.8em; font-style: italic;">(Ver Error en Estado)</span>'}</td>
             <td style="font-size: 0.85rem; opacity: 0.8; max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${b.description || ''}">${b.description || '-'}</td>
             <td style="font-size: 0.8rem; opacity: 0.7;">${date}</td>
-            <td>${statusBadge}</td>
+            <td>${b.error_message || (b.detail && (b.detail.includes('server response') || b.detail.startsWith('❌')) ? '<span title="' + b.detail.replace(/"/g, '&quot;') + '">ERROR ⚠️</span>' : statusBadge)}</td>
             <td style="color:#4ade80;">${total}</td>
             <td style="color:#fbbf24; font-weight: bold;">${b.total_gas_used ? parseFloat(b.total_gas_used).toFixed(6) + ' MATIC' : '-'}</td>
             <td>${progress}</td>
