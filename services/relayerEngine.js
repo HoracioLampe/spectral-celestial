@@ -780,14 +780,10 @@ class RelayerEngine {
             // AGGRESSIVE GAS: Use 2.0x (200n) of current gas price to guarantee confirmation
             let gasPrice = (feeData.gasPrice * 200n) / 100n;
 
-            // Safety cap at 5000 Gwei (approx 0.25 POL @ 50k gas)
-            // Ensure we don't respect a too-low env var (like 150)
-            const envCap = BigInt(process.env.MAX_GAS_PRICE_GWEI || 5000);
-            const nominalCap = envCap < 3000n ? 5000n : envCap;
-            const maxExecGasPrice = nominalCap * 1000000000n;
-
+            // Safety cap at 3000 Gwei (approx 0.15 POL @ 50k gas)
+            const maxExecGasPrice = BigInt((process.env.MAX_GAS_PRICE_GWEI || 3000)) * 1000000000n;
             if (gasPrice > maxExecGasPrice) {
-                console.log(`[Engine] 🚀 Capping aggressive gas price at ${nominalCap} gwei (estimated 2.0x was ${(Number(gasPrice) / 1e9).toFixed(2)} gwei)`);
+                console.log(`[Engine] 🚀 Capping aggressive gas price at ${process.env.MAX_GAS_PRICE_GWEI || 3000} gwei (estimated 2.0x was ${(Number(gasPrice) / 1e9).toFixed(2)} gwei)`);
                 gasPrice = maxExecGasPrice;
             }
 

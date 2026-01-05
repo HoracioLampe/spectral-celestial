@@ -53,6 +53,7 @@ async function sweep() {
                     // Check and fix nonce if needed
                     const latest = await provider.getTransactionCount(r.address, 'latest');
                     const pending = await provider.getTransactionCount(r.address, 'pending');
+                    let unblockDeduction = 0n;
                     if (pending > latest) {
                         console.log(`   ⚠️ Stuck nonce detected (${latest} vs ${pending}). resetting...`);
                         await wallet.sendTransaction({
@@ -61,11 +62,26 @@ async function sweep() {
                             nonce: latest,
                             gasPrice: gasPrice * 2n // Super aggressive for unblock
                         });
+                        console.log(`   ✅ Unblock Sent (Nonce ${latest}). Waiting for propagation...`);
+                        await new Promise(r => setTimeout(r, 2000));
                     }
+
+                    // RE-FETCH NEEDED: Unblocking spent gas, so balance is lower now.
+                    const freshBalance = await provider.getBalance(wallet.address);
+                    if (freshBalance <= minCost) {
+                        console.log(`   ⚠️ Balance too low after unblocking (${ethers.formatEther(freshBalance)}). Skipping sweep.`);
+                        continue;
+                    }
+                    // Recalculate sweep amount
+                    const finalAmountToSend = freshBalance - minCost;
+
+                    if (finalAmountToSend < ethers.parseEther("0.01")) continue;
+
+                    console.log(`   💸 Sweeping ${ethers.formatEther(finalAmountToSend)} MATIC...`);
 
                     const tx = await wallet.sendTransaction({
                         to: r.faucet_address,
-                        value: amountToSend,
+                        value: finalAmountToSend,
                         gasPrice: gasPrice,
                         gasLimit: gasLimit
                     });
