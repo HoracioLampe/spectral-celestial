@@ -129,16 +129,26 @@ class RelayerEngine {
 
             if (pending > nonce) {
                 console.warn(`[Engine] ⚠️  GAP DETECTED in Faucet Nonce! Latest: ${nonce}, Pending: ${pending}. Sanitizing...`);
-                // Sanitize: Clear everything from nonce to pending
-                // Actually, often it's just one stuck tx or a gap. safely replacing 'nonce' is usually enough.
-                // We will loop just in case.
 
                 await this.sanitizeFaucet(nonce, pending);
+
+                // Post-Sanitization Check
+                const noncePost = await this.getProvider().getTransactionCount(address, 'latest');
+                const pendingPost = await this.getProvider().getTransactionCount(address, 'pending');
+
+                if (pendingPost > noncePost) {
+                    console.error(`[Engine] ❌ Repair failed. Gap still exists: ${noncePost} -> ${pendingPost}`);
+                    return false;
+                }
+                console.log("[Engine] ✨ Faucet integrity restored.");
+                return true;
             } else {
                 console.log("[Engine] ✅ Faucet Nonce is healthy.");
+                return true;
             }
         } catch (e) {
             console.error("[Engine] Nonce Check Failed:", e);
+            return false;
         }
     }
 
@@ -1019,7 +1029,8 @@ class RelayerEngine {
             const nonceRepaired = await this.verifyAndRepairNonce(walletToUse);
 
             if (!nonceRepaired) {
-                console.warn(`[Engine][Fund] ⚠️ Nonce repair incomplete, but proceeding with caution...`);
+                console.error(`[Engine][Fund] ❌ Nonce repair FAILED. Aborting atomic funding.`);
+                throw new Error("CRITICAL: Faucet Nonce blocked. Atomic funding aborted to prevent stuck tx.");
             }
 
             // Re-instantiate contract with specific signer
