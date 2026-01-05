@@ -600,7 +600,7 @@ class RelayerEngine {
             const errorMsg = criticalErr.message || String(criticalErr);
             const truncatedMsg = errorMsg.length > 200 ? errorMsg.substring(0, 200) + '...' : errorMsg;
             await this.pool.query(
-                `UPDATE batches SET status = 'FAILED', detail = $1, updated_at = NOW() WHERE id = $2`,
+                `UPDATE batches SET status = 'FAILED', error_message = $1, updated_at = NOW() WHERE id = $2`,
                 [`❌ ERROR: ${truncatedMsg}`, batchId]
             );
         }
