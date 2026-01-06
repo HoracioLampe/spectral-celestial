@@ -953,7 +953,14 @@ function renderBatchFilters() {
     // Insert after the existing header/controls if possible
     // Looking at structure, maybe prepend to batchListView or insert before table
     // Let's insert as first child of batchListView
-    batchList.insertAdjacentHTML('afterbegin', filterHTML);
+    // batchList.insertAdjacentHTML('afterbegin', filterHTML);
+
+    const topBar = batchList.querySelector('.top-bar');
+    if (topBar) {
+        topBar.insertAdjacentHTML('afterend', filterHTML);
+    } else {
+        batchList.insertAdjacentHTML('afterbegin', filterHTML);
+    }
 }
 
 let debounceTimer;

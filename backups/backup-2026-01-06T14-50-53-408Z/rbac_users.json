@@ -1,0 +1,32 @@
+[
+  {
+    "address": "0x484c0fce584d5337688beafc6f4fe133a944c6ec",
+    "role": "SUPER_ADMIN",
+    "name": null,
+    "created_at": "2026-01-02T05:12:04.270Z"
+  },
+  {
+    "address": "0x39bfeed080dc586f7ac518ed53685f7e29d5b97a",
+    "role": "REGISTERED",
+    "name": "REGISTERED 2",
+    "created_at": "2026-01-02T06:53:20.000Z"
+  },
+  {
+    "address": "0x05dac55cc6fd7b84be32fd262ce4521eb6b29c38",
+    "role": "OPERATOR",
+    "name": "REGISTERED 1",
+    "created_at": "2026-01-02T05:36:58.000Z"
+  },
+  {
+    "address": "0x09c31e3a14404ebe473b369c94acde5ab0ebe0d0",
+    "role": "OPERATOR",
+    "name": "Funder",
+    "created_at": "2026-01-02T02:12:29.000Z"
+  },
+  {
+    "address": "0xc0b394c18de605b52ccf2a3e0ef1e31463466cbe",
+    "role": "OPERATOR",
+    "name": null,
+    "created_at": "2026-01-05T22:08:24.000Z"
+  }
+]
