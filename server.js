@@ -138,6 +138,7 @@ const authenticateToken = (req, res, next) => {
 
 
 const os = require('os');
+const vault = require('./services/vault'); // Custom Vault Service
 
 // Multer for Excel Uploads - Use system temp dir for Railway compatibility
 const upload = multer({ dest: os.tmpdir() });
@@ -1008,23 +1009,70 @@ app.post('/api/batches/:id/register-merkle', authenticateToken, async (req, res)
     }
 });
 
-// GET Faucet Helper (User-Specific)
+// GET Faucet Helper (User-Specific) - VAULT INTEGRATED
 async function getFaucetCredentials(userAddress) {
     if (!userAddress) throw new Error("Faucet lookup requires User Address");
 
     const normalizedUser = userAddress.toLowerCase();
 
-    // 1. Try finding specific faucet for this user (Case Insensitive)
+    // 1. Try VAULT First (Security Priority)
+    try {
+        const secretKey = await vault.getFaucetKey(normalizedUser); // Use Funder as ID
+        if (secretKey) {
+            console.log(`🔒 [Faucet] Loaded secure key from Vault for ${normalizedUser}`);
+            return secretKey;
+        }
+    } catch (e) {
+        console.warn(`⚠️ [Faucet] Vault lookup failed for ${normalizedUser}: ${e.message}`);
+    }
+
+    // 2. Check DB for legacy keys or existence
     const faucetRes = await pool.query('SELECT private_key FROM faucets WHERE LOWER(funder_address) = $1 LIMIT 1', [normalizedUser]);
 
     if (faucetRes.rows.length > 0) {
-        return faucetRes.rows[0].private_key;
+        let pk = faucetRes.rows[0].private_key;
+
+        // If stored key is NOT the secured placeholder, use it (Legacy Support)
+        if (pk && pk !== 'VAULT_SECURED') {
+            // Optional: Migrate to Vault here? For now, just use it.
+            return pk;
+        }
+
+        // If DB says we have one but Vault didn't return it -> Error state or create new?
+        // Let's assume we need to re-generate if we can't find the key anywhere.
     }
 
-    // 2. Fallback or Create
-    console.log(`[Faucet] No faucet found for ${normalizedUser}. Generating new one...`);
+    // 3. Create NEW Faucet (Secure Flow)
+    console.log(`[Faucet] No key found for ${normalizedUser}. Generating new SECURE faucet...`);
     const wallet = ethers.Wallet.createRandom();
-    await pool.query('INSERT INTO faucets (address, private_key, funder_address) VALUES ($1, $2, $3)', [wallet.address, wallet.privateKey, normalizedUser]);
+
+    // A. Save to Vault (Critical Step) - Use Funder Address as ID
+    const saved = await vault.saveFaucetKey(normalizedUser, wallet.privateKey);
+
+    if (!saved) {
+        // Fallback: If Vault fails, do we fail strict? 
+        // User requested: "en el vault guardes la clave privada".
+        // Let's failing strict might block users if Vault is down. 
+        // For safety, let's throw error if Vault is required but failed.
+        if (vault.enabled) {
+            throw new Error("Critical: Failed to save key to Vault. Operation aborted.");
+        }
+
+        // Fallback for dev/no-vault environments: Save to DB
+        console.warn("⚠️ Vault disabled/fail. Saving to DB (LEGACY MODE)");
+        await pool.query('INSERT INTO faucets (address, private_key, funder_address) VALUES ($1, $2, $3)',
+            [wallet.address, wallet.privateKey, normalizedUser]);
+        return wallet.privateKey;
+    }
+
+    // B. Save Public Info to DB (Placeholder for PK)
+    // First delete old check to avoid duplicates
+    await pool.query('DELETE FROM faucets WHERE LOWER(funder_address) = $1', [normalizedUser]);
+
+    await pool.query('INSERT INTO faucets (address, private_key, funder_address) VALUES ($1, $2, $3)',
+        [wallet.address, 'VAULT_SECURED', normalizedUser]);
+
+    console.log(`✅ [Faucet] New Faucet generated & secured in Vault: ${wallet.address}`);
     return wallet.privateKey;
 }
 
@@ -1138,32 +1186,65 @@ app.post('/api/batches/:id/process', async (req, res) => {
 const QUICKNODE_URL = "https://polygon-mainnet.core.chainstack.com/05aa9ef98aa83b585c14fa0438ed53a9";
 
 // Faucet Management API (User Specific)
+// Faucet Management API (User Specific)
 app.get('/api/faucet', authenticateToken, async (req, res) => {
     try {
         const userAddress = req.user.address.toLowerCase();
 
-        // 1. Check existing faucet for THIS user (Case Insensitive)
+        // 1. Check existing faucet for THIS user
         const result = await pool.query('SELECT * FROM faucets WHERE LOWER(funder_address) = $1 LIMIT 1', [userAddress]);
 
         if (result.rows.length > 0) {
             const row = result.rows[0];
             const provider = globalRpcManager.getProvider();
-            const balance = await provider.getBalance(row.address);
+
+            let balance = "0.0";
+            try {
+                const balWei = await provider.getBalance(row.address);
+                balance = ethers.formatEther(balWei);
+            } catch (err) {
+                console.warn("Error fetching balance:", err.message);
+            }
+
+            // Retrieve Private Key safely if needed (Only return if explicitly requested or for Super Admin?)
+            // For security, usually we don't return PK to frontend unless necessary for export.
+            // If stored as 'VAULT_SECURED', we fetch it from Vault ONLY if the user is the owner.
+
+            let privateKey = row.private_key;
+            if (row.private_key === 'VAULT_SECURED') {
+                // Fetch from Vault for display
+                try {
+                    privateKey = await vault.getFaucetKey(userAddress) || "VAULT_ERROR";
+                } catch (e) {
+                    privateKey = "VAULT_UNREACHABLE";
+                }
+            }
+
             res.json({
                 address: row.address,
-                privateKey: row.private_key, // Admin/Owner view only
-                balance: ethers.formatEther(balance)
+                privateKey: privateKey, // Frontend expects this?
+                balance: balance
             });
         } else {
-            // AUTO-GENERATE for this user
-            console.log(`🔍 No Faucet found for ${userAddress}, generating new one...`);
-            const wallet = ethers.Wallet.createRandom();
-            await pool.query('INSERT INTO faucets (address, private_key, funder_address) VALUES ($1, $2, $3)', [wallet.address, wallet.privateKey, userAddress]);
-            res.json({
-                address: wallet.address,
-                privateKey: wallet.privateKey,
-                balance: '0'
-            });
+            // AUTO-GENERATE for this user using Central Helper
+            console.log(`🔍 No Faucet found for ${userAddress}, generating new one via Vault...`);
+
+            // Reuse central logic which handles Vault saving
+            const newPk = await getFaucetCredentials(userAddress);
+            // We need the address too. getFaucetCredentials returns PK only. 
+            // We can derive it or re-query. Re-query is safest to get stored public address.
+
+            const newFaucetRes = await pool.query('SELECT * FROM faucets WHERE LOWER(funder_address) = $1 LIMIT 1', [userAddress]);
+            if (newFaucetRes.rows.length > 0) {
+                const row = newFaucetRes.rows[0];
+                res.json({
+                    address: row.address,
+                    privateKey: newPk,
+                    balance: '0'
+                });
+            } else {
+                throw new Error("Failed to generate faucet");
+            }
         }
     } catch (err) {
         console.error("Error fetching faucet:", err);
