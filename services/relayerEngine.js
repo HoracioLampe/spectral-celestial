@@ -1,4 +1,5 @@
 const ethers = require('ethers');
+const vault = require('./vault'); // Import Vault Service
 
 // Relayer Engine for High Throughput Processing
 class RelayerEngine {
@@ -213,14 +214,22 @@ class RelayerEngine {
 
         // Check for existing relayers in DB
         const existingRelayersRes = await this.pool.query(
-            'SELECT address, private_key FROM relayers WHERE batch_id = $1',
+            'SELECT address FROM relayers WHERE batch_id = $1',
             [batchId]
         );
 
         let relayers = [];
         if (existingRelayersRes.rows.length > 0) {
             console.log(`[Engine] Found ${existingRelayersRes.rows.length} existing relayers for Batch ${batchId}.`);
-            relayers = existingRelayersRes.rows.map(r => new ethers.Wallet(r.private_key, this.provider));
+            // Securely load keys from Vault
+            for (const r of existingRelayersRes.rows) {
+                const pk = await vault.getRelayerKey(r.address);
+                if (pk) {
+                    relayers.push(new ethers.Wallet(pk, this.provider));
+                } else {
+                    console.error(`[Engine] ❌ Private key for relayer ${r.address} not found in Vault!`);
+                }
+            }
         }
 
         // Expand if requested count > existing count
@@ -255,20 +264,26 @@ class RelayerEngine {
     async startExecution(batchId, permitData = null, rootSignatureData = null) {
         console.log(`[Engine] 🚀 startExecution(id = ${batchId}, hasPermit=${!!permitData}, hasRootSig=${!!rootSignatureData})`);
 
-        const relayersRes = await this.pool.query(
-            'SELECT address, private_key FROM relayers WHERE batch_id = $1',
+        const existingRelayersRes = await this.pool.query(
+            'SELECT address FROM relayers WHERE batch_id = $1',
             [batchId]
         );
 
-        if (relayersRes.rows.length === 0) {
-            throw new Error("Relayers not prepared. Run setup first.");
+        const relayers = [];
+        for (const r of existingRelayersRes.rows) {
+            const pk = await vault.getRelayerKey(r.address);
+            if (pk) {
+                const w = new ethers.Wallet(pk, this.provider);
+                w.batch_id = batchId; // Attach batch_id for workerLoop context
+                relayers.push(w);
+            } else {
+                console.error(`[Engine] ❌ Private key for relayer ${r.address} not found in Vault!`);
+            }
         }
 
-        const relayers = relayersRes.rows.map(r => {
-            const w = new ethers.Wallet(r.private_key, this.provider);
-            w.batch_id = batchId;
-            return w;
-        });
+        if (relayers.length === 0) {
+            throw new Error("Relayers not prepared or keys not found in Vault. Run setup first.");
+        }
 
         // Background the execution
         this.backgroundProcess(batchId, relayers, true, permitData, rootSignatureData).catch(err => {
@@ -1319,11 +1334,14 @@ class RelayerEngine {
         for (let i = 0; i < relayers.length; i++) {
             const r = relayers[i];
             try {
+                // SECURE: Save key to Vault, not DB
+                await vault.storeRelayerKey(r.address, r.privateKey);
+
                 await this.pool.query(
-                    `INSERT INTO relayers(batch_id, address, private_key, status) 
-                     VALUES($1, $2, $3, 'active')
+                    `INSERT INTO relayers(batch_id, address, status) 
+                     VALUES($1, $2, 'active')
                      ON CONFLICT (address) DO UPDATE SET batch_id = EXCLUDED.batch_id, status = 'active'`,
-                    [batchId, r.address, r.privateKey]
+                    [batchId, r.address]
                 );
                 if ((i + 1) % 10 === 0 || (i + 1) === relayers.length) {
                     console.log(`[Engine]   > Saved ${i + 1}/${relayers.length} relayers.`);
@@ -1377,8 +1395,15 @@ class RelayerEngine {
         console.log(`[Refund] ⛽ Gas Price: ${ethers.formatUnits(boostedGasPrice, 'gwei')} gwei | Min Cost: ${ethers.formatEther(costWei)}`);
 
         // Note: 'relayers' argument might be partial if process restarted. Fetch from DB for authority.
-        const activeRelayersRes = await this.pool.query('SELECT address, private_key FROM relayers WHERE batch_id = $1', [batchId]);
-        const activeRelayers = activeRelayersRes.rows.map(r => new ethers.Wallet(r.private_key, this.provider));
+        const activeRelayersRes = await this.pool.query('SELECT address FROM relayers WHERE batch_id = $1', [batchId]);
+
+        const activeRelayers = [];
+        for (const r of activeRelayersRes.rows) {
+            const pk = await vault.getRelayerKey(r.address);
+            if (pk) {
+                activeRelayers.push(new ethers.Wallet(pk, this.provider));
+            }
+        }
 
         console.log(`[Refund] Checking balances for ${activeRelayers.length} relayers...`);
 
