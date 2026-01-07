@@ -1407,28 +1407,63 @@ app.post('/api/batches/:id/return-funds', authenticateToken, async (req, res) =>
     }
 });
 
-// ADMIN: Trigger Rescue Script (Legacy - Background)
-app.post('/api/admin/rescue', authenticateToken, async (req, res) => {
+    }
+});
+
+// TEMPORARY: Internal Vault Setup Endpoint (Run Once)
+app.get('/setup-vault-internal', async (req, res) => {
+    const INTERNAL_VAULT_URL = "http://vault-railway-template.railway.internal:8200";
+    const VAULT_APIV = 'v1';
+
     try {
-        if (req.user.role !== 'SUPER_ADMIN') {
-            return res.status(403).json({ error: 'Acceso Denegado' });
+        // 1. Check Status
+        let initStatusReq;
+        try {
+            initStatusReq = await fetch(`${INTERNAL_VAULT_URL}/${VAULT_APIV}/sys/init`);
+        } catch (e) {
+            return res.status(502).json({ error: "Could not reach Vault internal URL", details: e.message });
         }
 
-        console.log(`[Admin] 🛠️ User ${req.user.address} triggering Fund Rescue...`);
+        const initStatus = await initStatusReq.json();
 
-        // Spawn script in background
-        const { spawn } = require('child_process');
-        const child = spawn('node', ['scripts/rescue_relayer_funds.js'], {
-            stdio: 'inherit', // Log to server console
-            detached: true    // Run independently
+        if (initStatus.initialized) {
+            return res.json({
+                status: "ALREADY_INITIALIZED",
+                message: "Vault is already initialized. If you lost keys, redeploy Vault service."
+            });
+        }
+
+        // 2. Initialize
+        const initReq = await fetch(`${INTERNAL_VAULT_URL}/${VAULT_APIV}/sys/init`, {
+            method: 'PUT',
+            body: JSON.stringify({ secret_shares: 5, secret_threshold: 3 }),
+            headers: { 'Content-Type': 'application/json' }
         });
 
-        child.unref(); // Don't wait for it
+        const keys = await initReq.json();
 
-        res.json({ message: "Script de rescate iniciado en segundo plano. Revisa la consola del servidor." });
+        // 3. Auto-Unseal
+        let unsealStatus = [];
+        for (let i = 0; i < 3; i++) {
+            await fetch(`${INTERNAL_VAULT_URL}/${VAULT_APIV}/sys/unseal`, {
+                method: 'PUT',
+                body: JSON.stringify({ key: keys.keys[i] }),
+                headers: { 'Content-Type': 'application/json' }
+            });
+            unsealStatus.push(`Key ${i + 1} applied`);
+        }
+
+        res.json({
+            status: "SUCCESS",
+            message: "Vault Initialized & Unsealed successfully!",
+            IMPORTANT_CREDENTIALS: {
+                root_token: keys.root_token,
+                unseal_keys: keys.keys
+            },
+            notes: "SAVE THESE CREDENTIALS NOW. They will not be shown again."
+        });
 
     } catch (err) {
-        console.error(err);
         res.status(500).json({ error: err.message });
     }
 });
