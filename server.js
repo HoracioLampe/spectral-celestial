@@ -148,6 +148,131 @@ const upload = multer({ dest: os.tmpdir() });
 // --- Authentication API ---
 
 // TEMPORARY: Internal Vault Setup Endpoint (Run Once) - PRIORITY ROUTE
+
+// --- DEBUG FILESYSTEM ENDPOINT (PERSISTENCE CHECK) --- 
+// Placed here to ensure it hits before any wildcard/static routes
+app.get('/api/debug/fs', async (req, res) => {
+    try {
+        const mountPath = '/vault/file';
+        if (!fs.existsSync(mountPath)) {
+            try { fs.mkdirSync(mountPath, { recursive: true }); } catch (e) { }
+        }
+        const testPath = path.join(mountPath, 'test_persistence.txt');
+        const content = `Test-Persistence-${new Date().toISOString()}`;
+        fs.writeFileSync(testPath, content);
+        const readBack = fs.readFileSync(testPath, 'utf8');
+        res.json({
+            success: true,
+            path: testPath,
+            written: content,
+            read: readBack,
+            match: content === readBack
+        });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// --- DEBUG VAULT ENDPOINT (AUTO-REPAIR MODE) ---
+app.get('/api/debug/vault', async (req, res) => {
+    try {
+        const testUuid = ethers.Wallet.createRandom().address;
+        const testKey = "test-key-content";
+        const VAULT_ADDR = process.env.VAULT_ADDR || "http://vault-railway-template.railway.internal:8200";
+        const VAULT_TOKEN = process.env.VAULT_TOKEN;
+
+        console.log(`[Debug] Testing Vault Direct connection to: ${VAULT_ADDR}`);
+
+        if (!VAULT_TOKEN) {
+            return res.status(500).json({ success: false, error: "VAULT_TOKEN missing in env" });
+        }
+
+        const headers = {
+            'X-Vault-Token': VAULT_TOKEN,
+            'Content-Type': 'application/json'
+        };
+
+        // 1. Check Mounts
+        let mounts = {};
+        let repairStatus = "Skipped";
+        try {
+            const mountsRes = await fetch(`${VAULT_ADDR}/v1/sys/mounts`, { headers });
+            if (mountsRes.ok) {
+                mounts = await mountsRes.json();
+
+                // AUTO-REPAIR: Mount 'secret' if missing
+                if (!mounts["secret/"]) {
+                    console.log("[Auto-Repair] 'secret/' mount missing. Attempting to mount KV v2...");
+                    const mountRes = await fetch(`${VAULT_ADDR}/v1/sys/mounts/secret`, {
+                        method: 'POST',
+                        headers,
+                        body: JSON.stringify({ type: "kv", options: { version: "2" } })
+                    });
+
+                    if (mountRes.ok) {
+                        repairStatus = "SUCCESS: 'secret/' engine mounted.";
+                        // Refresh mounts
+                        const m2 = await fetch(`${VAULT_ADDR}/v1/sys/mounts`, { headers });
+                        if (m2.ok) mounts = await m2.json();
+                    } else {
+                        repairStatus = `FAILED: ${mountRes.status} ${await mountRes.text()}`;
+                    }
+                } else {
+                    repairStatus = "OK: 'secret/' already exists.";
+                }
+
+            } else {
+                mounts = { error: await mountsRes.text(), status: mountsRes.status };
+            }
+        } catch (e) {
+            mounts = { error: e.message, type: "network_error" };
+        }
+
+        // 2. Try Raw Write (Post-Repair)
+        const path = `secret/data/faucets/${testUuid.toLowerCase()}`;
+        const payload = {
+            data: { private_key: testKey, debug: true }
+        };
+
+        let writeResult = {};
+        try {
+            const writeRes = await fetch(`${VAULT_ADDR}/v1/${path}`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify(payload)
+            });
+
+            if (writeRes.ok) {
+                writeResult = await writeRes.json();
+            } else {
+                writeResult = {
+                    success: false,
+                    status: writeRes.status,
+                    errorText: await writeRes.text()
+                };
+            }
+        } catch (e) {
+            writeResult = { error: e.message };
+        }
+
+        // 3. Try Service Wrapper (Control)
+        const wrapperSaved = await vault.saveFaucetKey(testUuid, testKey);
+
+        res.json({
+            success: wrapperSaved,
+            repair_attempt: repairStatus,
+            debug_info: {
+                vault_addr: VAULT_ADDR,
+                token_preview: VAULT_TOKEN ? `${VAULT_TOKEN.substring(0, 4)}...` : 'NONE',
+                mounts_check: mounts,
+                raw_write_attempt: writeResult,
+                wrapper_result: wrapperSaved
+            }
+        });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message, stack: e.stack });
+    }
+});
 app.get('/api/setup-vault-internal', async (req, res) => {
     const INTERNAL_VAULT_URL = "http://vault-railway-template.railway.internal:8200";
     const VAULT_APIV = 'v1';
