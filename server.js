@@ -1715,6 +1715,54 @@ app.post('/api/batches/:id/return-funds', authenticateToken, async (req, res) =>
     }
 });
 
+// --- TEMPORARY: Execute Faucet Constraints SQL ---
+app.get('/api/admin/add-faucet-constraints', async (req, res) => {
+    try {
+        const results = [];
+
+        // 1. Add UNIQUE constraint
+        try {
+            await pool.query(`
+                ALTER TABLE faucets 
+                ADD CONSTRAINT faucets_funder_address_unique 
+                UNIQUE (funder_address)
+            `);
+            results.push({ step: 1, status: 'SUCCESS', message: 'UNIQUE constraint added' });
+        } catch (e) {
+            if (e.message.includes('already exists')) {
+                results.push({ step: 1, status: 'SKIPPED', message: 'UNIQUE constraint already exists' });
+            } else {
+                throw e;
+            }
+        }
+
+        // 2. Create index
+        await pool.query(`
+            CREATE INDEX IF NOT EXISTS idx_faucets_funder_address_lower 
+            ON faucets (LOWER(funder_address))
+        `);
+        results.push({ step: 2, status: 'SUCCESS', message: 'Index created' });
+
+        // 3. Check for duplicates
+        const duplicates = await pool.query(`
+            SELECT funder_address, COUNT(*) as count
+            FROM faucets
+            GROUP BY funder_address
+            HAVING COUNT(*) > 1
+        `);
+        results.push({
+            step: 3,
+            status: duplicates.rows.length === 0 ? 'SUCCESS' : 'WARNING',
+            message: `Found ${duplicates.rows.length} duplicate funder(s)`,
+            duplicates: duplicates.rows
+        });
+
+        res.json({ success: true, results });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message, stack: e.stack });
+    }
+});
+
 // TEMPORARY: Internal Vault Setup Endpoint (Run Once)
 app.get('/setup-vault-internal', async (req, res) => {
     const INTERNAL_VAULT_URL = "http://vault-railway-template.railway.internal:8200";
