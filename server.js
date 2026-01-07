@@ -149,24 +149,49 @@ const upload = multer({ dest: os.tmpdir() });
 
 // TEMPORARY: Internal Vault Setup Endpoint (Run Once) - PRIORITY ROUTE
 
-// --- DEBUG FILESYSTEM ENDPOINT (PERSISTENCE CHECK) --- 
-// Placed here to ensure it hits before any wildcard/static routes
-app.get('/api/debug/fs', async (req, res) => {
+// --- DEBUG FILESYSTEM: INIT TEST FILE --- 
+app.get('/api/debug/fs-init', async (req, res) => {
     try {
         const mountPath = '/vault/file';
         if (!fs.existsSync(mountPath)) {
             try { fs.mkdirSync(mountPath, { recursive: true }); } catch (e) { }
         }
-        const testPath = path.join(mountPath, 'test_persistence.txt');
-        const content = `Test-Persistence-${new Date().toISOString()}`;
-        fs.writeFileSync(testPath, content);
-        const readBack = fs.readFileSync(testPath, 'utf8');
+        const testPath = path.join(mountPath, 'persistence_proof.json');
+
+        if (fs.existsSync(testPath) && !req.query.force) {
+            return res.json({
+                success: true,
+                message: "File already exists. Use ?force=true to overwrite.",
+                current_content: JSON.parse(fs.readFileSync(testPath, 'utf8'))
+            });
+        }
+
+        const data = {
+            born_at: new Date().toISOString(),
+            railway_deployment_id: process.env.RAILWAY_DEPLOYMENT_ID || 'local',
+            description: "If this survives a restart, the volume is working."
+        };
+
+        fs.writeFileSync(testPath, JSON.stringify(data, null, 2));
+        res.json({ success: true, message: "Test file CREATED.", data });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// --- DEBUG FILESYSTEM: CHECK TEST FILE ---
+app.get('/api/debug/fs-check', async (req, res) => {
+    try {
+        const testPath = '/vault/file/persistence_proof.json';
+        if (!fs.existsSync(testPath)) {
+            return res.status(404).json({ success: false, error: "File NOT found. Run /api/debug/fs-init first." });
+        }
+        const content = JSON.parse(fs.readFileSync(testPath, 'utf8'));
         res.json({
             success: true,
-            path: testPath,
-            written: content,
-            read: readBack,
-            match: content === readBack
+            persisted_content: content,
+            current_time: new Date().toISOString(),
+            is_different_deploy: content.railway_deployment_id !== process.env.RAILWAY_DEPLOYMENT_ID
         });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
@@ -2221,109 +2246,7 @@ async function monitorStuckTransactions() {
 setInterval(monitorStuckTransactions, 60000); // Every 60 seconds
 console.log("🔄 Transaction Monitor: Enabled (checks every 60s)");
 
-// --- DEBUG FILESYSTEM ENDPOINT (PERSISTENCE CHECK) ---
-app.get('/api/debug/fs', async (req, res) => {
-    try {
-        const mountPath = '/vault/file';
-        if (!fs.existsSync(mountPath)) {
-            try { fs.mkdirSync(mountPath, { recursive: true }); } catch (e) { }
-        }
-
-        const testPath = path.join(mountPath, 'test_persistence.txt');
-        const content = `Test-Persistence-${new Date().toISOString()}`;
-
-        fs.writeFileSync(testPath, content);
-        const readBack = fs.readFileSync(testPath, 'utf8');
-
-        res.json({
-            success: true,
-            path: testPath,
-            written: content,
-            read: readBack,
-            match: content === readBack,
-            message: "File written/read successfully."
-        });
-    } catch (e) {
-        res.status(500).json({ success: false, error: e.message });
-    }
-});
-
-// --- DEBUG VAULT ENDPOINT (AUTO-REPAIR MODE) ---
-app.get('/api/debug/vault', async (req, res) => {
-    try {
-        const testUuid = ethers.Wallet.createRandom().address;
-        const testKey = "test-key-content";
-        const VAULT_ADDR = process.env.VAULT_ADDR || "http://vault-railway-template.railway.internal:8200";
-        const VAULT_TOKEN = process.env.VAULT_TOKEN;
-
-        console.log(`[Debug] Testing Vault Direct connection to: ${VAULT_ADDR}`);
-
-        if (!VAULT_TOKEN) {
-            return res.status(500).json({ success: false, error: "VAULT_TOKEN missing in env" });
-        }
-
-        const headers = {
-            'X-Vault-Token': VAULT_TOKEN,
-            'Content-Type': 'application/json'
-        };
-
-        // 1. Check Mounts
-        let mounts = {};
-        try {
-            const mountsRes = await fetch(`${VAULT_ADDR}/v1/sys/mounts`, { headers });
-            if (mountsRes.ok) {
-                mounts = await mountsRes.json();
-            } else {
-                mounts = { error: await mountsRes.text(), status: mountsRes.status };
-            }
-        } catch (e) {
-            mounts = { error: e.message, type: "network_error" };
-        }
-
-        // 2. Try Raw Write
-        const path = `secret/data/faucets/${testUuid.toLowerCase()}`;
-        const payload = {
-            data: { private_key: testKey, debug: true }
-        };
-
-        let writeResult = {};
-        try {
-            const writeRes = await fetch(`${VAULT_ADDR}/v1/${path}`, {
-                method: 'POST',
-                headers,
-                body: JSON.stringify(payload)
-            });
-
-            if (writeRes.ok) {
-                writeResult = await writeRes.json();
-            } else {
-                writeResult = {
-                    success: false,
-                    status: writeRes.status,
-                    errorText: await writeRes.text()
-                };
-            }
-        } catch (e) {
-            writeResult = { error: e.message };
-        }
-
-        // 3. Try Service Wrapper (Control)
-        const wrapperSaved = await vault.saveFaucetKey(testUuid, testKey);
-
-        res.json({
-            success: wrapperSaved,
-            debug_info: {
-                vault_addr: VAULT_ADDR,
-                token_preview: VAULT_TOKEN ? `${VAULT_TOKEN.substring(0, 4)}...` : 'NONE',
-                mounts_check: mounts,
-                raw_write_attempt: writeResult,
-                wrapper_result: wrapperSaved
-            }
-        });
-    } catch (e) {
-        res.status(500).json({ success: false, error: e.message, stack: e.stack });
-    }
-});
+// Debug routes removed and consolidated at top for performance and priority routing
 
 app.listen(PORT_LISTEN, () => {
     console.log(`Server is running on port ${PORT_LISTEN} `);
