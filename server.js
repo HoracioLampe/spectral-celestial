@@ -13,6 +13,7 @@ const pgSession = require('connect-pg-simple')(session);
 const { generateNonce, SiweMessage } = require('siwe');
 const jwt = require('jsonwebtoken');
 const faucetService = require('./services/faucet'); // Import Faucet Service
+const vault = require('./services/vault'); // Import Vault Service
 require('dotenv').config();
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dappsfactory-secret-key-2026';
@@ -2016,6 +2017,28 @@ async function monitorStuckTransactions() {
 // Start monitoring loop
 setInterval(monitorStuckTransactions, 60000); // Every 60 seconds
 console.log("🔄 Transaction Monitor: Enabled (checks every 60s)");
+
+// --- DEBUG VAULT ENDPOINT (TEMPORARY) ---
+app.get('/api/debug/vault', async (req, res) => {
+    try {
+        const testUuid = ethers.Wallet.createRandom().address;
+        const testKey = "test-key-content";
+
+        console.log(`[Debug] Testing Vault with Key: ${testUuid}`);
+
+        // 1. Save
+        const saved = await vault.saveFaucetKey(testUuid, testKey);
+        if (!saved) return res.status(500).json({ success: false, step: 'save', error: 'Vault save returned false' });
+
+        // 2. Read
+        const retrieved = await vault.getFaucetKey(testUuid);
+        if (retrieved !== testKey) return res.status(500).json({ success: false, step: 'read', error: 'Mismatch', sent: testKey, got: retrieved });
+
+        res.json({ success: true, message: "Vault Read/Write Confirmed!", id: testUuid });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
 
 app.listen(PORT_LISTEN, () => {
     console.log(`Server is running on port ${PORT_LISTEN} `);
