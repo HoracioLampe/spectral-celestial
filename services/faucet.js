@@ -73,24 +73,24 @@ async function getFaucetWallet(pool, provider, funderAddress = null) {
                 throw new Error(`SECURE_STORAGE_FAILED: Could not save Faucet Key to Vault for ${faucetAddress}`);
             }
 
-            // C. Save to DB (Atomic Upsert with ON CONFLICT)
-            // This respects the UNIQUE constraint on funder_address
+            // C. Save to DB (Atomic Insert - IMMUTABLE)
+            // Once a faucet is assigned to a funder, it NEVER changes
+            // ON CONFLICT DO NOTHING ensures we don't overwrite existing assignments
             await client.query(`
                 INSERT INTO faucets (address, funder_address) 
                 VALUES ($1, $2)
                 ON CONFLICT (funder_address) 
-                DO UPDATE SET address = EXCLUDED.address
+                DO NOTHING
             `, [faucetAddress, targetFunder]);
             console.log(`🪙 [FaucetService] Saved Faucet entry for ${targetFunder} (address: ${faucetAddress})`);
-        } else {
-            // We have a key. Ensure DB sync (Mismatch Check)
+            // IMMUTABILITY CHECK: Verify DB and Vault match
             const wallet = new ethers.Wallet(privateKey);
 
             if (faucetAddress && faucetAddress.toLowerCase() !== wallet.address.toLowerCase()) {
-                console.warn(`⚠️ [FaucetService] Mismatch! DB: ${faucetAddress} vs Vault Key: ${wallet.address}. Trusting Vault.`);
-                // Force sync DB to match Vault Key
-                await client.query('UPDATE faucets SET address = $1 WHERE LOWER(funder_address) = $2',
-                    [wallet.address, targetFunder]);
+                // CRITICAL ERROR: DB and Vault are out of sync
+                // This should NEVER happen in production
+                console.error(`❌ [FaucetService] CRITICAL MISMATCH! DB: ${faucetAddress} vs Vault Key: ${wallet.address}`);
+                throw new Error(`INTEGRITY_ERROR: Faucet address mismatch for ${targetFunder}. Manual intervention required.`);
             }
         }
 
