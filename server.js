@@ -1960,7 +1960,7 @@ app.post('/api/relayer/:address/recover', authenticateToken, async (req, res) =>
     }
 });
 
-const VERSION = "2.3.2";
+const VERSION = "2.3.3";
 const PORT_LISTEN = process.env.PORT || 3000;
 
 // ============================================
@@ -2041,25 +2041,80 @@ async function monitorStuckTransactions() {
 setInterval(monitorStuckTransactions, 60000); // Every 60 seconds
 console.log("🔄 Transaction Monitor: Enabled (checks every 60s)");
 
-// --- DEBUG VAULT ENDPOINT (TEMPORARY) ---
+// --- DEBUG VAULT ENDPOINT (TEMPORARY - DIAGNOSTIC MODE) ---
 app.get('/api/debug/vault', async (req, res) => {
     try {
         const testUuid = ethers.Wallet.createRandom().address;
         const testKey = "test-key-content";
+        const VAULT_ADDR = process.env.VAULT_ADDR || "http://vault-railway-template.railway.internal:8200";
+        const VAULT_TOKEN = process.env.VAULT_TOKEN;
 
-        console.log(`[Debug] Testing Vault with Key: ${testUuid}`);
+        console.log(`[Debug] Testing Vault Direct connection to: ${VAULT_ADDR}`);
 
-        // 1. Save
-        const saved = await vault.saveFaucetKey(testUuid, testKey);
-        if (!saved) return res.status(500).json({ success: false, step: 'save', error: 'Vault save returned false' });
+        if (!VAULT_TOKEN) {
+            return res.status(500).json({ success: false, error: "VAULT_TOKEN missing in env" });
+        }
 
-        // 2. Read
-        const retrieved = await vault.getFaucetKey(testUuid);
-        if (retrieved !== testKey) return res.status(500).json({ success: false, step: 'read', error: 'Mismatch', sent: testKey, got: retrieved });
+        const headers = {
+            'X-Vault-Token': VAULT_TOKEN,
+            'Content-Type': 'application/json'
+        };
 
-        res.json({ success: true, message: "Vault Read/Write Confirmed!", id: testUuid });
+        // 1. Check Mounts
+        let mounts = {};
+        try {
+            const mountsRes = await fetch(`${VAULT_ADDR}/v1/sys/mounts`, { headers });
+            if (mountsRes.ok) {
+                mounts = await mountsRes.json();
+            } else {
+                mounts = { error: await mountsRes.text(), status: mountsRes.status };
+            }
+        } catch (e) {
+            mounts = { error: e.message, type: "network_error" };
+        }
+
+        // 2. Try Raw Write
+        const path = `secret/data/faucets/${testUuid.toLowerCase()}`;
+        const payload = {
+            data: { private_key: testKey, debug: true }
+        };
+
+        let writeResult = {};
+        try {
+            const writeRes = await fetch(`${VAULT_ADDR}/v1/${path}`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify(payload)
+            });
+
+            if (writeRes.ok) {
+                writeResult = await writeRes.json();
+            } else {
+                writeResult = {
+                    success: false,
+                    status: writeRes.status,
+                    errorText: await writeRes.text()
+                };
+            }
+        } catch (e) {
+            writeResult = { error: e.message };
+        }
+
+        // 3. Try Service Wrapper (Control)
+        const wrapperSaved = await vault.saveFaucetKey(testUuid, testKey);
+
+        res.json({
+            success: wrapperSaved,
+            debug_info: {
+                vault_addr: VAULT_ADDR,
+                token_preview: VAULT_TOKEN ? `${VAULT_TOKEN.substring(0, 4)}...` : 'NONE',
+                mounts_check: mounts,
+                raw_write_attempt: writeResult,
+                wrapper_result: wrapperSaved
+            }
+        });
     } catch (e) {
-        res.status(500).json({ success: false, error: e.message });
+        res.status(500).json({ success: false, error: e.message, stack: e.stack });
     }
 });
 
