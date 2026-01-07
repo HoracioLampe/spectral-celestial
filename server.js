@@ -2015,7 +2015,7 @@ app.post('/api/relayer/:address/recover', authenticateToken, async (req, res) =>
     }
 });
 
-const VERSION = "2.4.2";
+const VERSION = "2.4.3";
 const PORT_LISTEN = process.env.PORT || 3000;
 
 // ============================================
