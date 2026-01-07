@@ -1763,7 +1763,7 @@ app.get('/api/admin/add-faucet-constraints', async (req, res) => {
     }
 });
 
-// TEMPORARY: Internal Vault Setup Endpoint (Run Once)
+// LEGACY: Vault Setup (Keeping for safety)
 app.get('/setup-vault-internal', async (req, res) => {
     const INTERNAL_VAULT_URL = "http://vault-railway-template.railway.internal:8200";
     const VAULT_APIV = 'v1';
