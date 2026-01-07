@@ -398,6 +398,118 @@ app.post('/api/faucet/send-pol', async (req, res) => {
     }
 });
 
+// --- SEND POL FROM FAUCET ---
+app.post('/api/faucet/send-pol', async (req, res) => {
+    try {
+        const { recipientAddress, amount, funderAddress } = req.body;
+
+        if (!funderAddress) {
+            return res.status(401).json({ success: false, error: 'Funder address required' });
+        }
+
+        // Validate recipient address
+        if (!recipientAddress || !ethers.isAddress(recipientAddress)) {
+            return res.status(400).json({ success: false, error: 'Invalid recipient address' });
+        }
+
+        // Validate amount
+        const amountWei = ethers.parseEther(amount.toString());
+        if (amountWei <= 0n) {
+            return res.status(400).json({ success: false, error: 'Amount must be greater than 0' });
+        }
+
+        // Get faucet wallet from Vault
+        const faucetWallet = await faucet.getFaucetWallet(pool, provider, funderAddress);
+
+        // Get current balance
+        const balance = await provider.getBalance(faucetWallet.address);
+
+        // Estimate gas
+        const feeData = await provider.getFeeData();
+        const gasLimit = 21000n; // Standard ETH transfer
+        const maxFeePerGas = feeData.maxFeePerGas || ethers.parseUnits('100', 'gwei');
+        const estimatedGasCost = gasLimit * maxFeePerGas;
+
+        // Reserve extra gas for safety (2x)
+        const gasReserve = estimatedGasCost * 2n;
+        const maxAvailable = balance - gasReserve;
+
+        if (maxAvailable <= 0n) {
+            return res.status(400).json({
+                success: false,
+                error: 'Insufficient balance for gas',
+                balance: ethers.formatEther(balance),
+                gasReserve: ethers.formatEther(gasReserve)
+            });
+        }
+
+        if (amountWei > maxAvailable) {
+            return res.status(400).json({
+                success: false,
+                error: 'Amount exceeds available balance (after gas reserve)',
+                maxAvailable: ethers.formatEther(maxAvailable),
+                requested: ethers.formatEther(amountWei)
+            });
+        }
+
+        // Get nonce with retry logic (anti-bloqueo)
+        let nonce;
+        let retries = 3;
+        while (retries > 0) {
+            try {
+                nonce = await provider.getTransactionCount(faucetWallet.address, 'pending');
+                break;
+            } catch (e) {
+                retries--;
+                if (retries === 0) throw e;
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+        }
+
+        // Build transaction
+        const tx = {
+            to: recipientAddress,
+            value: amountWei,
+            gasLimit: gasLimit,
+            maxFeePerGas: maxFeePerGas,
+            maxPriorityFeePerGas: feeData.maxPriorityFeePerGas || ethers.parseUnits('30', 'gwei'),
+            nonce: nonce,
+            chainId: 137 // Polygon Mainnet
+        };
+
+        console.log(`[Faucet Send] Sending ${ethers.formatEther(amountWei)} POL to ${recipientAddress}`);
+        console.log(`[Faucet Send] Nonce: ${nonce}, Gas Reserve: ${ethers.formatEther(gasReserve)}`);
+
+        // Send transaction
+        const txResponse = await faucetWallet.sendTransaction(tx);
+
+        console.log(`[Faucet Send] TX Hash: ${txResponse.hash}`);
+
+        // Wait for confirmation (with timeout)
+        const receipt = await Promise.race([
+            txResponse.wait(1),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Transaction timeout')), 60000))
+        ]);
+
+        res.json({
+            success: true,
+            txHash: txResponse.hash,
+            amount: ethers.formatEther(amountWei),
+            recipient: recipientAddress,
+            gasUsed: ethers.formatEther(receipt.gasUsed * receipt.gasPrice),
+            explorerUrl: `https://polygonscan.com/tx/${txResponse.hash}`
+        });
+
+    } catch (error) {
+        console.error('[Faucet Send] Error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message,
+            details: error.code || 'UNKNOWN_ERROR'
+        });
+    }
+});
+
 app.get('/api/setup-vault-internal', async (req, res) => {
     const INTERNAL_VAULT_URL = "http://vault-railway-template.railway.internal:8200";
     const VAULT_APIV = 'v1';

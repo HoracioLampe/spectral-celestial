@@ -2702,7 +2702,7 @@ window.openFaucetModal = () => {
 
 window.closeFaucetModal = () => {
     const modal = document.getElementById('faucetModal');
-    if (modal) modal.classList.add('hidden');
+    if (modal) modal.style.display = 'none';
 };
 
 // --- SEND POL MODAL ---
@@ -2713,6 +2713,8 @@ window.openSendPolModal = () => {
     const balanceEl = document.getElementById('sidebarFaucetBalance');
     const balance = parseFloat(balanceEl?.textContent || '0');
 
+    // Safety reserve for gas (approx 21000 * 200 gwei = 0.0042 POL)
+    // We reserve 0.01 POL for peace of mind.
     const gasReserve = 0.01;
     const maxAvailable = Math.max(0, balance - gasReserve);
 
@@ -2720,14 +2722,15 @@ window.openSendPolModal = () => {
     document.getElementById('polRecipientAddress').value = '';
     document.getElementById('polAmount').value = '';
     document.getElementById('addressValidation').textContent = '';
-    document.getElementById('sendPolStatus').style.display = 'none';
+    const statusEl = document.getElementById('sendPolStatus');
+    if (statusEl) statusEl.style.display = 'none';
 
-    modal.classList.remove('hidden');
+    modal.style.display = 'flex';
 };
 
 window.closeSendPolModal = () => {
     const modal = document.getElementById('sendPolModal');
-    if (modal) modal.classList.add('hidden');
+    if (modal) modal.style.display = 'none';
 };
 
 // Address validation
