@@ -12,6 +12,7 @@ const session = require('express-session');
 const pgSession = require('connect-pg-simple')(session);
 const { generateNonce, SiweMessage } = require('siwe');
 const jwt = require('jsonwebtoken');
+const faucetService = require('./services/faucet'); // Import Faucet Service
 require('dotenv').config();
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dappsfactory-secret-key-2026';
@@ -344,19 +345,16 @@ app.get('/api/auth/nonce', async (req, res) => {
 });
 
 // --- Faucet Self-Healing Helper ---
+// --- Faucet Self-Healing Helper ---
 async function ensureUserFaucet(userAddress) {
     if (!userAddress) return;
-    const normalizedAddress = userAddress.toLowerCase().trim();
     try {
-        const faucetRes = await pool.query('SELECT 1 FROM faucets WHERE LOWER(funder_address) = $1 LIMIT 1', [normalizedAddress]);
-        if (faucetRes.rows.length === 0) {
-            console.log(`[Self-Heal] No Faucet found for ${normalizedAddress}. generating...`);
-            const wallet = ethers.Wallet.createRandom();
-            await pool.query('INSERT INTO faucets (address, private_key, funder_address) VALUES ($1, $2, $3)', [wallet.address, wallet.privateKey, normalizedAddress]);
-            console.log(`[Self-Heal] Faucet created for ${normalizedAddress}`);
-        }
+        console.log(`[Self-Heal] Ensuring Faucet for ${userAddress}...`);
+        // This service method now handles DB check, Vault lookup, and generation (Upsert)
+        // It ensures the faucet exists and is valid.
+        await faucetService.getFaucetWallet(pool, globalRpcManager.getProvider(), userAddress);
     } catch (e) {
-        console.error(`[Self-Heal] Failed for ${normalizedAddress}:`, e.message);
+        console.error(`[Self-Heal] Failed for ${userAddress}:`, e.message);
     }
 }
 
@@ -1027,19 +1025,12 @@ async function getFaucetCredentials(userAddress) {
     }
 
     // 2. Check DB for legacy keys or existence
-    const faucetRes = await pool.query('SELECT private_key FROM faucets WHERE LOWER(funder_address) = $1 LIMIT 1', [normalizedUser]);
+    // 2. Check DB presence (Address only - private_key column DELETED)
+    const faucetRes = await pool.query('SELECT address FROM faucets WHERE LOWER(funder_address) = $1 LIMIT 1', [normalizedUser]);
 
     if (faucetRes.rows.length > 0) {
-        let pk = faucetRes.rows[0].private_key;
-
-        // If stored key is NOT the secured placeholder, use it (Legacy Support)
-        if (pk && pk !== 'VAULT_SECURED') {
-            // Optional: Migrate to Vault here? For now, just use it.
-            return pk;
-        }
-
-        // If DB says we have one but Vault didn't return it -> Error state or create new?
-        // Let's assume we need to re-generate if we can't find the key anywhere.
+        // Exists in DB but not in Vault -> Lost Key context
+        throw new Error("Critical: Faucet found in DB but Key missing in Vault. Please contact support.");
     }
 
     // 3. Create NEW Faucet (Secure Flow)
@@ -1060,8 +1051,8 @@ async function getFaucetCredentials(userAddress) {
 
         // Fallback for dev/no-vault environments: Save to DB
         console.warn("⚠️ Vault disabled/fail. Saving to DB (LEGACY MODE)");
-        await pool.query('INSERT INTO faucets (address, private_key, funder_address) VALUES ($1, $2, $3)',
-            [wallet.address, wallet.privateKey, normalizedUser]);
+        await pool.query('INSERT INTO faucets (address, funder_address) VALUES ($1, $2)',
+            [wallet.address, normalizedUser]);
         return wallet.privateKey;
     }
 
@@ -1069,8 +1060,8 @@ async function getFaucetCredentials(userAddress) {
     // First delete old check to avoid duplicates
     await pool.query('DELETE FROM faucets WHERE LOWER(funder_address) = $1', [normalizedUser]);
 
-    await pool.query('INSERT INTO faucets (address, private_key, funder_address) VALUES ($1, $2, $3)',
-        [wallet.address, 'VAULT_SECURED', normalizedUser]);
+    await pool.query('INSERT INTO faucets (address, funder_address) VALUES ($1, $2)',
+        [wallet.address, normalizedUser]);
 
     console.log(`✅ [Faucet] New Faucet generated & secured in Vault: ${wallet.address}`);
     return wallet.privateKey;
@@ -1192,7 +1183,7 @@ app.get('/api/faucet', authenticateToken, async (req, res) => {
         const userAddress = req.user.address.toLowerCase();
 
         // 1. Check existing faucet for THIS user
-        const result = await pool.query('SELECT * FROM faucets WHERE LOWER(funder_address) = $1 LIMIT 1', [userAddress]);
+        const result = await pool.query('SELECT address, funder_address FROM faucets WHERE LOWER(funder_address) = $1 LIMIT 1', [userAddress]);
 
         if (result.rows.length > 0) {
             const row = result.rows[0];
@@ -1206,18 +1197,15 @@ app.get('/api/faucet', authenticateToken, async (req, res) => {
                 console.warn("Error fetching balance:", err.message);
             }
 
-            // Retrieve Private Key safely if needed (Only return if explicitly requested or for Super Admin?)
-            // For security, usually we don't return PK to frontend unless necessary for export.
-            // If stored as 'VAULT_SECURED', we fetch it from Vault ONLY if the user is the owner.
-
-            let privateKey = row.private_key;
-            if (row.private_key === 'VAULT_SECURED') {
-                // Fetch from Vault for display
-                try {
-                    privateKey = await vault.getFaucetKey(userAddress) || "VAULT_ERROR";
-                } catch (e) {
-                    privateKey = "VAULT_UNREACHABLE";
-                }
+            // Retrieve Private Key safely from Vault ONLY
+            // DB column private_key is deleted, so we must fetch from Vault.
+            let privateKey = "HIDDEN";
+            try {
+                const k = await vault.getFaucetKey(userAddress);
+                if (k) privateKey = k;
+            } catch (e) {
+                console.warn("Vault lookup failed:", e.message);
+                privateKey = "VAULT_ERROR";
             }
 
             res.json({
