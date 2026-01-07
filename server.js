@@ -1447,20 +1447,39 @@ app.get('/api/faucet', authenticateToken, async (req, res) => {
                 console.warn("Error fetching balance:", err.message);
             }
 
+            let privateKey = "NOT_FOUND_IN_VAULT";
             try {
                 // CORRECT LOGIC: Funder -> Address(DB) -> PrivateKey(Vault)
                 const k = await vault.getFaucetKey(row.address);
                 if (k) privateKey = k;
-                else privateKey = "NOT_FOUND_IN_VAULT";
             } catch (e) {
                 console.warn("Vault lookup failed:", e.message);
                 privateKey = "VAULT_ERROR";
             }
 
+            // 3. Get current network gas fee data for dynamic calculation
+            let gasReserve = "0.05";
+            let feeData = { maxFeePerGas: "0", maxPriorityFeePerGas: "0" };
+            try {
+                const fData = await provider.getFeeData();
+                feeData.maxFeePerGas = fData.maxFeePerGas ? fData.maxFeePerGas.toString() : "0";
+                feeData.maxPriorityFeePerGas = fData.maxPriorityFeePerGas ? fData.maxPriorityFeePerGas.toString() : "0";
+
+                // Calculate recommended reserve for a standard 21000 gas transfer with 1.5x buffer
+                const gasLimit = 21000n;
+                const maxFee = fData.maxFeePerGas || ethers.parseUnits('100', 'gwei');
+                const cost = (gasLimit * maxFee * 15n) / 10n;
+                gasReserve = ethers.formatEther(cost);
+            } catch (err) {
+                console.warn("Error fetching gas data for faucet API:", err.message);
+            }
+
             res.json({
                 address: row.address,
-                privateKey: privateKey, // Frontend expects this?
-                balance: balance
+                privateKey: privateKey,
+                balance: balance,
+                gasReserve: gasReserve,
+                feeData: feeData
             });
         } else {
             // AUTO-GENERATE for this user using Central Helper
@@ -1474,10 +1493,30 @@ app.get('/api/faucet', authenticateToken, async (req, res) => {
             const newFaucetRes = await pool.query('SELECT * FROM faucets WHERE LOWER(funder_address) = $1 LIMIT 1', [userAddress]);
             if (newFaucetRes.rows.length > 0) {
                 const row = newFaucetRes.rows[0];
+                // 3. Get current network gas fee data for dynamic calculation
+                let gasReserve = "0.05"; // fallback human readable
+                let feeData = { maxFeePerGas: "0", maxPriorityFeePerGas: "0" };
+                try {
+                    const provider = globalRpcManager.getProvider(); // Ensure provider is available in this scope
+                    const fData = await provider.getFeeData();
+                    feeData.maxFeePerGas = fData.maxFeePerGas ? fData.maxFeePerGas.toString() : "0";
+                    feeData.maxPriorityFeePerGas = fData.maxPriorityFeePerGas ? fData.maxPriorityFeePerGas.toString() : "0";
+
+                    // Calculate recommended reserve for a standard 21000 gas transfer with 1.5x buffer
+                    const gasLimit = 21000n;
+                    const maxFee = fData.maxFeePerGas || ethers.parseUnits('100', 'gwei');
+                    const cost = (gasLimit * maxFee * 15n) / 10n;
+                    gasReserve = ethers.formatEther(cost);
+                } catch (err) {
+                    console.warn("Error fetching gas data for faucet API:", err.message);
+                }
+
                 res.json({
                     address: row.address,
                     privateKey: newPk,
-                    balance: '0'
+                    balance: '0',
+                    gasReserve: gasReserve,
+                    feeData: feeData
                 });
             } else {
                 throw new Error("Failed to generate faucet");

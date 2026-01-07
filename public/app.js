@@ -2718,28 +2718,62 @@ window.openSendPolModal = () => {
     // We reserve 0.01 POL for peace of mind.
     const gasReserve = 0.01;
     const maxAvailable = Math.max(0, balance - gasReserve);
-
     // Get faucet address from sidebar
     const faucetAddress = document.getElementById('sidebarFaucetLink')?.textContent?.trim() || '---';
     document.getElementById('polSourceAddress').textContent = faucetAddress;
 
-    document.getElementById('polAvailableBalance').textContent = maxAvailable.toFixed(4);
+    // Reset fields
     document.getElementById('polRecipientAddress').value = '';
     document.getElementById('polAmount').value = '';
-    document.getElementById('addressValidation').textContent = '';
-    const statusEl = document.getElementById('sendPolStatus');
-    if (statusEl) statusEl.style.display = 'none';
+    document.getElementById('sendPolStatus').style.display = 'none';
+    document.getElementById('addressValidation').textContent = ''; // Also reset address validation
+
+    // Prevent commas in amount field
+    const amountInput = document.getElementById('polAmount');
+    amountInput.onkeydown = (e) => {
+        if (e.key === ',') {
+            e.preventDefault();
+            // Optional: Insert dot instead? Or just block.
+            // User asked "no deje entrar la coma", blocking is safer.
+        }
+    };
+    amountInput.oninput = (e) => {
+        // Double safety for paste
+        if (e.target.value.includes(',')) {
+            e.target.value = e.target.value.replace(/,/g, '.');
+        }
+    };
+
+    // Fetch user balance and gas quote
+    const balanceSpan = document.getElementById('polAvailableBalance');
+    balanceSpan.textContent = 'Cargando...';
+
+    try {
+        const response = await authenticatedFetch('/api/faucet');
+        const data = await response.json();
+
+        if (data.balance) {
+            balanceSpan.textContent = parseFloat(data.balance).toFixed(4);
+            // Store gas reserve for MAX button
+            balanceSpan.dataset.gasReserve = data.gasReserve || "0.05";
+            balanceSpan.dataset.rawBalance = data.balance;
+        }
+    } catch (e) {
+        console.error("Error fetching faucet data for modal:", e);
+        balanceSpan.textContent = 'Error';
+    }
 
     modal.style.display = 'flex';
 };
 
+// Close modal
 window.closeSendPolModal = () => {
     const modal = document.getElementById('sendPolModal');
     if (modal) modal.style.display = 'none';
 };
 
-// Address validation
-document.getElementById('polRecipientAddress')?.addEventListener('input', (e) => {
+// Validar dirección en tiempo real
+document.getElementById('polRecipientAddress').addEventListener('input', (e) => {
     const address = e.target.value.trim();
     const validation = document.getElementById('addressValidation');
 
@@ -2759,18 +2793,18 @@ document.getElementById('polRecipientAddress')?.addEventListener('input', (e) =>
 
 // MAX button function
 window.setMaxPol = () => {
-    const balanceText = document.getElementById('polAvailableBalance').textContent;
-    const balance = parseFloat(balanceText);
+    const balanceSpan = document.getElementById('polAvailableBalance');
+    const balance = parseFloat(balanceSpan.dataset.rawBalance || "0");
+    const gasReserve = parseFloat(balanceSpan.dataset.gasReserve || "0.05");
 
-    // Reserve a safe amount for gas (0.05 POL is very safe for a standard transfer)
-    const gasBuffer = 0.05;
-    const maxSafe = Math.max(0, balance - gasBuffer);
+    // Dynamic Precise calculation: Balance - Recommended Gas Reserve
+    const maxSafe = Math.max(0, balance - gasReserve);
 
     document.getElementById('polAmount').value = maxSafe.toFixed(4);
 
     const statusEl = document.getElementById('sendPolStatus');
-    if (balance < gasBuffer) {
-        statusEl.innerHTML = `<div style="color: #fbbf24;">⚠️ Balance muy bajo para cubrir el gas (${gasBuffer} POL recomendado)</div>`;
+    if (balance < gasReserve) {
+        statusEl.innerHTML = `<div style="color: #fbbf24;">⚠️ Balance muy bajo para cubrir el gas (${gasReserve.toFixed(4)} POL recomendado)</div>`;
         statusEl.style.display = 'block';
     } else {
         statusEl.style.display = 'none';
