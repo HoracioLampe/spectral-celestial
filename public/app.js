@@ -2718,6 +2718,10 @@ window.openSendPolModal = () => {
     const gasReserve = 0.01;
     const maxAvailable = Math.max(0, balance - gasReserve);
 
+    // Get faucet address from sidebar
+    const faucetAddress = document.getElementById('sidebarFaucetLink')?.textContent?.trim() || '---';
+    document.getElementById('polSourceAddress').textContent = faucetAddress;
+
     document.getElementById('polAvailableBalance').textContent = maxAvailable.toFixed(4);
     document.getElementById('polRecipientAddress').value = '';
     document.getElementById('polAmount').value = '';
