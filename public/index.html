@@ -142,7 +142,7 @@
                                     id="sidebarFaucetBalance">0.00</span></div>
                         </div>
                         <button id="btnSendPol" class="btn btn-glass w-full"
-                            style="margin-top: 0.5rem; font-size: 0.85rem;">
+                            style="margin-top: 0.5rem; font-size: 0.85rem;" onclick="openSendPolModal()">
                             💸 Enviar POL
                         </button>
                     </div>
@@ -656,14 +656,14 @@
                 <label>Cantidad (POL) *</label>
                 <div style="position: relative;">
                     <input type="number" id="polAmount" class="input-glass" placeholder="0.0" step="0.001" min="0">
-                    <button id="btnMaxPol" class="btn btn-glass"
+                    <button id="btnMaxPol" class="btn btn-glass" onclick="setMaxPol()"
                         style="position: absolute; right: 0.5rem; top: 50%; transform: translateY(-50%); padding: 0.25rem 0.75rem; font-size: 0.75rem;">
                         MAX
                     </button>
                 </div>
             </div>
 
-            <button id="btnConfirmSendPol" class="btn btn-primary" style="width: 100%;">
+            <button id="btnConfirmSendPol" class="btn btn-primary" style="width: 100%;" onclick="confirmSendPol()">
                 Enviar POL
             </button>
 

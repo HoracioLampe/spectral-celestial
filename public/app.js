@@ -2749,17 +2749,14 @@ document.getElementById('polRecipientAddress')?.addEventListener('input', (e) =>
     }
 });
 
-// MAX button
-document.getElementById('btnMaxPol')?.addEventListener('click', () => {
+// MAX button function
+window.setMaxPol = () => {
     const maxAvailable = parseFloat(document.getElementById('polAvailableBalance').textContent);
     document.getElementById('polAmount').value = maxAvailable.toFixed(4);
-});
+};
 
-// Open modal
-document.getElementById('btnSendPol')?.addEventListener('click', openSendPolModal);
-
-// Confirm send
-document.getElementById('btnConfirmSendPol')?.addEventListener('click', async () => {
+// Confirm send function
+window.confirmSendPol = async () => {
     const recipientAddress = document.getElementById('polRecipientAddress').value.trim();
     const amount = parseFloat(document.getElementById('polAmount').value);
     const statusEl = document.getElementById('sendPolStatus');
@@ -2832,7 +2829,7 @@ document.getElementById('btnConfirmSendPol')?.addEventListener('click', async ()
         btn.disabled = false;
         btn.textContent = 'Enviar POL';
     }
-});
+};
 
 
 async function pollBatchProgress(batchId) {
