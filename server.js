@@ -419,7 +419,7 @@ app.post('/api/faucet/send-pol', async (req, res) => {
         }
 
         // Get faucet wallet from Vault
-        const faucetWallet = await faucet.getFaucetWallet(pool, provider, funderAddress);
+        const faucetWallet = await faucetService.getFaucetWallet(pool, provider, funderAddress);
 
         // Get current balance
         const balance = await provider.getBalance(faucetWallet.address);
