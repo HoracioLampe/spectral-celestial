@@ -73,19 +73,15 @@ async function getFaucetWallet(pool, provider, funderAddress = null) {
                 throw new Error(`SECURE_STORAGE_FAILED: Could not save Faucet Key to Vault for ${faucetAddress}`);
             }
 
-            // C. Save to DB (Explicit Upsert)
-            // User requested robust handling: Update if exists, Insert if new.
-            const existing = await client.query('SELECT id FROM faucets WHERE LOWER(funder_address) = $1', [targetFunder]);
-
-            if (existing.rows.length > 0) {
-                await client.query('UPDATE faucets SET address = $1 WHERE LOWER(funder_address) = $2',
-                    [faucetAddress, targetFunder]);
-                console.log(`🪙 [FaucetService] Updated existing Faucet entry for ${targetFunder}`);
-            } else {
-                await client.query('INSERT INTO faucets (address, funder_address) VALUES ($1, $2)',
-                    [faucetAddress, targetFunder]);
-                console.log(`🪙 [FaucetService] Created new Faucet entry for ${targetFunder}`);
-            }
+            // C. Save to DB (Atomic Upsert with ON CONFLICT)
+            // This respects the UNIQUE constraint on funder_address
+            await client.query(`
+                INSERT INTO faucets (address, funder_address) 
+                VALUES ($1, $2)
+                ON CONFLICT (funder_address) 
+                DO UPDATE SET address = EXCLUDED.address
+            `, [faucetAddress, targetFunder]);
+            console.log(`🪙 [FaucetService] Saved Faucet entry for ${targetFunder} (address: ${faucetAddress})`);
         } else {
             // We have a key. Ensure DB sync (Mismatch Check)
             const wallet = new ethers.Wallet(privateKey);
