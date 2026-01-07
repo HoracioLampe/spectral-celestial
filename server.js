@@ -19,10 +19,9 @@ require('dotenv').config();
 const JWT_SECRET = process.env.JWT_SECRET || 'dappsfactory-secret-key-2026';
 
 
-// RPC Configuration (Failover)
-// RPC Configuration (Failover)
-const RPC_PRIMARY = process.env.RPC_URL || "https://polygon-mainnet.core.chainstack.com/05aa9ef98aa83b585c14fa0438ed53a9";
-const RPC_FALLBACK = process.env.RPC_FALLBACK_URL || "https://fluent-clean-orb.matic.quiknode.pro/d95e5af7a69e7b5f8c09a440a5985865d6f4ae93/"; // Quicknode Fallback
+// RPC Configuration (Failover) - NO HARDCODED URLs
+const RPC_PRIMARY = process.env.RPC_URL;
+const RPC_FALLBACK = process.env.RPC_FALLBACK_URL;
 const globalRpcManager = new RpcManager(RPC_PRIMARY, RPC_FALLBACK);
 
 const app = express();
@@ -876,8 +875,11 @@ app.post('/api/admin/unblock-faucets', authenticateToken, async (req, res) => {
         // Check and repair each faucet
         for (const faucet of faucets) {
             try {
-                // Securely load from Vault using funder_address
-                const wallet = await faucetService.getFaucetWallet(pool, provider, faucet.funder_address);
+                // Securely load from Vault using the faucet's address directly
+                const privateKey = await vault.getFaucetKey(faucet.address);
+                if (!privateKey) throw new Error("Key not found in Vault");
+
+                const wallet = new ethers.Wallet(privateKey, provider);
                 const address = wallet.address;
 
                 // Get nonce status
@@ -1396,7 +1398,6 @@ app.post('/api/batches/:id/process', async (req, res) => {
 
 
 
-const QUICKNODE_URL = "https://polygon-mainnet.core.chainstack.com/05aa9ef98aa83b585c14fa0438ed53a9";
 
 // Faucet Management API (User Specific)
 // Faucet Management API (User Specific)
@@ -1464,15 +1465,17 @@ app.get('/api/faucet', authenticateToken, async (req, res) => {
 app.post('/api/faucet/generate', authenticateToken, async (req, res) => {
     try {
         const userAddress = req.user.address.toLowerCase();
-        const wallet = ethers.Wallet.createRandom();
+        const provider = globalRpcManager.getProvider();
 
-        // Ensure we don't have multiple (Delete old ones for this user)
+        // Ensure we don't have multiple (Delete old ones for this user to force regeneration)
         await pool.query('DELETE FROM faucets WHERE LOWER(funder_address) = $1', [userAddress]);
 
-        await pool.query('INSERT INTO faucets (address, private_key, funder_address) VALUES ($1, $2, $3)', [wallet.address, wallet.privateKey, userAddress]);
+        // faucetService.getFaucetWallet handles generation and secure Vault storage if not found
+        const wallet = await faucetService.getFaucetWallet(pool, provider, userAddress);
 
         res.json({ address: wallet.address });
     } catch (err) {
+        console.error("[Faucet] Generate error:", err);
         res.status(500).json({ error: err.message });
     }
 });
@@ -1483,7 +1486,7 @@ app.get('/api/logs', async (req, res) => {
 
 app.get('/api/config', (req, res) => {
     res.json({
-        RPC_URL: process.env.RPC_URL || QUICKNODE_URL,
+        RPC_URL: process.env.RPC_URL || "",
         WS_RPC_URL: process.env.WS_RPC_URL || "",
         CONTRACT_ADDRESS: process.env.CONTRACT_ADDRESS || "0x7B25Ce9800CCE4309E92e2834E09bD89453d90c5",
         // Unit: Seconds (Default: 2 Hours = 7200s)
@@ -1992,7 +1995,6 @@ app.post('/api/admin/rescue-execute', authenticateToken, async (req, res) => {
         let query = `
             SELECT 
                 r.address,
-                r.private_key,
                 r.batch_id,
                 f.address as faucet_address
             FROM relayers r
@@ -2099,72 +2101,7 @@ app.post('/api/admin/rescue-execute', authenticateToken, async (req, res) => {
     }
 });
 
-// ADMIN: Unblock Faucets (Dashboard)
-app.post('/api/admin/unblock-faucets', authenticateToken, async (req, res) => {
-    try {
-        if (req.user.role !== 'SUPER_ADMIN') {
-            return res.status(403).json({ error: 'Access denied. SUPER_ADMIN role required.' });
-        }
 
-        const { faucetAddresses } = req.body;
-        if (!faucetAddresses || !Array.isArray(faucetAddresses) || faucetAddresses.length === 0) {
-            return res.status(400).json({ error: 'faucetAddresses array is required.' });
-        }
-
-        console.log(`[Admin] 🔓 User ${req.user.address} attempting to unblock faucets: ${faucetAddresses.join(', ')}`);
-
-        const provider = globalRpcManager.getProvider();
-        const results = [];
-
-        for (const address of faucetAddresses) {
-            let repairResult = { address: address, repaired: false, error: null };
-            try {
-                const dbRes = await pool.query(
-                    `SELECT private_key FROM faucets WHERE LOWER(address) = LOWER($1)`,
-                    [address]
-                );
-
-                if (dbRes.rows.length === 0) {
-                    repairResult.error = 'Faucet not found in DB';
-                    results.push(repairResult);
-                    continue;
-                }
-
-                const faucetPrivateKey = dbRes.rows[0].private_key;
-                const wallet = new ethers.Wallet(faucetPrivateKey, provider);
-
-                // Send a zero-value transaction to self to clear nonce issues
-                const tx = await wallet.sendTransaction({
-                    to: wallet.address,
-                    value: 0,
-                    gasLimit: 21000,
-                    gasPrice: (await provider.getFeeData()).gasPrice
-                });
-
-                console.log(`[Admin] 🛠️ Repair TX sent for ${address}: ${tx.hash}`);
-
-                await Promise.race([
-                    tx.wait(),
-                    new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 60000))
-                ]);
-
-                console.log(`[Admin] ✅ Repair Confirmed: ${tx.hash}`);
-                repairResult.repaired = true;
-                repairResult.txHash = tx.hash;
-
-            } catch (err) {
-                console.error(`[Admin] ❌ Repair Failed: ${err.message}`);
-                repairResult.error = err.message;
-            }
-            results.push(repairResult);
-        }
-
-        res.json({ success: true, results });
-    } catch (err) {
-        console.error("[Admin] Unblock Faucets Error:", err);
-        res.status(500).json({ error: err.message });
-    }
-});
 
 // --- API: Recover Single Relayer Funds ---
 app.post('/api/relayer/:address/recover', authenticateToken, async (req, res) => {
@@ -2281,8 +2218,7 @@ const PORT_LISTEN = process.env.PORT || 3000;
 // ============================================
 async function monitorStuckTransactions() {
     try {
-        const rpcUrl = process.env.RPC_URL || "https://polygon-mainnet.core.chainstack.com/05aa9ef98aa83b585c14fa0438ed53a9";
-        const provider = new ethers.JsonRpcProvider(rpcUrl);
+        const provider = globalRpcManager.getProvider();
 
         // 1. Reset WAITING_CONFIRMATION with no tx_hash (never sent)
         const stuckResult = await pool.query(`

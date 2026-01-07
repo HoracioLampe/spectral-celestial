@@ -5,7 +5,14 @@ class RpcManager {
         this.primaryUrl = primaryUrl;
         this.fallbackUrl = fallbackUrl;
         this.currentUrl = primaryUrl;
-        this.provider = new ethers.JsonRpcProvider(primaryUrl);
+
+        if (!primaryUrl) {
+            console.warn("[RpcManager] ⚠️ No Primary RPC URL provided. Calls will fail until set.");
+            this.provider = null;
+        } else {
+            this.provider = new ethers.JsonRpcProvider(primaryUrl);
+        }
+
         this.isFallback = false;
 
         // Rate Limiting State
