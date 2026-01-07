@@ -1670,10 +1670,8 @@ app.get('/api/relayers/:batchId', async (req, res) => {
         // Fetch relayers from DB with Transaction Count
         const result = await pool.query(`
 SELECT
-        const result = await pool.query(`
-SELECT
 r.id, r.address, r.status, r.last_activity, r.transactionhash_deposit, r.last_balance as db_balance,
-            (SELECT COUNT(*):: int FROM batch_transactions bt WHERE bt.relayer_address = r.address AND bt.batch_id = r.batch_id AND bt.tx_hash IS NOT NULL) as tx_count
+    (SELECT COUNT(*)::int FROM batch_transactions bt WHERE bt.relayer_address = r.address AND bt.batch_id = r.batch_id AND bt.tx_hash IS NOT NULL) as tx_count
             FROM relayers r 
             WHERE r.batch_id = $1
             ORDER BY r.id ASC
@@ -1708,7 +1706,7 @@ r.id, r.address, r.status, r.last_activity, r.transactionhash_deposit, r.last_ba
                         private_key: undefined // Don't leak PK
                     };
                 } catch (e) {
-                    console.warn(`Failed to sync balance for ${ r.address }: `, e.message);
+                    console.warn(`Failed to sync balance for ${r.address}: `, e.message);
                     return { ...r, balance: r.db_balance || "0", private_key: undefined };
                 }
             }));
@@ -1733,7 +1731,7 @@ app.get('/api/debug/vault', async (req, res) => {
         const VAULT_ADDR = process.env.VAULT_ADDR || "http://vault-railway-template.railway.internal:8200";
         const VAULT_TOKEN = process.env.VAULT_TOKEN;
 
-        console.log(`[Debug] Testing Vault Direct connection to: ${ VAULT_ADDR } `);
+        console.log(`[Debug] Testing Vault Direct connection to: ${VAULT_ADDR} `);
 
         if (!VAULT_TOKEN) {
             return res.status(500).json({ success: false, error: "VAULT_TOKEN missing in env" });
@@ -1747,7 +1745,7 @@ app.get('/api/debug/vault', async (req, res) => {
         // 1. Check Mounts
         let mounts = {};
         try {
-            const mountsRes = await fetch(`${ VAULT_ADDR } /v1/sys / mounts`, { headers });
+            const mountsRes = await fetch(`${VAULT_ADDR} /v1/sys / mounts`, { headers });
             if (mountsRes.ok) {
                 mounts = await mountsRes.json();
             } else {
@@ -1758,14 +1756,14 @@ app.get('/api/debug/vault', async (req, res) => {
         }
 
         // 2. Try Raw Write
-        const path = `secret / data / faucets / ${ testUuid.toLowerCase() } `;
+        const path = `secret / data / faucets / ${testUuid.toLowerCase()} `;
         const payload = {
             data: { private_key: testKey, debug: true }
         };
 
         let writeResult = {};
         try {
-            const writeRes = await fetch(`${ VAULT_ADDR } /v1/${ path } `, {
+            const writeRes = await fetch(`${VAULT_ADDR} /v1/${path} `, {
                 method: 'POST',
                 headers,
                 body: JSON.stringify(payload)
@@ -1791,7 +1789,7 @@ app.get('/api/debug/vault', async (req, res) => {
             success: wrapperSaved,
             debug_info: {
                 vault_addr: VAULT_ADDR,
-                token_preview: VAULT_TOKEN ? `${ VAULT_TOKEN.substring(0, 4) }...` : 'NONE',
+                token_preview: VAULT_TOKEN ? `${VAULT_TOKEN.substring(0, 4)}...` : 'NONE',
                 mounts_check: mounts,
                 raw_write_attempt: writeResult,
                 wrapper_result: wrapperSaved
@@ -1831,7 +1829,7 @@ app.post('/api/batches/:id/return-funds', authenticateToken, async (req, res) =>
 
         // Call the method physically (assuming updated RelayerEngine exposes it)
         const recovered = await engine.returnFundsToFaucet(batchId);
-        res.json({ success: true, message: `Recovery process completed.Recovered: ${ recovered || 0} MATIC` });
+        res.json({ success: true, message: `Recovery process completed.Recovered: ${recovered || 0} MATIC` });
     } catch (err) {
         console.error("[Refund] Error:", err);
         res.status(500).json({ error: err.message });
@@ -1876,7 +1874,7 @@ app.get('/api/admin/add-faucet-constraints', async (req, res) => {
         results.push({
             step: 3,
             status: duplicates.rows.length === 0 ? 'SUCCESS' : 'WARNING',
-            message: `Found ${ duplicates.rows.length } duplicate funder(s)`,
+            message: `Found ${duplicates.rows.length} duplicate funder(s)`,
             duplicates: duplicates.rows
         });
 
@@ -1987,7 +1985,7 @@ app.post('/api/admin/rescue-execute', authenticateToken, async (req, res) => {
 
         const { batchId } = req.body;
 
-        console.log(`[Admin] 💰 User ${ req.user.address } starting rescue${ batchId? ` for batch ${batchId}` : ' for all relayers'}...`);
+        console.log(`[Admin] 💰 User ${req.user.address} starting rescue${batchId ? ` for batch ${batchId}` : ' for all relayers'}...`);
 
         // Execute rescue inline (not background) for better control
         // Execute rescue inline (not background) for better control
@@ -2037,7 +2035,7 @@ app.post('/api/admin/rescue-execute', authenticateToken, async (req, res) => {
         for (const r of relayers) {
             try {
                 if (!r.faucet_address) {
-                    console.warn(`[Rescue] Skipping ${ r.address }: No faucet found`);
+                    console.warn(`[Rescue] Skipping ${r.address}: No faucet found`);
                     continue;
                 }
 
@@ -2059,7 +2057,7 @@ app.post('/api/admin/rescue-execute', authenticateToken, async (req, res) => {
 
                     await tx.wait();
 
-                    console.log(`[Rescue] ✅ ${ wallet.address.substring(0, 8) }... → ${ r.faucet_address.substring(0, 8) }... | ${ ethers.formatEther(amountToReturn) } MATIC | TX: ${ tx.hash }`);
+                    console.log(`[Rescue] ✅ ${wallet.address.substring(0, 8)}... → ${r.faucet_address.substring(0, 8)}... | ${ethers.formatEther(amountToReturn)} MATIC | TX: ${tx.hash}`);
 
                     totalRescued += amountToReturn;
                     rescued++;
@@ -2083,7 +2081,7 @@ app.post('/api/admin/rescue-execute', authenticateToken, async (req, res) => {
                 await new Promise(resolve => setTimeout(resolve, 500));
 
             } catch (err) {
-                console.error(`[Rescue] ❌ Failed for ${ r.address }: `, err.message);
+                console.error(`[Rescue] ❌ Failed for ${r.address}: `, err.message);
                 results.push({
                     address: r.address,
                     status: 'failed',
@@ -2094,7 +2092,7 @@ app.post('/api/admin/rescue-execute', authenticateToken, async (req, res) => {
 
         res.json({
             success: true,
-            message: `Rescued ${ rescued } relayers`,
+            message: `Rescued ${rescued} relayers`,
             rescued: rescued,
             totalAmount: ethers.formatEther(totalRescued) + ' MATIC',
             results: results
@@ -2112,7 +2110,7 @@ app.post('/api/admin/rescue-execute', authenticateToken, async (req, res) => {
 app.post('/api/relayer/:address/recover', authenticateToken, async (req, res) => {
     try {
         const relayerAddress = req.params.address;
-        console.log(`[RelayerRecovery] Request to recover funds from ${ relayerAddress } `);
+        console.log(`[RelayerRecovery] Request to recover funds from ${relayerAddress} `);
 
         // 1. Find Relayer and Linked Faucet
         const query = `
@@ -2135,7 +2133,7 @@ app.post('/api/relayer/:address/recover', authenticateToken, async (req, res) =>
         }
 
         const provider = globalRpcManager.getProvider();
-        
+
         // Securely fetch key from Vault
         const relayerPrivateKey = await vault.getRelayerKey(relayerAddress);
         if (!relayerPrivateKey) throw new Error("Key not found in Vault");
@@ -2146,7 +2144,7 @@ app.post('/api/relayer/:address/recover', authenticateToken, async (req, res) =>
         const latestNonce = await provider.getTransactionCount(wallet.address, "latest");
         const pendingNonce = await provider.getTransactionCount(wallet.address, "pending");
 
-        console.log(`[RelayerRecovery] ${ relayerAddress } | Balance: ${ ethers.formatEther(balance) } | Latest: ${ latestNonce } | Pending: ${ pendingNonce } `);
+        console.log(`[RelayerRecovery] ${relayerAddress} | Balance: ${ethers.formatEther(balance)} | Latest: ${latestNonce} | Pending: ${pendingNonce} `);
 
         const feeData = await provider.getFeeData();
         const gasPrice = (feeData.gasPrice * 150n) / 100n; // 1.5x Gas
@@ -2154,12 +2152,12 @@ app.post('/api/relayer/:address/recover', authenticateToken, async (req, res) =>
         const minCost = gasPrice * gasLimit;
 
         if (balance <= minCost) {
-            return res.status(400).json({ error: `Insufficient funds.Balance: ${ ethers.formatEther(balance) } MATIC` });
+            return res.status(400).json({ error: `Insufficient funds.Balance: ${ethers.formatEther(balance)} MATIC` });
         }
 
         // 3. Auto-Unblock (Nuclear Option)
         if (pendingNonce > latestNonce) {
-            console.log(`[RelayerRecovery] ⚠️ Relayer Blocked(${ pendingNonce - latestNonce} txs).Attempting auto - undblock...`);
+            console.log(`[RelayerRecovery] ⚠️ Relayer Blocked(${pendingNonce - latestNonce} txs).Attempting auto - undblock...`);
 
             // Send 0 MATIC to self with high gas to clear the queue
             const unblockPrice = (feeData.gasPrice * 250n) / 100n; // 2.5x Gas for unblock
@@ -2173,7 +2171,7 @@ app.post('/api/relayer/:address/recover', authenticateToken, async (req, res) =>
                     gasLimit: gasLimit,
                     nonce: latestNonce // Force the gap to close
                 });
-                console.log(`[RelayerRecovery] 🧹 Unblock Transaction Sent: ${ txUnblock.hash } `);
+                console.log(`[RelayerRecovery] 🧹 Unblock Transaction Sent: ${txUnblock.hash} `);
 
                 await Promise.race([
                     txUnblock.wait(),
@@ -2182,7 +2180,7 @@ app.post('/api/relayer/:address/recover', authenticateToken, async (req, res) =>
                 console.log(`[RelayerRecovery] ✅ Unblock Confirmed.`);
 
             } catch (unblockErr) {
-                console.error(`[RelayerRecovery] ❌ Unblock Failed: ${ unblockErr.message } `);
+                console.error(`[RelayerRecovery] ❌ Unblock Failed: ${unblockErr.message} `);
                 // Proceed cautiously or abort? 
                 // If unblock failed (e.g. out of gas), sweep might also fail.
                 // But we try anyway with remaining balance.
@@ -2192,12 +2190,12 @@ app.post('/api/relayer/:address/recover', authenticateToken, async (req, res) =>
         // 4. Re-Check Balance after potential unblock cost
         const finalBalance = await provider.getBalance(wallet.address);
         if (finalBalance <= minCost) {
-            return res.status(400).json({ error: `Insufficient funds after unblock attempt.Balance: ${ ethers.formatEther(finalBalance) } MATIC` });
+            return res.status(400).json({ error: `Insufficient funds after unblock attempt.Balance: ${ethers.formatEther(finalBalance)} MATIC` });
         }
 
         // 5. Send Sweep
         const amountToSend = finalBalance - minCost;
-        console.log(`[RelayerRecovery] Sweeping ${ ethers.formatEther(amountToSend) } MATIC -> ${ relayer.faucet_address } `);
+        console.log(`[RelayerRecovery] Sweeping ${ethers.formatEther(amountToSend)} MATIC -> ${relayer.faucet_address} `);
 
         const tx = await wallet.sendTransaction({
             to: relayer.faucet_address,
@@ -2206,7 +2204,7 @@ app.post('/api/relayer/:address/recover', authenticateToken, async (req, res) =>
             gasLimit: gasLimit
         });
 
-        console.log(`[RelayerRecovery] Tx Sent: ${ tx.hash } `);
+        console.log(`[RelayerRecovery] Tx Sent: ${tx.hash} `);
         await tx.wait();
 
         // 6. Update DB
@@ -2241,7 +2239,7 @@ async function monitorStuckTransactions() {
     `);
 
         if (stuckResult.rowCount > 0) {
-            console.log(`[Monitor] ✅ Reset ${ stuckResult.rowCount } stuck WAITING_CONFIRMATION → PENDING`);
+            console.log(`[Monitor] ✅ Reset ${stuckResult.rowCount} stuck WAITING_CONFIRMATION → PENDING`);
         }
 
         // 2. Check blockchain for WAITING_CONFIRMATION with tx_hash
@@ -2275,7 +2273,7 @@ async function monitorStuckTransactions() {
         }
 
         if (recovered > 0) {
-            console.log(`[Monitor] ✅ Recovered ${ recovered } transactions from blockchain`);
+            console.log(`[Monitor] ✅ Recovered ${recovered} transactions from blockchain`);
         }
 
         // 3. Reset stale ENVIANDO
@@ -2288,7 +2286,7 @@ async function monitorStuckTransactions() {
     `);
 
         if (staleResult.rowCount > 0) {
-            console.log(`[Monitor] ✅ Reset ${ staleResult.rowCount } stale ENVIANDO → PENDING`);
+            console.log(`[Monitor] ✅ Reset ${staleResult.rowCount} stale ENVIANDO → PENDING`);
         }
 
     } catch (error) {
@@ -2303,8 +2301,8 @@ console.log("🔄 Transaction Monitor: Enabled (checks every 60s)");
 // Debug routes removed and consolidated at top for performance and priority routing
 
 app.listen(PORT_LISTEN, () => {
-    console.log(`Server is running on port ${ PORT_LISTEN } `);
-    console.log(`🚀 Version: ${ VERSION } (Self - Healing & Performance Record)`);
+    console.log(`Server is running on port ${PORT_LISTEN} `);
+    console.log(`🚀 Version: ${VERSION} (Self - Healing & Performance Record)`);
 
     // Run first check immediately
     setTimeout(monitorStuckTransactions, 5000); // Wait 5s for server to be ready

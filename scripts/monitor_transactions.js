@@ -3,7 +3,7 @@ const { Pool } = require('pg');
 const ethers = require('ethers');
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
-const RPC_URL = process.env.RPC_URL || "https://polygon-mainnet.core.chainstack.com/05aa9ef98aa83b585c14fa0438ed53a9";
+const RPC_URL = process.env.RPC_URL || process.env.PROVIDER_URL || "https://polygon-rpc.com";
 const provider = new ethers.JsonRpcProvider(RPC_URL);
 
 async function monitorAndRecoverStuckTransactions() {

@@ -19,7 +19,7 @@ async function rescueFunds() {
         ssl: { rejectUnauthorized: false }
     });
 
-    const providerUrl = process.env.PROVIDER_URL || "https://polygon-mainnet.core.chainstack.com/05aa9ef98aa83b585c14fa0438ed53a9";
+    const providerUrl = process.env.RPC_URL || process.env.PROVIDER_URL || "https://polygon-rpc.com";
     const provider = new ethers.JsonRpcProvider(providerUrl, undefined, { staticNetwork: true });
 
     try {
@@ -35,7 +35,6 @@ async function rescueFunds() {
         const querySelect = `
             SELECT 
                 r.address, 
-                r.private_key, 
                 f.address as faucet_address,
                 b.id as batch_id
             FROM relayers r
@@ -92,7 +91,10 @@ async function rescueFunds() {
                 }
 
                 try {
-                    const wallet = new ethers.Wallet(r.private_key, provider);
+                    const vault = require('../services/vault');
+                    const pk = await vault.getRelayerKey(r.address);
+                    if (!pk) throw new Error("Key not found in Vault");
+                    const wallet = new ethers.Wallet(pk, provider);
                     const balance = await provider.getBalance(wallet.address);
 
                     // Increase safety margin to 0.1 MATIC
