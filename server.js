@@ -322,8 +322,9 @@ app.post('/api/faucet/send-pol', async (req, res) => {
         const provider = globalRpcManager.getProvider();
 
         // Get faucet wallet from Vault
-        // Internal logic in faucetService.getFaucetWallet fetches the secret key from Vault using the public address
+        console.log(`[Faucet Send] 🔍 Resolving faucet for: ${funderAddress || 'DEFAULT'}...`);
         const faucetWallet = await faucetService.getFaucetWallet(pool, provider, funderAddress);
+        console.log(`[Faucet Send] 🔑 Using Faucet Wallet: ${faucetWallet.address}`);
 
         // Get current balance
         const balance = await provider.getBalance(faucetWallet.address);

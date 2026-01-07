@@ -86,6 +86,7 @@ async function checkFaucetStatus() {
             if (sideFaucetLink) {
                 sideFaucetLink.textContent = shortAddr;
                 sideFaucetLink.href = getExplorerUrl(data.address);
+                sideFaucetLink.dataset.address = data.address; // FULL ADDRESS
             }
             if (sideFaucetBalance) {
                 sideFaucetBalance.textContent = parseFloat(data.balance).toFixed(4);
@@ -2803,7 +2804,7 @@ window.confirmSendPol = async () => {
     }
 
     const faucetLink = document.getElementById('sidebarFaucetLink');
-    const faucetAddress = faucetLink?.textContent?.trim();
+    const faucetAddress = faucetLink?.dataset.address || faucetLink?.textContent?.trim();
 
     if (!faucetAddress || faucetAddress === 'Cargando...') {
         statusEl.innerHTML = '<div style="color: #ef4444;">❌ No se pudo obtener la dirección del faucet</div>';

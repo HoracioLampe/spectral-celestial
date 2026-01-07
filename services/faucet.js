@@ -62,7 +62,7 @@ async function getFaucetWallet(pool, provider, funderAddress = null) {
 
         // 3. If NO DB Entry found -> GENERATE NEW
         if (!faucetAddress) {
-            console.log(`✨ [FaucetService] No Faucet found for ${targetFunder}. Generating NEW...`);
+            console.log(`✨ [FaucetService] No Faucet found for ${targetFunder} in DB. Generating NEW...`);
 
             // A. Generate Random Wallet
             const wallet = ethers.Wallet.createRandom();
