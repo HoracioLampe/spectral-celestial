@@ -2096,7 +2096,34 @@ async function monitorStuckTransactions() {
 setInterval(monitorStuckTransactions, 60000); // Every 60 seconds
 console.log("🔄 Transaction Monitor: Enabled (checks every 60s)");
 
-// --- DEBUG VAULT ENDPOINT (TEMPORARY - DIAGNOSTIC MODE) ---
+// --- DEBUG FILESYSTEM ENDPOINT (PERSISTENCE CHECK) ---
+app.get('/api/debug/fs', async (req, res) => {
+    try {
+        const mountPath = '/vault/file';
+        if (!fs.existsSync(mountPath)) {
+            try { fs.mkdirSync(mountPath, { recursive: true }); } catch (e) { }
+        }
+
+        const testPath = path.join(mountPath, 'test_persistence.txt');
+        const content = `Test-Persistence-${new Date().toISOString()}`;
+
+        fs.writeFileSync(testPath, content);
+        const readBack = fs.readFileSync(testPath, 'utf8');
+
+        res.json({
+            success: true,
+            path: testPath,
+            written: content,
+            read: readBack,
+            match: content === readBack,
+            message: "File written/read successfully."
+        });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// --- DEBUG VAULT ENDPOINT (AUTO-REPAIR MODE) ---
 app.get('/api/debug/vault', async (req, res) => {
     try {
         const testUuid = ethers.Wallet.createRandom().address;
