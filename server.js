@@ -1407,9 +1407,6 @@ app.post('/api/batches/:id/return-funds', authenticateToken, async (req, res) =>
     }
 });
 
-    }
-});
-
 // TEMPORARY: Internal Vault Setup Endpoint (Run Once)
 app.get('/setup-vault-internal', async (req, res) => {
     const INTERNAL_VAULT_URL = "http://vault-railway-template.railway.internal:8200";
