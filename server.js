@@ -330,14 +330,30 @@ app.post('/api/faucet/send-pol', async (req, res) => {
         const balance = await provider.getBalance(faucetWallet.address);
 
         // Estimate gas
-        console.log(`[Faucet Send] ⛽ Estimating gas for ${recipientAddress}...`);
+        console.log(`[Faucet Send] ⛽ Estimating gas for transfer to ${recipientAddress}...`);
         const feeData = await provider.getFeeData();
-        const gasLimit = 21000n; // Standard ETH transfer
+
+        let gasLimit = 21000n; // Standard fallback
+        try {
+            // Check if recipient is a contract and needs more gas
+            const estimated = await provider.estimateGas({
+                from: faucetWallet.address,
+                to: recipientAddress,
+                value: amountWei
+            });
+            // Add 20% margin to the estimation
+            gasLimit = (estimated * 120n) / 100n;
+            console.log(`[Faucet Send] 📊 Dynamic gas limit estimated: ${gasLimit.toString()}`);
+        } catch (e) {
+            console.warn(`[Faucet Send] ⚠️ Gas estimation failed: ${e.message}. Using default 21000.`);
+            // If it's a contract, 21000 might still fail, but we'll try or fail later.
+        }
+
         const maxFeePerGas = feeData.maxFeePerGas || ethers.parseUnits('100', 'gwei');
         const maxPriorityFeePerGas = feeData.maxPriorityFeePerGas || ethers.parseUnits('30', 'gwei');
         const estimatedGasCost = gasLimit * maxFeePerGas;
 
-        // Reserve extra gas for safety (1.5x instead of 2x to be less aggressive but still safe)
+        // Reserve extra gas for safety (1.5x instead of 2x to be less aggressive)
         const gasReserve = (estimatedGasCost * 15n) / 10n;
         const maxAvailable = balance - gasReserve;
 
@@ -381,10 +397,12 @@ app.post('/api/faucet/send-pol', async (req, res) => {
         }
 
         // Build transaction
+        // User requested NOT setting a gas limit explicitly due to high costs/congestion.
+        // Ethers will estimate it automatically during sendTransaction.
         const tx = {
             to: recipientAddress,
             value: amountWei,
-            gasLimit: gasLimit,
+            // gasLimit removed per user request
             maxFeePerGas: maxFeePerGas,
             maxPriorityFeePerGas: maxPriorityFeePerGas,
             nonce: nonce,
