@@ -23,17 +23,25 @@ async function getFaucetWallet(pool, provider, funderAddress = null) {
 
         console.log(`🔍 [FaucetService] Resolving Faucet for Funder: ${targetFunder}`);
 
-        // 1. Get metadata from DB for THIS Funder
-        const result = await client.query('SELECT address, funder_address FROM faucets WHERE LOWER(funder_address) = $1 LIMIT 1', [targetFunder]);
+        // 1. Get metadata from DB for THIS Funder or if we already have the Faucet Address
+        // Search by both: it could be the funder_address OR the address itself.
+        // CRITICAL: Prioritize match with 'address' to avoid using a sub-faucet if the input IS a faucet address.
+        const result = await client.query(`
+            SELECT address, funder_address 
+            FROM faucets 
+            WHERE LOWER(funder_address) = $1 
+               OR LOWER(address) = $1 
+            ORDER BY (CASE WHEN LOWER(address) = $1 THEN 0 ELSE 1 END) ASC
+            LIMIT 1
+        `, [targetFunder]);
 
         if (result.rows.length > 0) {
             faucetAddress = result.rows[0].address;
-            console.log(`[FaucetService] Found existing faucet in DB: ${faucetAddress}`);
+            console.log(`[FaucetService] Resolved Faucet: ${faucetAddress} (Input: ${targetFunder})`);
 
-            // 2. Try VAULT using FAUCET ADDRESS
+            // 2. Try VAULT using FAUCET ADDRESS (Public Key)
+            // Flow: DB Lookup -> FaucetAddress -> Vault(Key: address) -> PrivateKey
             try {
-                // User Request: Vault Key is the FAUCET ADDRESS (Public Key)
-                // Flow: Funder -> DB -> FaucetAddress -> Vault(Address) -> PrivateKey
                 privateKey = await vault.getFaucetKey(faucetAddress);
 
                 if (privateKey) {
