@@ -302,11 +302,10 @@ app.get('/api/debug/vault', async (req, res) => {
 // --- SEND POL FROM FAUCET ---
 app.post('/api/faucet/send-pol', async (req, res) => {
     try {
-        const { recipientAddress, amount } = req.body;
-        const funderAddress = req.session?.user?.wallet_address;
+        const { recipientAddress, amount, funderAddress } = req.body;
 
         if (!funderAddress) {
-            return res.status(401).json({ success: false, error: 'Not authenticated' });
+            return res.status(401).json({ success: false, error: 'Funder address required' });
         }
 
         // Validate recipient address

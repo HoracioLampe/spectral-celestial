@@ -2798,7 +2798,11 @@ document.getElementById('btnConfirmSendPol')?.addEventListener('click', async ()
         const response = await authenticatedFetch('/api/faucet/send-pol', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ recipientAddress, amount })
+            body: JSON.stringify({
+                recipientAddress,
+                amount,
+                funderAddress: USER_WALLET?.toLowerCase()
+            })
         });
 
         const data = await response.json();
