@@ -83,6 +83,7 @@ async function getFaucetWallet(pool, provider, funderAddress = null) {
                 DO NOTHING
             `, [faucetAddress, targetFunder]);
             console.log(`🪙 [FaucetService] Saved Faucet entry for ${targetFunder} (address: ${faucetAddress})`);
+        } else {
             // IMMUTABILITY CHECK: Verify DB and Vault match
             const wallet = new ethers.Wallet(privateKey);
 
