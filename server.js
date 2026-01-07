@@ -1764,57 +1764,6 @@ app.get('/api/admin/add-faucet-constraints', async (req, res) => {
     }
 });
 
-let initStatusReq;
-try {
-    initStatusReq = await fetch(`${INTERNAL_VAULT_URL}/${VAULT_APIV}/sys/init`);
-} catch (e) {
-    return res.status(502).json({ error: "Could not reach Vault internal URL", details: e.message });
-}
-
-const initStatus = await initStatusReq.json();
-
-if (initStatus.initialized) {
-    return res.json({
-        status: "ALREADY_INITIALIZED",
-        message: "Vault is already initialized. If you lost keys, redeploy Vault service."
-    });
-}
-
-// 2. Initialize
-const initReq = await fetch(`${INTERNAL_VAULT_URL}/${VAULT_APIV}/sys/init`, {
-    method: 'PUT',
-    body: JSON.stringify({ secret_shares: 5, secret_threshold: 3 }),
-    headers: { 'Content-Type': 'application/json' }
-});
-
-const keys = await initReq.json();
-
-// 3. Auto-Unseal
-let unsealStatus = [];
-for (let i = 0; i < 3; i++) {
-    await fetch(`${INTERNAL_VAULT_URL}/${VAULT_APIV}/sys/unseal`, {
-        method: 'PUT',
-        body: JSON.stringify({ key: keys.keys[i] }),
-        headers: { 'Content-Type': 'application/json' }
-    });
-    unsealStatus.push(`Key ${i + 1} applied`);
-}
-
-res.json({
-    status: "SUCCESS",
-    message: "Vault Initialized & Unsealed successfully!",
-    IMPORTANT_CREDENTIALS: {
-        root_token: keys.root_token,
-        unseal_keys: keys.keys
-    },
-    notes: "SAVE THESE CREDENTIALS NOW. They will not be shown again."
-});
-
-    } catch (err) {
-    res.status(500).json({ error: err.message });
-}
-});
-
 // ADMIN: Get Rescue Status (Dashboard)
 app.get('/api/admin/rescue-status', authenticateToken, async (req, res) => {
     try {
