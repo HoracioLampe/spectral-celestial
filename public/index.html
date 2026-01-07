@@ -141,6 +141,10 @@
                             <div class="balance-item">⛽ <span class="unit-label">POL</span> <span
                                     id="sidebarFaucetBalance">0.00</span></div>
                         </div>
+                        <button id="btnSendPol" class="btn btn-glass w-full"
+                            style="margin-top: 0.5rem; font-size: 0.85rem;">
+                            💸 Enviar POL
+                        </button>
                     </div>
 
                 </div>
@@ -624,6 +628,48 @@
     </main>
     </div> <!-- content-wrapper -->
     </div> <!-- app-layout -->
+
+    <!-- SEND POL MODAL -->
+    <div id="sendPolModal" class="modal hidden">
+        <div class="modal-content glass">
+            <span class="close" onclick="closeSendPolModal()">&times;</span>
+            <h2>💸 Enviar POL desde Faucet</h2>
+
+            <div style="background: rgba(255,255,255,0.05); padding: 0.75rem; border-radius: 8px; margin-bottom: 1rem;">
+                <p style="font-size: 0.85rem; color: #94a3b8; margin: 0;">
+                    Balance disponible: <span id="polAvailableBalance"
+                        style="color: #10b981; font-weight: 600;">0.00</span> POL
+                </p>
+                <p style="font-size: 0.75rem; color: #ef4444; margin: 0.5rem 0 0 0;">
+                    ⚠️ Se reservará gas automáticamente
+                </p>
+            </div>
+
+            <div class="form-group" style="margin-bottom: 1rem;">
+                <label>Dirección Destino (EOA) *</label>
+                <input type="text" id="polRecipientAddress" class="input-glass" placeholder="0x..."
+                    style="font-family: monospace;">
+                <span id="addressValidation" style="font-size: 0.75rem; margin-top: 0.25rem; display: block;"></span>
+            </div>
+
+            <div class="form-group" style="margin-bottom: 1.5rem;">
+                <label>Cantidad (POL) *</label>
+                <div style="position: relative;">
+                    <input type="number" id="polAmount" class="input-glass" placeholder="0.0" step="0.001" min="0">
+                    <button id="btnMaxPol" class="btn btn-glass"
+                        style="position: absolute; right: 0.5rem; top: 50%; transform: translateY(-50%); padding: 0.25rem 0.75rem; font-size: 0.75rem;">
+                        MAX
+                    </button>
+                </div>
+            </div>
+
+            <button id="btnConfirmSendPol" class="btn btn-primary" style="width: 100%;">
+                Enviar POL
+            </button>
+
+            <div id="sendPolStatus" style="margin-top: 1rem; display: none;"></div>
+        </div>
+    </div>
 
     <!-- BATCH COMPLETION SUMMARY MODAL -->
     <div id="batchSummaryModal" class="summary-modal">

@@ -2705,6 +2705,135 @@ window.closeFaucetModal = () => {
     if (modal) modal.classList.add('hidden');
 };
 
+// --- SEND POL MODAL ---
+window.openSendPolModal = () => {
+    const modal = document.getElementById('sendPolModal');
+    if (!modal) return;
+
+    const balanceEl = document.getElementById('sidebarFaucetBalance');
+    const balance = parseFloat(balanceEl?.textContent || '0');
+
+    const gasReserve = 0.01;
+    const maxAvailable = Math.max(0, balance - gasReserve);
+
+    document.getElementById('polAvailableBalance').textContent = maxAvailable.toFixed(4);
+    document.getElementById('polRecipientAddress').value = '';
+    document.getElementById('polAmount').value = '';
+    document.getElementById('addressValidation').textContent = '';
+    document.getElementById('sendPolStatus').style.display = 'none';
+
+    modal.classList.remove('hidden');
+};
+
+window.closeSendPolModal = () => {
+    const modal = document.getElementById('sendPolModal');
+    if (modal) modal.classList.add('hidden');
+};
+
+// Address validation
+document.getElementById('polRecipientAddress')?.addEventListener('input', (e) => {
+    const address = e.target.value.trim();
+    const validation = document.getElementById('addressValidation');
+
+    if (!address) {
+        validation.textContent = '';
+        return;
+    }
+
+    if (ethers.isAddress(address)) {
+        validation.textContent = '✅ Dirección válida';
+        validation.style.color = '#10b981';
+    } else {
+        validation.textContent = '❌ Dirección inválida';
+        validation.style.color = '#ef4444';
+    }
+});
+
+// MAX button
+document.getElementById('btnMaxPol')?.addEventListener('click', () => {
+    const maxAvailable = parseFloat(document.getElementById('polAvailableBalance').textContent);
+    document.getElementById('polAmount').value = maxAvailable.toFixed(4);
+});
+
+// Open modal
+document.getElementById('btnSendPol')?.addEventListener('click', openSendPolModal);
+
+// Confirm send
+document.getElementById('btnConfirmSendPol')?.addEventListener('click', async () => {
+    const recipientAddress = document.getElementById('polRecipientAddress').value.trim();
+    const amount = parseFloat(document.getElementById('polAmount').value);
+    const statusEl = document.getElementById('sendPolStatus');
+    const btn = document.getElementById('btnConfirmSendPol');
+
+    if (!recipientAddress || !ethers.isAddress(recipientAddress)) {
+        statusEl.innerHTML = '<div style="color: #ef4444;">❌ Dirección inválida</div>';
+        statusEl.style.display = 'block';
+        return;
+    }
+
+    if (!amount || amount <= 0) {
+        statusEl.innerHTML = '<div style="color: #ef4444;">❌ Cantidad inválida</div>';
+        statusEl.style.display = 'block';
+        return;
+    }
+
+    const maxAvailable = parseFloat(document.getElementById('polAvailableBalance').textContent);
+    if (amount > maxAvailable) {
+        statusEl.innerHTML = `<div style="color: #ef4444;">❌ Excede el máximo (${maxAvailable.toFixed(4)} POL)</div>`;
+        statusEl.style.display = 'block';
+        return;
+    }
+
+    const faucetLink = document.getElementById('sidebarFaucetLink');
+    const faucetAddress = faucetLink?.textContent?.trim();
+
+    if (!faucetAddress || faucetAddress === 'Cargando...') {
+        statusEl.innerHTML = '<div style="color: #ef4444;">❌ No se pudo obtener la dirección del faucet</div>';
+        statusEl.style.display = 'block';
+        return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Enviando...';
+    statusEl.innerHTML = '<div style="color: #60a5fa;">⏳ Enviando transacción...</div>';
+    statusEl.style.display = 'block';
+
+    try {
+        const response = await fetch('/api/faucet/send-pol', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                recipientAddress,
+                amount,
+                funderAddress: faucetAddress
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            statusEl.innerHTML = `
+                <div style="color: #10b981;">
+                    ✅ ¡Enviado exitosamente!<br>
+                    <small>TX: <a href="${data.explorerUrl}" target="_blank" style="color: #60a5fa;">${data.txHash.substring(0, 10)}...</a></small><br>
+                    <small>Gas: ${parseFloat(data.gasUsed).toFixed(6)} POL</small>
+                </div>
+            `;
+
+            setTimeout(() => {
+                location.reload();
+            }, 3000);
+        } else {
+            statusEl.innerHTML = `<div style="color: #ef4444;">❌ Error: ${data.error}</div>`;
+        }
+    } catch (error) {
+        statusEl.innerHTML = `<div style="color: #ef4444;">❌ Error: ${error.message}</div>`;
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Enviar POL';
+    }
+});
+
 
 async function pollBatchProgress(batchId) {
     // 🚨 Safety: Stop if we are viewing a different batch
