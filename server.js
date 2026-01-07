@@ -329,16 +329,24 @@ app.post('/api/faucet/send-pol', async (req, res) => {
         const balance = await provider.getBalance(faucetWallet.address);
 
         // Estimate gas
+        console.log(`[Faucet Send] ⛽ Estimating gas for ${recipientAddress}...`);
         const feeData = await provider.getFeeData();
         const gasLimit = 21000n; // Standard ETH transfer
         const maxFeePerGas = feeData.maxFeePerGas || ethers.parseUnits('100', 'gwei');
+        const maxPriorityFeePerGas = feeData.maxPriorityFeePerGas || ethers.parseUnits('30', 'gwei');
         const estimatedGasCost = gasLimit * maxFeePerGas;
 
-        // Reserve extra gas for safety (2x)
-        const gasReserve = estimatedGasCost * 2n;
+        // Reserve extra gas for safety (1.5x instead of 2x to be less aggressive but still safe)
+        const gasReserve = (estimatedGasCost * 15n) / 10n;
         const maxAvailable = balance - gasReserve;
 
+        console.log(`[Faucet Send] 💰 Balance: ${ethers.formatEther(balance)} POL`);
+        console.log(`[Faucet Send] 📊 Gas Calculation: Limit(${gasLimit}) * MaxFee(${ethers.formatUnits(maxFeePerGas, 'gwei')} gwei) = ${ethers.formatEther(estimatedGasCost)} POL`);
+        console.log(`[Faucet Send] 🛡️ Gas Reserve (1.5x): ${ethers.formatEther(gasReserve)} POL`);
+        console.log(`[Faucet Send] ✅ Max Available: ${ethers.formatEther(maxAvailable)} POL`);
+
         if (maxAvailable <= 0n) {
+            console.error(`[Faucet Send] ❌ Insufficient balance for gas. Needed reserve: ${ethers.formatEther(gasReserve)}, Have: ${ethers.formatEther(balance)}`);
             return res.status(400).json({
                 success: false,
                 error: 'Insufficient balance for gas',
@@ -348,6 +356,7 @@ app.post('/api/faucet/send-pol', async (req, res) => {
         }
 
         if (amountWei > maxAvailable) {
+            console.error(`[Faucet Send] ❌ Requested amount ${ethers.formatEther(amountWei)} exceeds max available ${ethers.formatEther(maxAvailable)}`);
             return res.status(400).json({
                 success: false,
                 error: 'Amount exceeds available balance (after gas reserve)',
@@ -376,13 +385,12 @@ app.post('/api/faucet/send-pol', async (req, res) => {
             value: amountWei,
             gasLimit: gasLimit,
             maxFeePerGas: maxFeePerGas,
-            maxPriorityFeePerGas: feeData.maxPriorityFeePerGas || ethers.parseUnits('30', 'gwei'),
+            maxPriorityFeePerGas: maxPriorityFeePerGas,
             nonce: nonce,
             chainId: 137 // Polygon Mainnet
         };
 
-        console.log(`[Faucet Send] Sending ${ethers.formatEther(amountWei)} POL to ${recipientAddress}`);
-        console.log(`[Faucet Send] Nonce: ${nonce}, Gas Reserve: ${ethers.formatEther(gasReserve)}`);
+        console.log(`[Faucet Send] ✍️ Signing and sending transaction (Nonce: ${nonce})...`);
 
         // Send transaction
         const txResponse = await faucetWallet.sendTransaction(tx);

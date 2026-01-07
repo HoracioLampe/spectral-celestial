@@ -2758,8 +2758,22 @@ document.getElementById('polRecipientAddress')?.addEventListener('input', (e) =>
 
 // MAX button function
 window.setMaxPol = () => {
-    const maxAvailable = parseFloat(document.getElementById('polAvailableBalance').textContent);
-    document.getElementById('polAmount').value = maxAvailable.toFixed(4);
+    const balanceText = document.getElementById('polAvailableBalance').textContent;
+    const balance = parseFloat(balanceText);
+
+    // Reserve a safe amount for gas (0.05 POL is very safe for a standard transfer)
+    const gasBuffer = 0.05;
+    const maxSafe = Math.max(0, balance - gasBuffer);
+
+    document.getElementById('polAmount').value = maxSafe.toFixed(4);
+
+    const statusEl = document.getElementById('sendPolStatus');
+    if (balance < gasBuffer) {
+        statusEl.innerHTML = `<div style="color: #fbbf24;">⚠️ Balance muy bajo para cubrir el gas (${gasBuffer} POL recomendado)</div>`;
+        statusEl.style.display = 'block';
+    } else {
+        statusEl.style.display = 'none';
+    }
 };
 
 // Confirm send function
