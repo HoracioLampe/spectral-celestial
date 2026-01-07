@@ -1,7 +1,7 @@
 // services/faucet.js
 // Simple faucet utility for Polygon Mainnet.
 // Modernized to fetch keys from HashiCorp Vault.
-// STRICT: Target Funder -> DB -> Vault -> Generate
+// STRICT: Target Funder -> DB -> Vault(by Address) -> Generate
 
 const { ethers } = require('ethers');
 const vault = require('./vault');
@@ -30,37 +30,47 @@ async function getFaucetWallet(pool, provider, funderAddress = null) {
             faucetAddress = result.rows[0].address;
             console.log(`[FaucetService] Found existing faucet in DB: ${faucetAddress}`);
 
-            // 2. Try VAULT
+            // 2. Try VAULT using FAUCET ADDRESS
             try {
-                privateKey = await vault.getFaucetKey(targetFunder);
+                // User Request: Vault Key is the FAUCET ADDRESS (Public Key)
+                // Flow: Funder -> DB -> FaucetAddress -> Vault(Address) -> PrivateKey
+                privateKey = await vault.getFaucetKey(faucetAddress);
+
                 if (privateKey) {
-                    console.log(`🔒 [FaucetService] Loaded key from Vault for ${targetFunder}`);
+                    console.log(`🔒 [FaucetService] Loaded key from Vault for Faucet ${faucetAddress}`);
                 } else {
-                    console.warn(`⚠️ [FaucetService] Key NOT found in Vault for ${targetFunder}.`);
+                    // STRICT MODE: If DB has it, Vault MUST have it. Do not auto-regenerate.
+                    console.error(`❌ [FaucetService] FATAL: Faucet Address ${faucetAddress} exists in DB (Funder: ${targetFunder}), but Key NOT found in Vault under ${faucetAddress}.`);
+                    throw new Error(`INTEGRITY_ERROR: Faucet key missing in Vault for ${faucetAddress}`);
                 }
             } catch (e) {
+                // If the error is our own Integrity Error, rethrow it.
+                if (e.message.includes('INTEGRITY_ERROR')) throw e;
                 console.warn(`⚠️ [FaucetService] Vault lookup failed: ${e.message}`);
+                // If Vault is down, we definitely shouldn't generate a new one.
+                throw new Error(`VAULT_CONNECTION_ERROR: Could not retrieve key for ${faucetAddress}`);
             }
         }
 
-        // 3. If NO Key found (DB empty or Vault missing key), GENERATE NEW
-        if (!privateKey) {
-            console.log(`⚠️ [FaucetService] No valid Faucet found for ${targetFunder}. Generating NEW...`);
+        // 3. If NO DB Entry found -> GENERATE NEW
+        if (!faucetAddress) {
+            console.log(`✨ [FaucetService] No Faucet found for ${targetFunder}. Generating NEW...`);
 
             // A. Generate Random Wallet
             const wallet = ethers.Wallet.createRandom();
             privateKey = wallet.privateKey;
             faucetAddress = wallet.address;
 
-            // B. Save to VAULT
-            console.log(`🔒 [FaucetService] Saving new key to Vault under funder: ${targetFunder}`);
+            // B. Save to VAULT (Key: Public Address, Value: Private Key)
+            console.log(`🔒 [FaucetService] Saving new key to Vault under Faucet Address: ${faucetAddress}`);
             try {
-                const saved = await vault.saveFaucetKey(targetFunder, privateKey);
+                const saved = await vault.saveFaucetKey(faucetAddress, privateKey);
                 if (!saved) {
-                    throw new Error("Vault save returned false");
+                    throw new Error("Vault save returned false (Check Vault Status/Token)");
                 }
             } catch (e) {
                 console.error(`❌ [FaucetService] CRITICAL: Failed to save to Vault: ${e.message}`);
+                throw new Error(`SECURE_STORAGE_FAILED: Could not save Faucet Key to Vault for ${faucetAddress}`);
             }
 
             // C. Save to DB (Explicit Upsert)
@@ -77,17 +87,13 @@ async function getFaucetWallet(pool, provider, funderAddress = null) {
                 console.log(`🪙 [FaucetService] Created new Faucet entry for ${targetFunder}`);
             }
         } else {
-            // We have a key. Ensure DB sync.
+            // We have a key. Ensure DB sync (Mismatch Check)
             const wallet = new ethers.Wallet(privateKey);
 
             if (faucetAddress && faucetAddress.toLowerCase() !== wallet.address.toLowerCase()) {
                 console.warn(`⚠️ [FaucetService] Mismatch! DB: ${faucetAddress} vs Vault Key: ${wallet.address}. Trusting Vault.`);
-                // Sync DB to match Vault
+                // Force sync DB to match Vault Key
                 await client.query('UPDATE faucets SET address = $1 WHERE LOWER(funder_address) = $2',
-                    [wallet.address, targetFunder]);
-            } else if (!faucetAddress) {
-                // If we got key from Vault but DB was empty (rare edge case of partial sync)
-                await client.query('INSERT INTO faucets (address, funder_address) VALUES ($1, $2)',
                     [wallet.address, targetFunder]);
             }
         }
