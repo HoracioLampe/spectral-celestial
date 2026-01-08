@@ -2,14 +2,13 @@
 // Fetches complete data from API with applied filters
 async function exportToExcel() {
     try {
-        // Get current batch ID from the page
-        const batchIdElement = document.querySelector('[data-batch-id]');
-        if (!batchIdElement) {
-            alert('⚠️ No hay un batch seleccionado para exportar');
+        // Get current batch ID from global variable or currentBatchSummary
+        const batchId = window.activeBatchId || window.currentBatchSummary?.id;
+
+        if (!batchId) {
+            alert('⚠️ No hay un batch seleccionado para exportar. Por favor, abre un batch primero.');
             return;
         }
-
-        const batchId = batchIdElement.getAttribute('data-batch-id');
 
         // Get applied filters from UI
         const filterWallet = document.getElementById('filterWallet')?.value || '';
