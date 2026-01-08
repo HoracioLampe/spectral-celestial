@@ -1887,6 +1887,26 @@ app.get('/api/debug/vault', async (req, res) => {
 });
 
 
+// Get first transaction ID of a batch (for Excel export offset calculation)
+app.get('/api/batches/:id/first-transaction', authenticateToken, async (req, res) => {
+    try {
+        const batchId = req.params.id;
+        const result = await pool.query(
+            'SELECT MIN(id) as first_id FROM batch_transactions WHERE batch_id = $1',
+            [batchId]
+        );
+
+        if (result.rows.length > 0 && result.rows[0].first_id) {
+            res.json({ firstId: result.rows[0].first_id });
+        } else {
+            res.json({ firstId: 1 });
+        }
+    } catch (err) {
+        console.error('Error getting first transaction ID:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // Recovery Dashboard API
 app.get('/api/recovery/batches', authenticateToken, async (req, res) => {
     try {
