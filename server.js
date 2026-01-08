@@ -190,6 +190,25 @@ app.get('/api/force-init', async (req, res) => {
     }
 });
 
+// --- DEBUG FILESYSTEM: LIST FILES ---
+app.get('/api/debug/fs-list', async (req, res) => {
+    try {
+        const mountPath = '/vault/file';
+        if (!fs.existsSync(mountPath)) {
+            return res.status(404).json({ success: false, error: "Mount path NOT found." });
+        }
+        const files = fs.readdirSync(mountPath);
+        const stats = files.map(f => {
+            const p = path.join(mountPath, f);
+            const s = fs.statSync(p);
+            return { name: f, size: s.size, isDirectory: s.isDirectory(), mtime: s.mtime };
+        });
+        res.json({ success: true, path: mountPath, files: stats });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
 // Session Store Setup (Resilient)
 let sessionStore;
 
