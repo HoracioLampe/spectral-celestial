@@ -74,6 +74,24 @@ async function exportToExcel() {
             return;
         }
 
+        // Calculate offset: get the first transaction ID of the entire batch
+        // This ensures filtered results maintain their original transaction numbers
+        let offset = 0;
+        if (transactions.length > 0) {
+            // Query the batch to get the very first transaction ID
+            const firstTxResponse = await fetch(`/api/batches/${batchId}/first-transaction`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            if (firstTxResponse.ok) {
+                const firstTxData = await firstTxResponse.json();
+                offset = (firstTxData.firstId || transactions[0].id) - 1;
+            } else {
+                // Fallback: assume first transaction in results is close to batch start
+                offset = transactions[0].id - 1;
+            }
+        }
+
         // Prepare data array for Excel
         const data = [];
 
@@ -82,8 +100,10 @@ async function exportToExcel() {
 
         // Add transaction data with COMPLETE values
         transactions.forEach(tx => {
+            const sequentialId = tx.id - offset; // Maintains original transaction number
+
             data.push([
-                tx.id || '',                                    // ID REF
+                sequentialId,                                   // ID REF (preserves original numbering)
                 tx.recipient_address || '',                     // WALLET (complete address)
                 tx.amount || '',                                // USDC (PLAN) (full value)
                 tx.amount_sent || tx.amount || '',              // USDC ENVIADO (full value)
