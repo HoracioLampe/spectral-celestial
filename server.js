@@ -1893,12 +1893,12 @@ app.get('/api/recovery/batches', authenticateToken, async (req, res) => {
         const query = `
             SELECT b.id, b.total_transactions, b.status as batch_status, 
                    COUNT(r.id) as total_relayers,
-                   SUM(CASE WHEN r.status != 'drained' THEN CAST(r.last_balance AS DECIMAL) ELSE 0 END) as total_pol,
+                   SUM(CASE WHEN r.status != 'drained' THEN CAST(COALESCE(NULLIF(r.last_balance, ''), '0') AS DECIMAL) ELSE 0 END) as total_pol,
                    b.funder_address
             FROM batches b
             JOIN relayers r ON b.id = r.batch_id
             GROUP BY b.id, b.total_transactions, b.status, b.funder_address
-            HAVING SUM(CASE WHEN r.status != 'drained' THEN CAST(r.last_balance AS DECIMAL) ELSE 0 END) > 0.001
+            HAVING SUM(CASE WHEN r.status != 'drained' THEN CAST(COALESCE(NULLIF(r.last_balance, ''), '0') AS DECIMAL) ELSE 0 END) > 0.001
             ORDER BY b.id DESC
         `;
         const result = await pool.query(query);

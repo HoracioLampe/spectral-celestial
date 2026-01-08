@@ -1467,14 +1467,17 @@ class RelayerEngine {
                 }
 
                 // 1. SELF-HEALING: Verify and Repair Nonce if blocked
-                console.log(`[Refund][${wallet.address.substring(0, 8)}] 🛠️  Checking for stuck transactions...`);
+                process.stdout.write(`[Refund][${wallet.address.substring(0, 6)}] 🔧 Checking Nonce...\n`);
                 try {
                     await this.verifyAndRepairNonce(wallet);
+                    process.stdout.write(`[Refund][${wallet.address.substring(0, 6)}] ✅ Nonce Checked.\n`);
                 } catch (nonceErr) {
-                    console.warn(`[Refund][${wallet.address.substring(0, 8)}] ⚠️ Nonce Repair warning (continuing): ${nonceErr.message}`);
+                    process.stdout.write(`[Refund][${wallet.address.substring(0, 6)}] ⚠️ Nonce Repair warning: ${nonceErr.message}\n`);
                 }
 
+                process.stdout.write(`[Refund][${wallet.address.substring(0, 6)}] 💰 Getting Balance...\n`);
                 const bal = await currentProvider.getBalance(wallet.address);
+                process.stdout.write(`[Refund][${wallet.address.substring(0, 6)}] 💵 Balance: ${ethers.formatEther(bal)}\n`);
 
                 if (bal > (costWei + safetyBuffer)) {
                     // Send strictly calculated amount: Balance - (Cost + Buffer)
@@ -1484,14 +1487,20 @@ class RelayerEngine {
                     if (amount > 0n) {
                         console.log(`[Refund] 💸 Sweeping ${ethers.formatEther(amount)} MATIC from ${wallet.address.substring(0, 6)}...`);
                         try {
-                            const tx = await wallet.sendTransaction({
+                            const txPayload = {
                                 to: targetFaucetAddress,
                                 value: amount,
                                 gasLimit: 21000n,
                                 gasPrice: boostedGasPrice
-                            });
-                            console.log(`[Refund] ✅ Tx Sent: ${tx.hash}`);
-                            await tx.wait(); // Wait for confirmation
+                            };
+
+                            process.stdout.write(`[Refund][${wallet.address.substring(0, 6)}] 🚀 Sending Tx...\n`);
+                            const tx = await wallet.sendTransaction(txPayload);
+                            process.stdout.write(`[Refund][${wallet.address.substring(0, 6)}] 📡 Tx Sent: ${tx.hash}\n`);
+
+                            process.stdout.write(`[Refund][${wallet.address.substring(0, 6)}] ⏳ Waiting for Confirmation...\n`);
+                            const receipt = await tx.wait();
+                            process.stdout.write(`[Refund][${wallet.address.substring(0, 6)}] 🧾 Confirmed in block ${receipt.blockNumber}\n`);
 
                             recoveredWei += amount;
 
@@ -1513,14 +1522,29 @@ class RelayerEngine {
                     );
                 }
             } catch (err) {
-                console.error(`[Refund] ⚠️ CRITICAL WORKER ERROR for ${wallet.address.substring(0, 6)}:`, err);
+                process.stdout.write(`[Refund] ⚠️ CRITICAL WORKER ERROR for ${wallet.address.substring(0, 6)}: ${err.stack || err}\n`);
             }
         };
 
         // Execute in chunks
         for (let i = 0; i < activeRelayers.length; i += concurrency) {
             const chunk = activeRelayers.slice(i, i + concurrency);
-            await Promise.all(chunk.map((w, idx) => worker(w, i + idx)));
+
+            // Allow MAX 60 seconds per chunk. Workers that hang are abandoned.
+            const chunkPromise = Promise.all(chunk.map((w, idx) => {
+                const workerId = `[Worker-${i + idx}]`;
+
+                // Wrap worker in a timeout race
+                return Promise.race([
+                    worker(w, i + idx),
+                    new Promise((_, reject) => setTimeout(() => reject(new Error(`${workerId} TIMEOUT`)), 60000))
+                ]).catch(err => {
+                    console.error(`${workerId} ❌ Killed due to hang/error: ${err.message}`);
+                });
+            }));
+
+            console.log(`[Refund] ⏳ Processing chunk ${i / concurrency + 1} (${chunk.length} relayers)...`);
+            await chunkPromise;
         }
 
         totalRecovered = Number(ethers.formatEther(recoveredWei));
