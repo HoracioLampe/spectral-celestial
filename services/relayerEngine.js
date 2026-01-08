@@ -205,6 +205,10 @@ class RelayerEngine {
     async prepareRelayers(batchId, numRelayers) {
         console.log(`[Engine] 🏗️ prepareRelayers(id = ${batchId}, count = ${numRelayers})`);
 
+        // Step -2: Ensure Vault is accessible (Auto-Unseal if needed)
+        // This prevents initialization failures if Vault is sealed.
+        await vault.ensureUnsealed();
+
         // Step -1: Recover Stale Transactions (Self-Healing)
         await this.recoverStaleTransactions(batchId);
 
@@ -256,8 +260,8 @@ class RelayerEngine {
         // --------------------------------
 
         // Step 1: Calculate gas needed
-        const totalGasWei = await this.estimateBatchGas(batchId);
-        const amountPerRelayer = totalGasWei.div(relayers.length).add(ethers.utils.parseEther("0.1")); // Buffer
+        const { totalCostWei } = await this.estimateBatchGas(batchId);
+        const amountPerRelayer = (totalCostWei / BigInt(relayers.length)) + ethers.parseEther("0.1"); // Buffer
 
         console.log(`[Engine] 💰 Funding ${relayers.length} relayers with ${ethers.utils.formatEther(amountPerRelayer)} POL each.`);
 

@@ -131,6 +131,47 @@ class VaultService {
         }
         return null;
     }
+
+    /**
+     * CENTRALIZED AUTO-UNSEAL
+     * Checks health and attempts unseal if needed using VAULT_UNSEAL_KEYS env.
+     */
+    async ensureUnsealed() {
+        if (!this.enabled) return;
+
+        const envKeys = process.env.VAULT_UNSEAL_KEYS;
+        if (!envKeys) {
+            console.log("[Vault] ⚠️ No UNSEAL keys found in environment. Skipping auto-unseal.");
+            return;
+        }
+        const keys = envKeys.split(',').map(k => k.trim());
+
+        try {
+            console.log(`[Vault] 🛡️ Checking seal status at ${VAULT_ADDR}...`);
+            const healthRes = await fetch(`${VAULT_ADDR}/${VAULT_API_V}/sys/health`);
+            const health = await healthRes.json();
+
+            if (health.sealed) {
+                console.log("[Vault] 🔒 Vault is sealed! Attempting auto-unseal...");
+                for (const key of keys) {
+                    const res = await fetch(`${VAULT_ADDR}/${VAULT_API_V}/sys/unseal`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ key })
+                    });
+                    const status = await res.json();
+                    if (!status.sealed) {
+                        console.log("[Vault] 🎉 Auto-unseal successful!");
+                        return;
+                    }
+                }
+            } else {
+                console.log("[Vault] ✅ Vault is already unsealed.");
+            }
+        } catch (e) {
+            console.error(`[Vault] ⚠️ Auto-unseal check failed: ${e.message}`);
+        }
+    }
 }
 
 module.exports = new VaultService();
