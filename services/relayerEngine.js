@@ -1470,6 +1470,8 @@ class RelayerEngine {
         let totalRecovered = 0;
         let recoveredWei = 0n;
 
+        console.log(`[Refund] 🚀 Starting parallel recovery with ${concurrency} threads...`);
+
         const worker = async (wallet, idx) => {
             try {
                 // 0. Ensure Wallet is connected to LATEST provider (Failover/Rotation safety)
