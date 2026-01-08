@@ -3,11 +3,24 @@
 async function exportToExcel() {
     try {
         // Get current batch ID from global variable or currentBatchSummary
-        const batchId = window.activeBatchId || window.currentBatchSummary?.id;
+        let batchId = window.activeBatchId || window.currentBatchSummary?.id;
 
+        // If not found, try to get from visible batch info
         if (!batchId) {
-            alert('⚠️ No hay un batch seleccionado para exportar. Por favor, abre un batch primero.');
-            return;
+            const batchInfoElement = document.querySelector('[data-batch-id]') ||
+                document.getElementById('currentBatchId');
+            if (batchInfoElement) {
+                batchId = batchInfoElement.getAttribute('data-batch-id') ||
+                    batchInfoElement.textContent.trim();
+            }
+        }
+
+        // Last resort: prompt user
+        if (!batchId) {
+            batchId = prompt('Por favor, ingresa el ID del batch a exportar:');
+            if (!batchId) {
+                return; // User cancelled
+            }
         }
 
         // Get applied filters from UI
