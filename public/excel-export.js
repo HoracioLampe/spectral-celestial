@@ -1,5 +1,5 @@
 // Excel Export Function for Transaction Grid
-// Fetches complete data from API instead of scraping HTML
+// Fetches complete data from API with applied filters
 async function exportToExcel() {
     try {
         // Get current batch ID from the page
@@ -11,13 +11,26 @@ async function exportToExcel() {
 
         const batchId = batchIdElement.getAttribute('data-batch-id');
 
+        // Get applied filters from UI
+        const filterWallet = document.getElementById('filterWallet')?.value || '';
+        const filterAmount = document.getElementById('filterAmount')?.value || '';
+        const filterStatus = document.getElementById('filterStatus')?.value || '';
+
         // Show loading indicator
         const btn = event?.target;
         const originalText = btn?.innerHTML;
         if (btn) btn.innerHTML = '⏳ Generando Excel...';
 
-        // Fetch complete transaction data from API
-        const response = await fetch(`/api/transactions?batchId=${batchId}`);
+        // Build query params with filters
+        const params = new URLSearchParams({
+            batchId: batchId,
+            wallet: filterWallet,
+            amount: filterAmount,
+            status: filterStatus
+        });
+
+        // Fetch complete transaction data from API with filters
+        const response = await fetch(`/api/transactions?${params.toString()}`);
         if (!response.ok) {
             throw new Error('Error al obtener datos del servidor');
         }
@@ -25,7 +38,7 @@ async function exportToExcel() {
         const transactions = await response.json();
 
         if (!transactions || transactions.length === 0) {
-            alert('⚠️ No hay transacciones para exportar');
+            alert('⚠️ No hay transacciones para exportar con los filtros aplicados');
             if (btn) btn.innerHTML = originalText;
             return;
         }
