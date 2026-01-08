@@ -2707,7 +2707,7 @@ window.closeFaucetModal = () => {
 };
 
 // --- SEND POL MODAL ---
-window.openSendPolModal = () => {
+window.openSendPolModal = async () => {
     const modal = document.getElementById('sendPolModal');
     if (!modal) return;
 
