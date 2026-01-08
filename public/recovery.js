@@ -1,30 +1,46 @@
+console.log('[Recovery] Script loaded, waiting for DOM...');
+
 document.addEventListener('DOMContentLoaded', () => {
+    console.log('[Recovery] DOM loaded, starting batch load...');
     loadRecoveryBatches();
 });
 
 async function loadRecoveryBatches() {
+    console.log('[Recovery] loadRecoveryBatches() called');
     const container = document.getElementById('recoveryStats');
+    console.log('[Recovery] Container element:', container);
+
     const token = localStorage.getItem('token');
+    console.log('[Recovery] Token exists:', !!token);
 
     if (!token) {
+        console.warn('[Recovery] No token found, redirecting to login');
         window.location.href = '/';
         return;
     }
 
     try {
+        console.log('[Recovery] Fetching batches from API...');
         const response = await fetch('/api/recovery/batches', {
             headers: {
                 'Authorization': `Bearer ${token}`
             }
         });
 
+        console.log('[Recovery] Response status:', response.status);
+        console.log('[Recovery] Response ok:', response.ok);
+
         if (response.status === 401 || response.status === 403) {
+            console.warn('[Recovery] Unauthorized, clearing token and redirecting');
             localStorage.removeItem('token');
             window.location.href = '/';
             return;
         }
 
-        if (!response.ok) throw new Error('Error al cargar datos');
+        if (!response.ok) {
+            console.error('[Recovery] Response not OK, throwing error');
+            throw new Error('Error al cargar datos');
+        }
 
         const batches = await response.json();
         console.log('[Recovery] Batches received:', batches);
@@ -77,8 +93,12 @@ async function loadRecoveryBatches() {
             </div>
         `).join('');
 
+        console.log('[Recovery] Grid rendered successfully');
+
     } catch (err) {
         console.error('[Recovery] Error loading batches:', err);
+        console.error('[Recovery] Error name:', err.name);
+        console.error('[Recovery] Error message:', err.message);
         console.error('[Recovery] Error stack:', err.stack);
         container.innerHTML = `<p style="color: #e74c3c; text-align: center; padding: 2rem;">Error: ${err.message}</p>`;
     }
