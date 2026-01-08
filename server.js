@@ -1916,6 +1916,24 @@ app.get('/api/transactions', authenticateToken, async (req, res) => {
             return res.status(400).json({ error: 'batchId is required' });
         }
 
+        // SECURITY: Verify batch ownership
+        const ownerCheck = await pool.query(
+            'SELECT funder_address FROM batches WHERE id = $1',
+            [batchId]
+        );
+
+        if (ownerCheck.rows.length === 0) {
+            return res.status(404).json({ error: 'Batch not found' });
+        }
+
+        const batchOwner = ownerCheck.rows[0].funder_address?.toLowerCase();
+        const userAddress = req.user.address.toLowerCase();
+
+        // Only allow batch owner or SUPER_ADMIN to export
+        if (req.user.role !== 'SUPER_ADMIN' && batchOwner !== userAddress) {
+            return res.status(403).json({ error: 'Access denied: You can only export your own batches' });
+        }
+
         // Build dynamic query with filters
         let query = `
             SELECT id, recipient_address, amount, amount_sent, tx_hash, status, created_at as timestamp
