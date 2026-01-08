@@ -4,8 +4,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
 async function loadRecoveryBatches() {
     const container = document.getElementById('recoveryStats');
+    const token = localStorage.getItem('token');
+
+    if (!token) {
+        window.location.href = '/';
+        return;
+    }
+
     try {
-        const response = await fetch('/api/recovery/batches');
+        const response = await fetch('/api/recovery/batches', {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+
+        if (response.status === 401 || response.status === 403) {
+            localStorage.removeItem('token');
+            window.location.href = '/';
+            return;
+        }
+
         if (!response.ok) throw new Error('Error al cargar datos');
 
         const batches = await response.json();
@@ -43,7 +61,7 @@ async function loadRecoveryBatches() {
                 </div>
 
                 <div class="funder-info">
-                    Funder: ${batch.funder_address.substring(0, 10)}...${batch.funder_address.substring(38)}
+                    Funder: ${batch.funder_address ? (batch.funder_address.substring(0, 10) + '...' + batch.funder_address.substring(38)) : 'Desconocido'}
                 </div>
 
                 <div class="recovery-actions">
@@ -70,9 +88,13 @@ async function recoverFunds(batchId) {
         btn.disabled = true;
         btn.innerHTML = `<div class="loading-spinner"></div> Procesando...`;
 
+        const token = localStorage.getItem('token');
         const response = await fetch(`/api/batches/${batchId}/return-funds`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' }
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            }
         });
 
         const result = await response.json();
