@@ -194,6 +194,27 @@ app.get('/api/force-init', async (req, res) => {
 app.get('/api/debug/fs-list', async (req, res) => {
     try {
         const mountPath = '/vault/file';
+        const fs = require('fs');
+        const path = require('path');
+        if (!fs.existsSync(mountPath)) {
+            return res.status(404).json({ success: false, error: "Mount path NOT found." });
+        }
+        const files = fs.readdirSync(mountPath);
+        const stats = files.map(f => {
+            const p = path.join(mountPath, f);
+            const s = fs.statSync(p);
+            return { name: f, size: s.size, isDirectory: s.isDirectory(), mtime: s.mtime };
+        });
+        res.json({ success: true, path: mountPath, files: stats });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// --- DEBUG FILESYSTEM: LIST FILES ---
+app.get('/api/debug/fs-list', async (req, res) => {
+    try {
+        const mountPath = '/vault/file';
         if (!fs.existsSync(mountPath)) {
             return res.status(404).json({ success: false, error: "Mount path NOT found." });
         }
@@ -2411,7 +2432,7 @@ app.post('/api/relayer/:address/recover', authenticateToken, async (req, res) =>
     }
 });
 
-const VERSION = "2.5.9-robust-unseal";
+const VERSION = "2.6.0-diagnostic-v1";
 const PORT_LISTEN = process.env.PORT || 3000;
 
 // ============================================
