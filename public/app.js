@@ -3540,3 +3540,39 @@ window.triggerRelayerRecovery = async (address) => {
         btn.disabled = false;
     }
 };
+ 
+ 
+// --- EXCEL EXPORT FUNCTION ---
+function exportToExcel() {
+    try {
+        const tbody = document.getElementById('batchTableBody');
+        if (!tbody || tbody.rows.length === 0) {
+            alert(' No hay datos para exportar');
+            return;
+        }
+        const data = [['ID REF', 'WALLET', 'USDC (PLAN)', 'USDC ENVIADO', 'HASH (REF)', 'TIMESTAMP', 'ESTADO']];
+        for (let i = 0; i < tbody.rows.length; i++) {
+            const cells = tbody.rows[i].cells;
+            if (cells.length < 6) continue;
+            data.push([
+                cells[0].textContent.trim(),
+                cells[1].textContent.trim(),
+                cells[2].textContent.trim(),
+                cells[3].textContent.trim(),
+                cells[4].textContent.trim(),
+                new Date().toLocaleString('es-AR', TIMEZONE_CONFIG),
+                cells[5].textContent.trim()
+            ]);
+        }
+        const ws = XLSX.utils.aoa_to_sheet(data);
+        ws['!cols'] = [{ wch: 8 }, { wch: 45 }, { wch: 15 }, { wch: 15 }, { wch: 20 }, { wch: 20 }, { wch: 15 }];
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Transacciones');
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+        XLSX.writeFile(wb, `transacciones_c:\Users\familia\.gemini\antigravity\playground\spectral-celestial{timestamp}.xlsx`);
+        console.log(' Excel exportado');
+    } catch (error) {
+        console.error('Error:', error);
+        alert(' Error al exportar: ' + error.message);
+    }
+}
