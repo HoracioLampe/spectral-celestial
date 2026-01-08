@@ -515,7 +515,7 @@ class RelayerEngine {
                     await this.recoverStaleTransactions(batchId);
 
                     try {
-                        await this.returnFundsToFaucet(relayers, batchId);
+                        await this.returnFundsToFaucet(batchId);
                     } catch (cleanupErr) {
                         console.error(`[Engine] ⚠️ Refund failed (ignoring to save metrics): ${cleanupErr.message}`);
                     }
@@ -1411,7 +1411,7 @@ class RelayerEngine {
         console.log(`[Engine] ✅ Persistence completed.`);
     }
 
-    async returnFundsToFaucet(relayers, batchId) {
+    async returnFundsToFaucet(batchId) {
         console.log(`[Refund] 🧹 Starting fund recovery for Batch ${batchId}...`);
 
         // 1. Determine Correct Faucet (Funder-Specific)
@@ -1472,8 +1472,9 @@ class RelayerEngine {
 
         const worker = async (wallet, idx) => {
             try {
-                // Staggered start to prevent rate limits
-                await new Promise(res => setTimeout(res, idx * 100));
+                // 1. SELF-HEALING: Verify and Repair Nonce if blocked
+                console.log(`[Refund][${wallet.address.substring(0, 8)}] 🛠️  Checking for stuck transactions...`);
+                await this.verifyAndRepairNonce(wallet);
 
                 const bal = await this.getProvider().getBalance(wallet.address);
 
