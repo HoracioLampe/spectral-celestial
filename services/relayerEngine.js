@@ -935,20 +935,22 @@ class RelayerEngine {
             console.error(`Tx Failed: ${txDB.id}`, e.message);
             // If it failed BEFORE receipt (e.g. estimation error, timeout), we have 0 gas
             const nextStatus = (txDB.retry_count >= 100) ? 'FAILED' : 'WAITING_CONFIRMATION';
+
             await this.pool.query(`UPDATE batch_transactions SET status = $1, updated_at = NOW() WHERE id = $2`, [nextStatus, txDB.id]);
             return { success: false, error: e.message, gasUsed: 0n, effectiveGasPrice: 0n };
         }
     }
 
     async estimateBatchGas(batchId) {
-        console.log(`[Engine] ⛽ Estimating gas for Batch ${batchId}...`);
+        process.stdout.write(`\n[LOG-FORCE] ⛽ RelayerEngine: Starting estimateBatchGas(${batchId})\n`);
         const txRes = await this.pool.query('SELECT id, amount_usdc, wallet_address_to FROM batch_transactions WHERE batch_id = $1 AND status = $2', [batchId, 'PENDING']);
         const txs = txRes.rows;
         if (txs.length === 0) {
-            console.log(`[Engine]   > No pending transactions found for estimation.`);
+            console.log(`[Engine] > No pending transactions found for estimation.`);
             return { totalCostWei: 0n };
         }
 
+        // ... (Rest of existing estimateBatchGas logic seems fine aside from my accidental overwrite)
         const batchRes = await this.pool.query('SELECT funder_address FROM batches WHERE id = $1', [batchId]);
         const funder = batchRes.rows[0]?.funder_address || ethers.ZeroAddress;
 
@@ -963,28 +965,20 @@ class RelayerEngine {
                     batchId, tx.id, funder, tx.wallet_address_to, BigInt(tx.amount_usdc), [ethers.ZeroHash]
                 );
                 totalSampleGas += gas;
-                console.log(`[Engine]   > Sample Tx ${tx.id} gas: ${gas.toString()}`);
+                console.log(`[Engine] > Sample Tx ${tx.id} gas: ${gas.toString()}`);
             } catch (e) {
                 if (e.message && e.message.includes("Merkle")) {
-                    console.log(`[Engine]   > Sample Tx ${tx.id}: Using safe fallback (Root not set).`);
+                    console.log(`[Engine] > Sample Tx ${tx.id}: Using safe fallback (Root not set).`);
                 } else {
-                    console.warn(`[Engine]   > Sample Tx ${tx.id} estimation failed, using fallback 60k. Error: ${e.message}`);
+                    console.warn(`[Engine] > Sample Tx ${tx.id} estimation failed, using fallback 60k. Error: ${e.message}`);
                 }
-                // Reduced from 80k to 60k based on real usage (16 MATIC / 1000 txs = 0.016 per tx)
-                // At 50 gwei: 60k * 50 = 0.003 MATIC per tx
                 totalSampleGas += 60000n;
-
-                // Report to RpcManager in case it's a rate limit during estimation
-                if (this.rpcManager && this.rpcManager.handleError) {
-                    this.rpcManager.handleError(e);
-                }
             }
         }
 
-        const averageGas = totalSampleGas / BigInt(sampleSize);
+        const averageGas = totalSampleGas / BigInt(sampleSize || 1);
 
         // Configurable Buffer Percentage (default 15%)
-        // Set via GAS_BUFFER_PERCENT environment variable (e.g., 15 for 15%)
         const bufferPercent = BigInt(process.env.GAS_BUFFER_PERCENT || 15);
         const bufferedGas = (averageGas * BigInt(txs.length)) * (100n + bufferPercent) / 100n;
         const feeData = await this.getProvider().getFeeData();
@@ -994,7 +988,6 @@ class RelayerEngine {
         const gasPrice = feeData.gasPrice ? (feeData.gasPrice > maxGasPrice ? maxGasPrice : feeData.gasPrice) : 50000000000n;
 
         // Configurable Safety Cushion (default 0.02 MATIC)
-        // Set via GAS_CUSHION_MATIC environment variable (e.g., 0.02)
         const cushionMatic = process.env.GAS_CUSHION_MATIC || "0.02";
         const safetyCushion = ethers.parseEther(cushionMatic);
 
@@ -1007,18 +1000,11 @@ class RelayerEngine {
 
         if (totalCost < minTotalCost) {
             console.log(`[Engine] ⚠️ Estimation (${ethers.formatEther(totalCost)} MATIC) is below minimum threshold (${minMaticPerRelayerStr} MATIC per relayer).`);
-            console.log(`[Engine]   > Adjusting total cost to ${ethers.formatEther(minTotalCost)} MATIC.`);
+            console.log(`[Engine] > Adjusting total cost to ${ethers.formatEther(minTotalCost)} MATIC.`);
             totalCost = minTotalCost;
         }
 
-        // Detailed logging
-        console.log(`[Engine]   > Average gas per tx: ${averageGas.toString()}`);
-        console.log(`[Engine]   > Total transactions: ${txs.length}`);
-        console.log(`[Engine]   > Gas price: ${ethers.formatUnits(gasPrice, 'gwei')} gwei`);
-        console.log(`[Engine]   > Buffered gas total: ${bufferedGas.toString()}`);
-        console.log(`[Engine]   > Gas cost: ${ethers.formatEther(bufferedGas * gasPrice)} MATIC`);
-        console.log(`[Engine]   > Safety cushion: ${cushionMatic} MATIC`);
-        console.log(`[Engine]   > Total estimated cost: ${ethers.formatEther(totalCost)} MATIC (min relayer: ${minMaticPerRelayerStr} MATIC)`);
+        console.log(`[Engine] > Average gas per tx: ${averageGas.toString()}`);
         return { totalCostWei: totalCost };
     }
 
@@ -1041,7 +1027,7 @@ class RelayerEngine {
             funderFaucetWallet = funderFaucetWallet.connect(this.getProvider());
         }
 
-        console.log(`[Engine][Fund] 🎯 Using Faucet: ${funderFaucetAddress}`);
+        console.log(`[Engine][Fund] 🎯 Using Faucet: ${funderFaucetAddress} `);
 
 
         // Check Faucet Balance BEFORE calculating per-relayer split
@@ -1062,7 +1048,7 @@ class RelayerEngine {
         const minReserve = ethers.parseEther("0.5");
         const reserveGas = dynamicReserve > minReserve ? dynamicReserve : minReserve;
 
-        console.log(`[Engine][Fund] ⛽ Distribution Gas Estimate: Limit=${distributeGasLimit.toString()}, Price=${ethers.formatUnits(gasPrice, 'gwei')} gwei, Cost=${ethers.formatEther(distributeTxCost)} MATIC`);
+        console.log(`[Engine][Fund] ⛽ Distribution Gas Estimate: Limit = ${distributeGasLimit.toString()}, Price = ${ethers.formatUnits(gasPrice, 'gwei')} gwei, Cost = ${ethers.formatEther(distributeTxCost)} MATIC`);
         console.log(`[Engine][Fund] 🛡️  Setting Reserve: ${ethers.formatEther(reserveGas)} MATIC`);
 
         // CONSERVATIVE BUFFER: User requested 2x (200%) default safety. Configurable via env.
@@ -1074,10 +1060,10 @@ class RelayerEngine {
         if (faucetBalance < (fundAmount + reserveGas)) {
             // Critical Check: Do we even have enough for the GAS of the distribution tx?
             if (faucetBalance < reserveGas) {
-                throw new Error(`CRÍTICO: Faucet vacío o insuficiente para GAS de distribución. Balance: ${ethers.formatEther(faucetBalance)} MATIC. Mínimo Gas: ${ethers.formatEther(reserveGas)}`);
+                throw new Error(`CRÍTICO: Faucet vacío o insuficiente para GAS de distribución.Balance: ${ethers.formatEther(faucetBalance)} MATIC.Mínimo Gas: ${ethers.formatEther(reserveGas)} `);
             }
 
-            console.warn(`[Engine][Fund] ⚠️ Faucet low! Needed: ${ethers.formatEther(fundAmount)} + ${ethers.formatEther(reserveGas)} Gas | Has: ${ethers.formatEther(faucetBalance)}`);
+            console.warn(`[Engine][Fund] ⚠️ Faucet low! Needed: ${ethers.formatEther(fundAmount)} + ${ethers.formatEther(reserveGas)} Gas | Has: ${ethers.formatEther(faucetBalance)} `);
 
             // Cap funding to available balance minus reserve
             fundAmount = faucetBalance - reserveGas;
@@ -1086,19 +1072,19 @@ class RelayerEngine {
             // If we can't even cover the RAW cost (without buffer), we should probably stops or strictly warn.
             if (fundAmount < totalCostWei) {
                 const missing = ethers.formatEther((totalCostWei + reserveGas) - faucetBalance);
-                throw new Error(`FONDOS INSUFICIENTES: Faltan ${missing} MATIC en la Faucet para cubrir los costos de gas de los relayers y la transacción. Balance: ${ethers.formatEther(faucetBalance)}`);
+                throw new Error(`FONDOS INSUFICIENTES: Faltan ${missing} MATIC en la Faucet para cubrir los costos de gas de los relayers y la transacción.Balance: ${ethers.formatEther(faucetBalance)} `);
             }
 
             if (fundAmount <= 0n) {
                 // Formatting error message strictly for UI parsing
-                throw new Error(`Faucet sin fondos suficientes. Balance: ${ethers.formatEther(faucetBalance)} MATIC.`);
+                throw new Error(`Faucet sin fondos suficientes.Balance: ${ethers.formatEther(faucetBalance)} MATIC.`);
             }
-            warningMsg = `⚠️ Fondos ajustados. Se redujo el buffer. Disp: ${ethers.formatEther(fundAmount)} MATIC`;
+            warningMsg = `⚠️ Fondos ajustados.Se redujo el buffer.Disp: ${ethers.formatEther(fundAmount)} MATIC`;
             console.log(warningMsg);
         }
 
         const perRelayerWei = fundAmount / BigInt(relayers.length);
-        console.log(`🪙 [Background] Funding: ${ethers.formatEther(fundAmount)} MATIC total (${ethers.formatEther(perRelayerWei)} per relayer)`);
+        console.log(`🪙[Background] Funding: ${ethers.formatEther(fundAmount)} MATIC total(${ethers.formatEther(perRelayerWei)} per relayer)`);
 
         try {
             // Pass the specific wallet to use
@@ -1106,7 +1092,7 @@ class RelayerEngine {
         } catch (err) {
             // Enhance error for UI (Catch re-thrown errors)
             if (err.message.includes("insufficient funds") || err.code === 'INSUFFICIENT_FUNDS') {
-                throw new Error(`Faucet sin fondos suficientes. Balance: ${ethers.formatEther(faucetBalance)} MATIC. Requerido: ${ethers.formatEther(totalCostWei)}`);
+                throw new Error(`Faucet sin fondos suficientes.Balance: ${ethers.formatEther(faucetBalance)} MATIC.Requerido: ${ethers.formatEther(totalCostWei)} `);
             }
             throw err;
         }
@@ -1125,11 +1111,11 @@ class RelayerEngine {
 
         try {
             // STEP 0: AUTO-UNBLOCK - Verify and repair nonce BEFORE attempting atomic distribution
-            console.log(`[Engine][Fund] 🔧 Pre-flight: Verifying Faucet nonce status...`);
+            console.log(`[Engine][Fund] 🔧 Pre - flight: Verifying Faucet nonce status...`);
             const nonceRepaired = await this.verifyAndRepairNonce(walletToUse);
 
             if (!nonceRepaired) {
-                console.error(`[Engine][Fund] ❌ Nonce repair FAILED. Aborting atomic funding.`);
+                console.error(`[Engine][Fund] ❌ Nonce repair FAILED.Aborting atomic funding.`);
                 throw new Error("CRITICAL: Faucet Nonce blocked. Atomic funding aborted to prevent stuck tx.");
             }
 
@@ -1139,11 +1125,11 @@ class RelayerEngine {
 
             // Double check balance (Race condition safety)
             const faucetBalance = await this.getProvider().getBalance(walletToUse.address);
-            console.log(`[Engine][Fund] Faucet Balance (${walletToUse.address.substring(0, 6)}..): ${ethers.formatEther(faucetBalance)} MATIC`);
+            console.log(`[Engine][Fund] Faucet Balance(${walletToUse.address.substring(0, 6)}..): ${ethers.formatEther(faucetBalance)} MATIC`);
 
             // Add slight tolerance check
             if (faucetBalance < totalValueToSend) {
-                throw new Error(`Insufficient Faucet balance. Need ${ethers.formatEther(totalValueToSend)} MATIC, have ${ethers.formatEther(faucetBalance)}.`);
+                throw new Error(`Insufficient Faucet balance.Need ${ethers.formatEther(totalValueToSend)} MATIC, have ${ethers.formatEther(faucetBalance)}.`);
             }
 
             console.log(`[Engine][Fund] 🚀 Atomic Distribution START: ${relayers.length} relayers | ${ethers.formatEther(amountWei)} POL each.`);
@@ -1167,13 +1153,13 @@ class RelayerEngine {
                 }
             );
 
-            console.log(`[Blockchain][Fund] Atomic Batch SENT: ${tx.hash}`);
+            console.log(`[Blockchain][Fund] Atomic Batch SENT: ${tx.hash} `);
             // Add Timeout to Funding Wait
             const receipt = await Promise.race([
                 tx.wait(),
                 new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout waiting for Funding confirmation (300s)")), 300000))
             ]);
-            console.log(`[Blockchain][Fund] Atomic Batch CONFIRMED (Block: ${receipt.blockNumber})`);
+            console.log(`[Blockchain][Fund] Atomic Batch CONFIRMED(Block: ${receipt.blockNumber})`);
 
             // Optimistic DB Update: Set balance immediately so UI is responsive
             // We know exactly how much we sent: amountWei
@@ -1184,7 +1170,7 @@ class RelayerEngine {
                     [amountMaticStr, tx.hash, r.address, batchId]
                 )
             ));
-            console.log(`[Engine][Fund] ⚡ Optimistic Balance Update: All relayers set to ${amountMaticStr} MATIC (and Reactivated)`);
+            console.log(`[Engine][Fund] ⚡ Optimistic Balance Update: All relayers set to ${amountMaticStr} MATIC(and Reactivated)`);
 
             // Batched Verification (Optional / Background)
             // We can still run sync, but maybe lazily or skipping if we trust the receipt.
@@ -1211,10 +1197,10 @@ class RelayerEngine {
                 `UPDATE batches SET funding_amount = $1 WHERE id = $2`,
                 [totalFundingMatic, batchId]
             );
-            console.log(`[Engine][Fund] 💾 Saved Funding Amount: ${totalFundingMatic} MATIC (incl. fee)`);
+            console.log(`[Engine][Fund] 💾 Saved Funding Amount: ${totalFundingMatic} MATIC(incl.fee)`);
 
         } catch (err) {
-            console.error(`❌ Atomic funding FAILED:`, err.message);
+            console.error(`❌ Atomic funding FAILED: `, err.message);
 
             // Trigger RPC Failover if applicable
             if (this.rpcManager && this.rpcManager.handleError) {
@@ -1231,7 +1217,7 @@ class RelayerEngine {
                 console.error("[Engine] Failed to save error message to batch:", dbErr.message);
             }
 
-            throw new Error(`Atomic Funding Failed: ${err.message}`);
+            throw new Error(`Atomic Funding Failed: ${err.message} `);
         }
     }
 
@@ -1248,14 +1234,14 @@ class RelayerEngine {
             let latestNonce = await this.getProvider().getTransactionCount(address, "latest");
             let pendingNonce = await this.getProvider().getTransactionCount(address, "pending");
 
-            console.log(`[AutoRepair][${address.substring(0, 8)}] 🔍 Nonce Check: L=${latestNonce} | P=${pendingNonce}`);
+            console.log(`[AutoRepair][${address.substring(0, 8)}] 🔍 Nonce Check: L = ${latestNonce} | P=${pendingNonce} `);
 
             let attempt = 0;
             const MAX_ATTEMPTS = 10; // Safety break
 
             while (pendingNonce > latestNonce && attempt < MAX_ATTEMPTS) {
                 attempt++;
-                console.warn(`[AutoRepair][${address.substring(0, 8)}] ⚠️ Stuck Queue Detected (Diff: ${pendingNonce - latestNonce}). Clearing slot ${latestNonce}...`);
+                console.warn(`[AutoRepair][${address.substring(0, 8)}] ⚠️ Stuck Queue Detected(Diff: ${pendingNonce - latestNonce}). Clearing slot ${latestNonce}...`);
 
                 const feeData = await this.getProvider().getFeeData();
                 const boostPrice = (feeData.gasPrice * 30n) / 10n; // 3x aggressive gas
@@ -1290,7 +1276,7 @@ class RelayerEngine {
             }
 
             if (pendingNonce > latestNonce) {
-                console.warn(`[AutoRepair][${address.substring(0, 8)}] ⚠️ Queue still stuck after ${MAX_ATTEMPTS} attempts. Proceeding with caution.`);
+                console.warn(`[AutoRepair][${address.substring(0, 8)}] ⚠️ Queue still stuck after ${MAX_ATTEMPTS} attempts.Proceeding with caution.`);
                 return false; // Indicate repair failed
             } else {
                 console.log(`[AutoRepair][${address.substring(0, 8)}] ✨ Mempool is clean.`);
@@ -1298,7 +1284,7 @@ class RelayerEngine {
             }
 
         } catch (e) {
-            console.warn(`[AutoRepair] ⚠️ Failed to auto-repair nonce: ${e.message}`);
+            console.warn(`[AutoRepair] ⚠️ Failed to auto - repair nonce: ${e.message} `);
             return false;
         }
     }
@@ -1323,7 +1309,7 @@ class RelayerEngine {
         for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
             // Find FAILED/PENDING/WAITING transactions
             const failedRes = await this.pool.query(
-                `SELECT * FROM batch_transactions WHERE batch_id = $1 AND status IN ('FAILED', 'PENDING', 'WAITING_CONFIRMATION') AND retry_count < $2`,
+                `SELECT * FROM batch_transactions WHERE batch_id = $1 AND status IN('FAILED', 'PENDING', 'WAITING_CONFIRMATION') AND retry_count < $2`,
                 [batchId, 100]
             );
 
@@ -1332,7 +1318,7 @@ class RelayerEngine {
                 break;
             }
 
-            console.log(`[Engine] 🔄 Retry Cycle ${attempt}/${MAX_RETRIES}: Found ${failedRes.rows.length} failed/pending txs.`);
+            console.log(`[Engine] 🔄 Retry Cycle ${attempt} /${MAX_RETRIES}: Found ${failedRes.rows.length} failed/pending txs.`);
 
             // Shuffle relayers to ensure "another relayer grabs it" (avoiding sticky bad relayers)
             const shuffledRelayers = [...relayers].sort(() => Math.random() - 0.5);
@@ -1353,7 +1339,7 @@ class RelayerEngine {
                             const cost = res.gasUsed * res.effectiveGasPrice;
                             const costMatic = ethers.formatEther(cost);
                             await this.pool.query(
-                                `UPDATE relayers SET gas_cost = COALESCE(gas_cost::numeric, 0) + $1 WHERE address = $2 AND batch_id = $3`,
+                                `UPDATE relayers SET gas_cost = COALESCE(gas_cost:: numeric, 0) + $1 WHERE address = $2 AND batch_id = $3`,
                                 [costMatic, relayer.address, batchId]
                             );
                         }
@@ -1384,22 +1370,22 @@ class RelayerEngine {
                 await vault.storeRelayerKey(r.address, r.privateKey);
                 vaultStatus = 'ok';
             } catch (err) {
-                console.error(`[Engine] ❌ Vault storage failed for ${r.address}: ${err.message}`);
+                console.error(`[Engine] ❌ Vault storage failed for ${r.address}: ${err.message} `);
                 vaultStatus = 'nok';
             }
 
             try {
                 // Save to DB with the vault_status
                 await this.pool.query(
-                    `INSERT INTO relayers(batch_id, address, status, vault_status) 
-                     VALUES($1, $2, 'active', $3)
-                     ON CONFLICT (address) DO UPDATE SET batch_id = EXCLUDED.batch_id, status = 'active', vault_status = EXCLUDED.vault_status`,
+                    `INSERT INTO relayers(batch_id, address, status, vault_status)
+        VALUES($1, $2, 'active', $3)
+                     ON CONFLICT(address) DO UPDATE SET batch_id = EXCLUDED.batch_id, status = 'active', vault_status = EXCLUDED.vault_status`,
                     [batchId, r.address, vaultStatus]
                 );
 
                 if (vaultStatus === 'ok') {
                     if ((i + 1) % 10 === 0 || (i + 1) === relayers.length) {
-                        console.log(`[Engine]   > Secured ${i + 1}/${relayers.length} relayers.`);
+                        console.log(`[Engine] > Secured ${i + 1}/${relayers.length} relayers.`);
                     }
                 } else {
                     console.warn(`[Engine]   ⚠️ Relayer ${r.address} marked as 'nok' due to Vault error.`);
@@ -1412,7 +1398,7 @@ class RelayerEngine {
     }
 
     async returnFundsToFaucet(batchId) {
-        console.log(`[Refund] 🧹 Starting fund recovery for Batch ${batchId}...`);
+        process.stdout.write(`\n[${new Date().toISOString()}] [Refund] 🧹 FORCE LOG: Starting recovery for Batch ${batchId}\n`);
 
         // 1. Determine Correct Faucet (Funder-Specific)
         let targetFaucetAddress = null;

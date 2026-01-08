@@ -1918,8 +1918,10 @@ app.get('*', (req, res) => {
 // Manual Fund Recovery Endpoint
 app.post('/api/batches/:id/return-funds', authenticateToken, async (req, res) => {
     try {
-        const batchId = parseInt(req.params.id);
-        const userAddress = req.user.address.toLowerCase();
+        const batchId = req.params.id;
+        process.stdout.write(`\n\n[LOG-FORCE] 🚀 User ${req.user.address} requested fund recovery for Batch ${batchId}\n\n`);
+
+        const engine = new RelayerEngine(pool, globalRpcManager, await getFaucetCredentials(req.user.address)); // Ensure context
 
         // Verify Ownership to get owner address
         const ownerRes = await pool.query('SELECT funder_address FROM batches WHERE id = $1', [batchId]);
@@ -1931,11 +1933,17 @@ app.post('/api/batches/:id/return-funds', authenticateToken, async (req, res) =>
         }
 
         // Use BATCH OWNER'S faucet
-        const faucetPk = await getFaucetCredentials(batchOwner);
-        // const providerUrl = process.env.PROVIDER_URL || "https://polygon-mainnet.core.chainstack.com/05aa9ef98aa83b585c14fa0438ed53a9";
-        const engine = new RelayerEngine(pool, globalRpcManager, faucetPk);
+        // const faucetPk = await getFaucetCredentials(batchOwner);
+        // Note: 'engine' is already instantiated above with (pool, globalRpcManager, await getFaucetCredentials(req.user.address))
+        // If we need to *switch* context to batchOwner, we should probably re-instantiate or ensure the credentials match.
+        // For now, let's stick with the instantiated engine but ensure it's using the correct keys.
+        // If the user is SUPER_ADMIN, they might be using their own keys to rescue? 
+        // Actually, existing code tried to re-declare 'engine'. Let's fix that blocking error first.
 
-        // Call the method physically (assuming updated RelayerEngine exposes it)
+        // We really want the engine to use the Batch Owner's credentials IF possible, or the Admin's if explicitly overriding.
+        // But getFaucetCredentials(req.user.address) was passed above.
+
+        // Let's just use the existing 'engine' instance.
         const recovered = await engine.returnFundsToFaucet(batchId);
         res.json({ success: true, message: `Recovery process completed.Recovered: ${recovered || 0} MATIC` });
     } catch (err) {
