@@ -1890,6 +1890,8 @@ app.get('/api/debug/vault', async (req, res) => {
 // Recovery Dashboard API
 app.get('/api/recovery/batches', authenticateToken, async (req, res) => {
     try {
+        const userAddress = req.user.address.toLowerCase();
+
         const query = `
             SELECT b.id, b.total_transactions, b.status as batch_status, 
                    COUNT(r.id) as total_relayers,
@@ -1897,11 +1899,12 @@ app.get('/api/recovery/batches', authenticateToken, async (req, res) => {
                    b.funder_address
             FROM batches b
             JOIN relayers r ON b.id = r.batch_id
+            WHERE LOWER(b.funder_address) = $1
             GROUP BY b.id, b.total_transactions, b.status, b.funder_address
             HAVING SUM(CASE WHEN r.status != 'drained' THEN CAST(COALESCE(NULLIF(r.last_balance, ''), '0') AS DECIMAL) ELSE 0 END) > 0.001
             ORDER BY b.id DESC
         `;
-        const result = await pool.query(query);
+        const result = await pool.query(query, [userAddress]);
         res.json(result.rows);
     } catch (err) {
         console.error("Error fetching recovery batches:", err);
@@ -1928,7 +1931,7 @@ app.post('/api/batches/:id/return-funds', authenticateToken, async (req, res) =>
         if (ownerRes.rows.length === 0) return res.status(404).json({ error: 'Batch not found' });
         const batchOwner = ownerRes.rows[0].funder_address?.toLowerCase();
 
-        if (req.user.role !== 'SUPER_ADMIN' && batchOwner !== userAddress) {
+        if (req.user.role !== 'SUPER_ADMIN' && batchOwner !== req.user.address.toLowerCase()) {
             return res.status(403).json({ error: 'Access denied' });
         }
 
