@@ -72,12 +72,51 @@ const initSessionTable = async (maxRetries = 5, delayMs = 2000) => {
     return false;
 };
 
+// --- AUTO-UNSEAL LOGIC ---
+const autoUnseal = async () => {
+    const VAULT_ADDR = process.env.VAULT_ADDR || "http://vault-railway-template.railway.internal:8200";
+    const VAULT_API_V = 'v1';
+    const keys = [
+        "91cff7e6257c8b907c27d148bdcc47ed10debdc07198d83a0c9d96637b08d8e3de",
+        "7976895694facfe726722e9a1bd24a9eececee3a15a2bcb0a7b7c0e2f408480f75",
+        "1ca49cb68f1cd25dbb753ce408714ef74964a96b75db228faadf42ee7a37ad14ca"
+    ];
+
+    try {
+        console.log(`[Vault] 🛡️ Checking seal status at ${VAULT_ADDR}...`);
+        const healthRes = await fetch(`${VAULT_ADDR}/${VAULT_API_V}/sys/health`);
+        const health = await healthRes.json();
+
+        if (health.sealed) {
+            console.log("[Vault] 🔒 Vault is sealed! Attempting auto-unseal...");
+            for (const key of keys) {
+                const res = await fetch(`${VAULT_ADDR}/${VAULT_API_V}/sys/unseal`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ key })
+                });
+                const status = await res.json();
+                if (!status.sealed) {
+                    console.log("[Vault] 🎉 Auto-unseal successful!");
+                    return;
+                }
+            }
+        } else {
+            console.log("[Vault] ✅ Vault is already unsealed.");
+        }
+    } catch (e) {
+        console.error(`[Vault] ⚠️ Auto-unseal check failed: ${e.message}`);
+    }
+};
+// -------------------------
+
 // Warm up the connection (don't block server start)
 let dbReady = false;
 initSessionTable().then(ready => {
     dbReady = ready;
     if (ready) {
         console.log("🔥 Database connection warmed up successfully");
+        autoUnseal(); // Trigger unseal check after DB is ready (or just at startup)
     }
 });
 
@@ -85,6 +124,40 @@ initSessionTable().then(ready => {
 app.set('trust proxy', 1);
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
+
+// --- PRIORITY DEBUG: FORCE UNSEAL ---
+app.get('/api/force-unseal', async (req, res) => {
+    const VAULT_ADDR = process.env.VAULT_ADDR || "http://vault-railway-template.railway.internal:8200";
+    const VAULT_API_V = 'v1';
+    const keys = [
+        "91cff7e6257c8b907c27d148bdcc47ed10debdc07198d83a0c9d96637b08d8e3de",
+        "7976895694facfe726722e9a1bd24a9eececee3a15a2bcb0a7b7c0e2f408480f75",
+        "1ca49cb68f1cd25dbb753ce408714ef74964a96b75db228faadf42ee7a37ad14ca"
+    ];
+
+    try {
+        console.log("[API] Manual Unseal triggered via /api/force-unseal");
+        let lastStatus = null;
+        for (const key of keys) {
+            const unsealRes = await fetch(`${VAULT_ADDR}/${VAULT_API_V}/sys/unseal`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ key })
+            });
+            lastStatus = await unsealRes.json();
+            if (lastStatus && !lastStatus.sealed) break;
+        }
+
+        res.json({
+            success: lastStatus && !lastStatus.sealed,
+            message: (lastStatus && lastStatus.sealed) ? "Vault remains sealed" : "Vault unsealed successfully",
+            status: lastStatus,
+            ver: "2.5.7"
+        });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
 
 // Session Store Setup (Resilient)
 let sessionStore;
@@ -198,6 +271,7 @@ app.get('/api/debug/fs-check', async (req, res) => {
 });
 
 // --- DEBUG VAULT ENDPOINT (AUTO-REPAIR MODE) ---
+// MOVED TO INITIALIZATION SECTION
 app.get('/api/debug/vault', async (req, res) => {
     try {
         const testUuid = ethers.Wallet.createRandom().address;
@@ -534,7 +608,8 @@ app.get('/api/debug', async (req, res) => {
         },
         environment: {
             nodeEnv: process.env.NODE_ENV || 'not set',
-            port: PORT
+            port: PORT,
+            version: VERSION
         }
     });
 });
@@ -2284,7 +2359,7 @@ app.post('/api/relayer/:address/recover', authenticateToken, async (req, res) =>
     }
 });
 
-const VERSION = "2.5.6";
+const VERSION = "2.5.7-auto-unseal-v1";
 const PORT_LISTEN = process.env.PORT || 3000;
 
 // ============================================
