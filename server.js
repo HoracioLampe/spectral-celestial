@@ -1891,6 +1891,24 @@ app.get('/api/debug/vault', async (req, res) => {
 app.get('/api/batches/:id/first-transaction', authenticateToken, async (req, res) => {
     try {
         const batchId = req.params.id;
+
+        // SECURITY: Verify batch ownership
+        const ownerCheck = await pool.query(
+            'SELECT funder_address FROM batches WHERE id = $1',
+            [batchId]
+        );
+
+        if (ownerCheck.rows.length === 0) {
+            return res.status(404).json({ error: 'Batch not found' });
+        }
+
+        const batchOwner = ownerCheck.rows[0].funder_address?.toLowerCase();
+        const userAddress = req.user.address.toLowerCase();
+
+        if (req.user.role !== 'SUPER_ADMIN' && batchOwner !== userAddress) {
+            return res.status(403).json({ error: 'Access denied' });
+        }
+
         const result = await pool.query(
             'SELECT MIN(id) as first_id FROM batch_transactions WHERE batch_id = $1',
             [batchId]
