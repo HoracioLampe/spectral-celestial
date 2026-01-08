@@ -1472,11 +1472,17 @@ class RelayerEngine {
 
         const worker = async (wallet, idx) => {
             try {
+                // 0. Ensure Wallet is connected to LATEST provider (Failover/Rotation safety)
+                const currentProvider = this.getProvider();
+                if (wallet.provider !== currentProvider) {
+                    wallet = wallet.connect(currentProvider);
+                }
+
                 // 1. SELF-HEALING: Verify and Repair Nonce if blocked
                 console.log(`[Refund][${wallet.address.substring(0, 8)}] 🛠️  Checking for stuck transactions...`);
                 await this.verifyAndRepairNonce(wallet);
 
-                const bal = await this.getProvider().getBalance(wallet.address);
+                const bal = await currentProvider.getBalance(wallet.address);
 
                 if (bal > (costWei + safetyBuffer)) {
                     // Send strictly calculated amount: Balance - (Cost + Buffer)
