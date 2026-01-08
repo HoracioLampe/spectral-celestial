@@ -1907,6 +1907,55 @@ app.get('/api/batches/:id/first-transaction', authenticateToken, async (req, res
     }
 });
 
+// Get transactions for a batch with optional filters (for Excel export)
+app.get('/api/transactions', authenticateToken, async (req, res) => {
+    try {
+        const { batchId, wallet, amount, status } = req.query;
+
+        if (!batchId) {
+            return res.status(400).json({ error: 'batchId is required' });
+        }
+
+        // Build dynamic query with filters
+        let query = `
+            SELECT id, recipient_address, amount, amount_sent, tx_hash, status, created_at as timestamp
+            FROM batch_transactions
+            WHERE batch_id = $1
+        `;
+        const params = [batchId];
+        let paramIndex = 2;
+
+        // Add wallet filter if provided
+        if (wallet && wallet.trim()) {
+            query += ` AND LOWER(recipient_address) LIKE LOWER($${paramIndex})`;
+            params.push(`%${wallet.trim()}%`);
+            paramIndex++;
+        }
+
+        // Add amount filter if provided
+        if (amount && amount.trim()) {
+            query += ` AND amount = $${paramIndex}`;
+            params.push(amount.trim());
+            paramIndex++;
+        }
+
+        // Add status filter if provided
+        if (status && status.trim()) {
+            query += ` AND status = $${paramIndex}`;
+            params.push(status.trim());
+            paramIndex++;
+        }
+
+        query += ` ORDER BY id ASC`;
+
+        const result = await pool.query(query, params);
+        res.json(result.rows);
+    } catch (err) {
+        console.error('Error fetching transactions:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // Recovery Dashboard API
 app.get('/api/recovery/batches', authenticateToken, async (req, res) => {
     try {
