@@ -211,11 +211,6 @@ app.get('/api/debug/fs-list', async (req, res) => {
     }
 });
 
-    } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
-}
-});
-
 // Session Store Setup (Resilient)
 let sessionStore;
 
