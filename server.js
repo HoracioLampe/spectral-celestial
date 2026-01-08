@@ -1925,6 +1925,19 @@ app.get('/api/batches/:id/first-transaction', authenticateToken, async (req, res
     }
 });
 
+// Health check for deployment verification
+app.get('/api/health-check', (req, res) => {
+    res.json({
+        status: 'OK',
+        version: '3.3.2-excel-export',
+        timestamp: new Date().toISOString(),
+        endpoints: {
+            transactions: 'available',
+            firstTransaction: 'available'
+        }
+    });
+});
+
 // Get transactions for a batch with optional filters (for Excel export)
 app.get('/api/transactions', authenticateToken, async (req, res) => {
     try {
