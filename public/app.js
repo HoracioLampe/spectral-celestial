@@ -2773,23 +2773,30 @@ window.closeSendPolModal = () => {
 };
 
 // Validar dirección en tiempo real
-document.getElementById('polRecipientAddress').addEventListener('input', (e) => {
-    const address = e.target.value.trim();
-    const validation = document.getElementById('addressValidation');
+const recipientInput = document.getElementById('polRecipientAddress');
+if (recipientInput) {
+    recipientInput.addEventListener('input', (e) => {
+        const address = e.target.value.trim();
+        const validation = document.getElementById('addressValidation');
 
-    if (!address) {
-        validation.textContent = '';
-        return;
-    }
+        if (!address) {
+            if (validation) validation.textContent = '';
+            return;
+        }
 
-    if (ethers.isAddress(address)) {
-        validation.textContent = '✅ Dirección válida';
-        validation.style.color = '#10b981';
-    } else {
-        validation.textContent = '❌ Dirección inválida';
-        validation.style.color = '#ef4444';
-    }
-});
+        if (ethers.isAddress(address)) {
+            if (validation) {
+                validation.textContent = '✅ Dirección válida';
+                validation.style.color = '#10b981';
+            }
+        } else {
+            if (validation) {
+                validation.textContent = '❌ Dirección inválida';
+                validation.style.color = '#ef4444';
+            }
+        }
+    });
+}
 
 // MAX button function
 window.setMaxPol = () => {
