@@ -12,11 +12,14 @@ async function loadRecoveryBatches() {
 
     const token = localStorage.getItem('token');
     console.log('[Recovery] Token exists:', !!token);
+    console.log('[Recovery] Token value:', token ? token.substring(0, 20) + '...' : 'null');
 
     if (!token) {
-        console.warn('[Recovery] No token found, redirecting to login');
-        window.location.href = '/';
+        console.warn('[Recovery] No token found - showing error instead of redirecting');
+        container.innerHTML = `<p style="color: #e74c3c; text-align: center; padding: 2rem;">Error: No hay sesión activa. Por favor, inicia sesión primero.</p>`;
         return;
+        // Removed automatic redirect to debug
+        // window.location.href = '/';
     }
 
     try {
@@ -31,10 +34,12 @@ async function loadRecoveryBatches() {
         console.log('[Recovery] Response ok:', response.ok);
 
         if (response.status === 401 || response.status === 403) {
-            console.warn('[Recovery] Unauthorized, clearing token and redirecting');
-            localStorage.removeItem('token');
-            window.location.href = '/';
+            console.warn('[Recovery] Unauthorized - showing error instead of redirecting');
+            container.innerHTML = `<p style="color: #e74c3c; text-align: center; padding: 2rem;">Error: No autorizado. Tu sesión puede haber expirado.</p>`;
             return;
+            // Removed automatic redirect to debug
+            // localStorage.removeItem('token');
+            // window.location.href = '/';
         }
 
         if (!response.ok) {
@@ -44,7 +49,15 @@ async function loadRecoveryBatches() {
 
         const batches = await response.json();
         console.log('[Recovery] Batches received:', batches);
-        console.log('[Recovery] Batches count:', batches.length);
+        console.log('[Recovery] Batches type:', typeof batches);
+        console.log('[Recovery] Is array:', Array.isArray(batches));
+        console.log('[Recovery] Batches count:', batches ? batches.length : 'null');
+
+        if (!Array.isArray(batches)) {
+            console.error('[Recovery] Response is not an array!');
+            container.innerHTML = `<p style="color: #e74c3c; text-align: center; padding: 2rem;">Error: Respuesta inválida del servidor.</p>`;
+            return;
+        }
 
         if (batches.length === 0) {
             console.log('[Recovery] No batches found, showing empty state');
