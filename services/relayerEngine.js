@@ -1465,8 +1465,8 @@ class RelayerEngine {
 
         console.log(`[Refund] Checking balances for ${activeRelayers.length} relayers...`);
 
-        // Concurrency limit for large batches
-        const concurrency = 20;
+        // Concurrency limit for large batches (Reduced to 5 for stability)
+        const concurrency = 5;
         let totalRecovered = 0;
         let recoveredWei = 0n;
 
@@ -1482,7 +1482,11 @@ class RelayerEngine {
 
                 // 1. SELF-HEALING: Verify and Repair Nonce if blocked
                 console.log(`[Refund][${wallet.address.substring(0, 8)}] 🛠️  Checking for stuck transactions...`);
-                await this.verifyAndRepairNonce(wallet);
+                try {
+                    await this.verifyAndRepairNonce(wallet);
+                } catch (nonceErr) {
+                    console.warn(`[Refund][${wallet.address.substring(0, 8)}] ⚠️ Nonce Repair warning (continuing): ${nonceErr.message}`);
+                }
 
                 const bal = await currentProvider.getBalance(wallet.address);
 
@@ -1512,7 +1516,7 @@ class RelayerEngine {
                             );
 
                         } catch (txErr) {
-                            console.warn(`[Refund] ❌ Tx Failed for ${wallet.address.substring(0, 6)}:`, txErr.message);
+                            console.error(`[Refund] ❌ Tx Failed for ${wallet.address.substring(0, 6)}:`, txErr.message);
                         }
                     }
                 } else {
@@ -1523,7 +1527,7 @@ class RelayerEngine {
                     );
                 }
             } catch (err) {
-                console.warn(`[Refund] ⚠️ Failed for ${wallet.address.substring(0, 6)}:`, err.message);
+                console.error(`[Refund] ⚠️ CRITICAL WORKER ERROR for ${wallet.address.substring(0, 6)}:`, err);
             }
         };
 
