@@ -10,7 +10,7 @@ async function loadRecoveryBatches() {
     const container = document.getElementById('recoveryStats');
     console.log('[Recovery] Container element:', container);
 
-    const token = localStorage.getItem('token');
+    const token = localStorage.getItem('jwt_token');
     console.log('[Recovery] Token exists:', !!token);
     console.log('[Recovery] Token value:', token ? token.substring(0, 20) + '...' : 'null');
 
@@ -133,7 +133,7 @@ async function recoverFunds(batchId) {
         btn.disabled = true;
         btn.innerHTML = `<div class="loading-spinner"></div> Procesando...`;
 
-        const token = localStorage.getItem('token');
+        const token = localStorage.getItem('jwt_token'); // Fixed: was 'token', should be 'jwt_token'
         const response = await fetch(`/api/batches/${batchId}/return-funds`, {
             method: 'POST',
             headers: {
