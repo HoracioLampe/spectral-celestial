@@ -76,11 +76,14 @@ const initSessionTable = async (maxRetries = 5, delayMs = 2000) => {
 const autoUnseal = async () => {
     const VAULT_ADDR = process.env.VAULT_ADDR || "http://vault-railway-template.railway.internal:8200";
     const VAULT_API_V = 'v1';
-    const keys = [
-        "91cff7e6257c8b907c27d148bdcc47ed10debdc07198d83a0c9d96637b08d8e3de",
-        "7976895694facfe726722e9a1bd24a9eececee3a15a2bcb0a7b7c0e2f408480f75",
-        "1ca49cb68f1cd25dbb753ce408714ef74964a96b75db228faadf42ee7a37ad14ca"
-    ];
+
+    // Security: Read keys from environment variable (comma separated)
+    const envKeys = process.env.VAULT_UNSEAL_KEYS;
+    if (!envKeys) {
+        console.log("[Vault] ⚠️ No UNSEAL keys found in environment. Skipping auto-unseal.");
+        return;
+    }
+    const keys = envKeys.split(',').map(k => k.trim());
 
     try {
         console.log(`[Vault] 🛡️ Checking seal status at ${VAULT_ADDR}...`);
@@ -129,16 +132,16 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.get('/api/force-unseal', async (req, res) => {
     const VAULT_ADDR = process.env.VAULT_ADDR || "http://vault-railway-template.railway.internal:8200";
     const VAULT_API_V = 'v1';
-    const keys = [
-        "91cff7e6257c8b907c27d148bdcc47ed10debdc07198d83a0c9d96637b08d8e3de",
-        "7976895694facfe726722e9a1bd24a9eececee3a15a2bcb0a7b7c0e2f408480f75",
-        "1ca49cb68f1cd25dbb753ce408714ef74964a96b75db228faadf42ee7a37ad14ca",
-        "3379aa07a8d033205981dc5a17dfe45eb86bb5ba1864baf30489af86bebfa52392",
-        "314557ecfab45ae3c875afdeed7a6417e8a031dcb3e8b88a4049a3b02e7bb80d37"
-    ];
+
+    // Security: Read keys from environment
+    const envKeys = process.env.VAULT_UNSEAL_KEYS;
+    if (!envKeys) {
+        return res.status(400).json({ success: false, error: "VAULT_UNSEAL_KEYS not set in Railway variables" });
+    }
+    const keys = envKeys.split(',').map(k => k.trim());
 
     try {
-        console.log("[API] Manual Unseal triggered via /api/force-unseal (Version 2.5.9)");
+        console.log("[API] Manual Unseal triggered via /api/force-unseal (Secure Mode)");
 
         // 1. Check init status first
         const initCheck = await fetch(`${VAULT_ADDR}/${VAULT_API_V}/sys/init`);
@@ -164,7 +167,7 @@ app.get('/api/force-unseal', async (req, res) => {
             success: lastStatus && !lastStatus.sealed,
             message: (lastStatus && lastStatus.sealed) ? `Still sealed (${lastStatus.progress}/${lastStatus.t})` : "Vault unsealed successfully",
             status: lastStatus,
-            ver: "2.5.9"
+            ver: "2.6.0"
         });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
