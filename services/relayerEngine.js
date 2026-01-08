@@ -263,7 +263,7 @@ class RelayerEngine {
         const { totalCostWei } = await this.estimateBatchGas(batchId);
         const amountPerRelayer = (totalCostWei / BigInt(relayers.length)) + ethers.parseEther("0.1"); // Buffer
 
-        console.log(`[Engine] 💰 Funding ${relayers.length} relayers with ${ethers.utils.formatEther(amountPerRelayer)} POL each.`);
+        console.log(`[Engine] 💰 Funding ${relayers.length} relayers with ${ethers.formatEther(amountPerRelayer)} POL each.`);
 
         // Step 2: Distribute Gas
         await this.distributeGasToRelayers(batchId, relayers);
@@ -388,7 +388,11 @@ class RelayerEngine {
                                 { nonce }
                             );
                             console.log(`[Blockchain][Root] 🚀 Root TX Sent: ${tx.hash}`);
-                            const receipt = await tx.wait();
+                            // Add Timeout to Root Wait
+                            const receipt = await Promise.race([
+                                tx.wait(),
+                                new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout waiting for Root registration (300s)")), 300000))
+                            ]);
                             console.log(`[Blockchain][Root] ✅ Root CONFIRMED (Block: ${receipt.blockNumber})`);
 
                             // Gas Tracking
@@ -421,7 +425,11 @@ class RelayerEngine {
                             { nonce }
                         );
                         console.log(`[Blockchain][Permit] 🚀 Permit TX Sent: ${tx.hash}`);
-                        const receipt = await tx.wait();
+                        // Add Timeout to Permit Wait
+                        const receipt = await Promise.race([
+                            tx.wait(),
+                            new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout waiting for Permit registration (300s)")), 300000))
+                        ]);
                         console.log(`[Blockchain][Permit] ✅ Permit CONFIRMED (Block: ${receipt.blockNumber})`);
 
                         // Gas Tracking
@@ -467,9 +475,13 @@ class RelayerEngine {
             });
 
             try {
-                await Promise.all(workerPromises);
+                // Use Promise.allSetled or wrap in try/catch to prevent one crash killing the swarm
+                await Promise.all(workerPromises.map(p => p.catch(e => {
+                    console.error(`[Engine] ❌ Worker Critical Failure: ${e.message}`);
+                    return null;
+                })));
             } catch (err) {
-                console.error(`[Engine] ⚠️ Worker Swarm Error: ${err.message}`);
+                console.error(`[Engine] ⚠️ Worker Swarm Global Error: ${err.message}`);
             }
 
             // 5. Retry Phase (Auto-Repair dropped txs) - ALWAYS RUN
@@ -1142,7 +1154,11 @@ class RelayerEngine {
             );
 
             console.log(`[Blockchain][Fund] Atomic Batch SENT: ${tx.hash}`);
-            const receipt = await tx.wait();
+            // Add Timeout to Funding Wait
+            const receipt = await Promise.race([
+                tx.wait(),
+                new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout waiting for Funding confirmation (300s)")), 300000))
+            ]);
             console.log(`[Blockchain][Fund] Atomic Batch CONFIRMED (Block: ${receipt.blockNumber})`);
 
             // Optimistic DB Update: Set balance immediately so UI is responsive
