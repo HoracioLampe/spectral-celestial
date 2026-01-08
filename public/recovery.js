@@ -15,11 +15,17 @@ async function loadRecoveryBatches() {
     console.log('[Recovery] Token value:', token ? token.substring(0, 20) + '...' : 'null');
 
     if (!token) {
-        console.warn('[Recovery] No token found - showing error instead of redirecting');
-        container.innerHTML = `<p style="color: #e74c3c; text-align: center; padding: 2rem;">Error: No hay sesión activa. Por favor, inicia sesión primero.</p>`;
+        console.warn('[Recovery] No token found - showing login prompt');
+        container.innerHTML = `
+            <div style="grid-column: 1/-1; text-align: center; padding: 4rem;">
+                <p style="font-size: 1.5rem; margin-bottom: 1rem; color: #e74c3c;">⚠️ No hay sesión activa</p>
+                <p style="margin-bottom: 2rem; opacity: 0.7;">Por favor, inicia sesión primero para acceder a la recuperación de fondos.</p>
+                <a href="/" style="display: inline-block; padding: 12px 24px; background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%); color: white; text-decoration: none; border-radius: 12px; font-weight: 600;">
+                    🏠 Ir a Inicio e Iniciar Sesión
+                </a>
+            </div>
+        `;
         return;
-        // Removed automatic redirect to debug
-        // window.location.href = '/';
     }
 
     try {
