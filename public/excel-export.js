@@ -1,10 +1,32 @@
 // Excel Export Function for Transaction Grid
-function exportToExcel() {
+// Fetches complete data from API instead of scraping HTML
+async function exportToExcel() {
     try {
-        const tbody = document.getElementById('batchTableBody');
+        // Get current batch ID from the page
+        const batchIdElement = document.querySelector('[data-batch-id]');
+        if (!batchIdElement) {
+            alert('⚠️ No hay un batch seleccionado para exportar');
+            return;
+        }
 
-        if (!tbody || tbody.rows.length === 0) {
-            alert('⚠️ No hay datos para exportar');
+        const batchId = batchIdElement.getAttribute('data-batch-id');
+
+        // Show loading indicator
+        const btn = event?.target;
+        const originalText = btn?.innerHTML;
+        if (btn) btn.innerHTML = '⏳ Generando Excel...';
+
+        // Fetch complete transaction data from API
+        const response = await fetch(`/api/transactions?batchId=${batchId}`);
+        if (!response.ok) {
+            throw new Error('Error al obtener datos del servidor');
+        }
+
+        const transactions = await response.json();
+
+        if (!transactions || transactions.length === 0) {
+            alert('⚠️ No hay transacciones para exportar');
+            if (btn) btn.innerHTML = originalText;
             return;
         }
 
@@ -14,55 +36,55 @@ function exportToExcel() {
         // Add header row
         data.push(['ID REF', 'WALLET', 'USDC (PLAN)', 'USDC ENVIADO', 'HASH (REF)', 'TIMESTAMP', 'ESTADO']);
 
-        // Extract data from visible table rows
-        for (let i = 0; i < tbody.rows.length; i++) {
-            const row = tbody.rows[i];
-            const cells = row.cells;
-
-            // Skip if it's an empty/placeholder row
-            if (cells.length < 6) continue;
-
-            const rowData = [
-                cells[0].textContent.trim(), // ID REF
-                cells[1].textContent.trim(), // WALLET
-                cells[2].textContent.trim(), // USDC (PLAN)
-                cells[3].textContent.trim(), // USDC ENVIADO
-                cells[4].textContent.trim(), // HASH (REF)
-                new Date().toLocaleString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' }), // TIMESTAMP
-                cells[5].textContent.trim()  // ESTADO
-            ];
-
-            data.push(rowData);
-        }
+        // Add transaction data with COMPLETE values
+        transactions.forEach(tx => {
+            data.push([
+                tx.id || '',                                    // ID REF
+                tx.recipient_address || '',                     // WALLET (complete address)
+                tx.amount || '',                                // USDC (PLAN) (full value)
+                tx.amount_sent || tx.amount || '',              // USDC ENVIADO (full value)
+                tx.tx_hash || '',                               // HASH (REF) (complete hash)
+                tx.timestamp ? new Date(tx.timestamp).toLocaleString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' }) : '', // TIMESTAMP
+                tx.status || ''                                 // ESTADO
+            ]);
+        });
 
         // Create worksheet
         const ws = XLSX.utils.aoa_to_sheet(data);
 
-        // Set column widths
+        // Set column widths for better readability
         ws['!cols'] = [
             { wch: 8 },  // ID REF
-            { wch: 45 }, // WALLET
-            { wch: 15 }, // USDC (PLAN)
-            { wch: 15 }, // USDC ENVIADO
-            { wch: 20 }, // HASH (REF)
-            { wch: 20 }, // TIMESTAMP
-            { wch: 15 }  // ESTADO
+            { wch: 45 }, // WALLET (full address)
+            { wch: 20 }, // USDC (PLAN)
+            { wch: 20 }, // USDC ENVIADO
+            { wch: 70 }, // HASH (REF) (full hash)
+            { wch: 22 }, // TIMESTAMP
+            { wch: 18 }  // ESTADO
         ];
 
         // Create workbook
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, 'Transacciones');
 
-        // Generate filename with timestamp
+        // Generate filename with batch ID and timestamp
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-        const filename = `transacciones_${timestamp}.xlsx`;
+        const filename = `batch_${batchId}_transacciones_${timestamp}.xlsx`;
 
         // Download file
         XLSX.writeFile(wb, filename);
 
-        console.log(`✅ Excel exportado: ${filename}`);
+        console.log(`✅ Excel exportado: ${filename} (${transactions.length} transacciones)`);
+
+        // Restore button
+        if (btn) btn.innerHTML = originalText;
+
     } catch (error) {
         console.error('Error al exportar a Excel:', error);
         alert('❌ Error al exportar a Excel: ' + error.message);
+
+        // Restore button on error
+        const btn = event?.target;
+        if (btn && originalText) btn.innerHTML = originalText;
     }
 }
