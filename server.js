@@ -661,9 +661,11 @@ app.get('/api/auth/nonce', async (req, res) => {
 async function ensureUserFaucet(userAddress) {
     if (!userAddress) return;
     try {
+        // --- REACTIVE UNSEAL ---
+        // Before doing anything with Vault/Faucets, make sure stay unsealed
+        await autoUnseal();
+
         console.log(`[Self-Heal] Ensuring Faucet for ${userAddress}...`);
-        // This service method now handles DB check, Vault lookup, and generation (Upsert)
-        // It ensures the faucet exists and is valid.
         await faucetService.getFaucetWallet(pool, globalRpcManager.getProvider(), userAddress);
     } catch (e) {
         console.error(`[Self-Heal] Failed for ${userAddress}:`, e.message);
@@ -2302,7 +2304,7 @@ app.post('/api/relayer/:address/recover', authenticateToken, async (req, res) =>
     }
 });
 
-const VERSION = "2.6.0-diagnostic-v1";
+const VERSION = "2.6.1-reactive-unseal";
 const PORT_LISTEN = process.env.PORT || 3000;
 
 // ============================================
