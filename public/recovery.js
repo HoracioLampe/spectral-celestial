@@ -27,8 +27,11 @@ async function loadRecoveryBatches() {
         if (!response.ok) throw new Error('Error al cargar datos');
 
         const batches = await response.json();
+        console.log('[Recovery] Batches received:', batches);
+        console.log('[Recovery] Batches count:', batches.length);
 
         if (batches.length === 0) {
+            console.log('[Recovery] No batches found, showing empty state');
             container.innerHTML = `
                 <div style="grid-column: 1/-1; text-align: center; padding: 4rem; opacity: 0.6;">
                     <p style="font-size: 1.5rem; margin-bottom: 0.5rem;">🎉 Todo está limpio</p>
@@ -37,6 +40,8 @@ async function loadRecoveryBatches() {
             `;
             return;
         }
+
+        console.log('[Recovery] Rendering batch grid...');
 
         container.innerHTML = batches.map(batch => `
             <div class="batch-card" id="batch-${batch.id}">
@@ -73,7 +78,8 @@ async function loadRecoveryBatches() {
         `).join('');
 
     } catch (err) {
-        console.error(err);
+        console.error('[Recovery] Error loading batches:', err);
+        console.error('[Recovery] Error stack:', err.stack);
         container.innerHTML = `<p style="color: #e74c3c; text-align: center; padding: 2rem;">Error: ${err.message}</p>`;
     }
 }
