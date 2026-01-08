@@ -2728,21 +2728,19 @@ window.openSendPolModal = async () => {
     document.getElementById('sendPolStatus').style.display = 'none';
     document.getElementById('addressValidation').textContent = ''; // Also reset address validation
 
-    // Prevent commas in amount field
+    // Proactively replace commas with dots in amount field
     const amountInput = document.getElementById('polAmount');
-    amountInput.onkeydown = (e) => {
-        if (e.key === ',') {
-            e.preventDefault();
-            // Optional: Insert dot instead? Or just block.
-            // User asked "no deje entrar la coma", blocking is safer.
-        }
-    };
-    amountInput.oninput = (e) => {
-        // Double safety for paste
-        if (e.target.value.includes(',')) {
-            e.target.value = e.target.value.replace(/,/g, '.');
-        }
-    };
+    if (amountInput) {
+        amountInput.oninput = (e) => {
+            const value = e.target.value;
+            if (value.includes(',')) {
+                const cursor = e.target.selectionStart;
+                e.target.value = value.replace(/,/g, '.');
+                // Restore cursor position
+                if (cursor !== null) e.target.setSelectionRange(cursor, cursor);
+            }
+        };
+    }
 
     // Fetch user balance and gas quote
     const balanceSpan = document.getElementById('polAvailableBalance');
@@ -2821,7 +2819,9 @@ window.setMaxPol = () => {
 // Confirm send function
 window.confirmSendPol = async () => {
     const recipientAddress = document.getElementById('polRecipientAddress').value.trim();
-    const amount = parseFloat(document.getElementById('polAmount').value);
+    // Sanitize input: replace any comma with dot before parsing
+    const amountRaw = document.getElementById('polAmount').value.replace(/,/g, '.');
+    const amount = parseFloat(amountRaw);
     const statusEl = document.getElementById('sendPolStatus');
     const btn = document.getElementById('btnConfirmSendPol');
 
