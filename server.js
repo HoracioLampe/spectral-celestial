@@ -519,6 +519,21 @@ app.get('/api/debug', async (req, res) => {
         dbError = e.message;
     }
 
+    // Check Vault Status for debug
+    let vaultStatus = { error: "Check failed" };
+    try {
+        const VAULT_ADDR = process.env.VAULT_ADDR || "http://vault-railway-template.railway.internal:8200";
+        const vRes = await fetch(`${VAULT_ADDR}/v1/sys/health`);
+        const vData = await vRes.json();
+        vaultStatus = {
+            initialized: vData.initialized,
+            sealed: vData.sealed,
+            version: vData.version
+        };
+    } catch (e) {
+        vaultStatus = { error: e.message };
+    }
+
     res.json({
         database: {
             url: dbUrlMasked,
@@ -531,6 +546,7 @@ app.get('/api/debug', async (req, res) => {
         session: {
             storeType: sessionStore.constructor.name
         },
+        vault: vaultStatus, // Added vault status
         environment: {
             nodeEnv: process.env.NODE_ENV || 'not set',
             port: PORT,
