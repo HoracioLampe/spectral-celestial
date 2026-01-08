@@ -132,17 +132,29 @@ app.get('/api/force-unseal', async (req, res) => {
     const keys = [
         "91cff7e6257c8b907c27d148bdcc47ed10debdc07198d83a0c9d96637b08d8e3de",
         "7976895694facfe726722e9a1bd24a9eececee3a15a2bcb0a7b7c0e2f408480f75",
-        "1ca49cb68f1cd25dbb753ce408714ef74964a96b75db228faadf42ee7a37ad14ca"
+        "1ca49cb68f1cd25dbb753ce408714ef74964a96b75db228faadf42ee7a37ad14ca",
+        "3379aa07a8d033205981dc5a17dfe45eb86bb5ba1864baf30489af86bebfa52392",
+        "314557ecfab45ae3c875afdeed7a6417e8a031dcb3e8b88a4049a3b02e7bb80d37"
     ];
 
     try {
-        console.log("[API] Manual Unseal triggered via /api/force-unseal");
+        console.log("[API] Manual Unseal triggered via /api/force-unseal (Version 2.5.9)");
+
+        // 1. Check init status first
+        const initCheck = await fetch(`${VAULT_ADDR}/${VAULT_API_V}/sys/init`);
+        const initStatus = await initCheck.json();
+
+        if (!initStatus.initialized) {
+            return res.json({ success: false, message: "Vault is NOT INITIALIZED. Use /api/force-init if you need to start fresh.", status: initStatus });
+        }
+
         let lastStatus = null;
-        for (const key of keys) {
+        for (let i = 0; i < keys.length; i++) {
+            console.log(`[Vault] Applying key ${i + 1}/${keys.length}...`);
             const unsealRes = await fetch(`${VAULT_ADDR}/${VAULT_API_V}/sys/unseal`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ key })
+                body: JSON.stringify({ key: keys[i] })
             });
             lastStatus = await unsealRes.json();
             if (lastStatus && !lastStatus.sealed) break;
@@ -150,12 +162,28 @@ app.get('/api/force-unseal', async (req, res) => {
 
         res.json({
             success: lastStatus && !lastStatus.sealed,
-            message: (lastStatus && lastStatus.sealed) ? "Vault remains sealed" : "Vault unsealed successfully",
+            message: (lastStatus && lastStatus.sealed) ? `Still sealed (${lastStatus.progress}/${lastStatus.t})` : "Vault unsealed successfully",
             status: lastStatus,
-            ver: "2.5.7"
+            ver: "2.5.9"
         });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// --- PRIORITY DEBUG: FORCE INIT (SAFETY) ---
+app.get('/api/force-init', async (req, res) => {
+    const VAULT_ADDR = process.env.VAULT_ADDR || "http://vault-railway-template.railway.internal:8200";
+    try {
+        const resInit = await fetch(`${VAULT_ADDR}/v1/sys/init`, {
+            method: 'PUT',
+            body: JSON.stringify({ secret_shares: 5, secret_threshold: 3 }),
+            headers: { 'Content-Type': 'application/json' }
+        });
+        const data = await resInit.json();
+        res.json(data);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
     }
 });
 
@@ -609,7 +637,9 @@ app.get('/api/debug', async (req, res) => {
         environment: {
             nodeEnv: process.env.NODE_ENV || 'not set',
             port: PORT,
-            version: VERSION
+            version: VERSION,
+            vault_addr: process.env.VAULT_ADDR || "http://vault-railway-template.railway.internal:8200",
+            persistent_volume: fs.existsSync('/vault/file') ? 'MOUNTED' : 'MISSING'
         }
     });
 });
@@ -2359,7 +2389,7 @@ app.post('/api/relayer/:address/recover', authenticateToken, async (req, res) =>
     }
 });
 
-const VERSION = "2.5.7-auto-unseal-v1";
+const VERSION = "2.5.9-robust-unseal";
 const PORT_LISTEN = process.env.PORT || 3000;
 
 // ============================================
