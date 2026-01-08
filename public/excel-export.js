@@ -29,8 +29,27 @@ async function exportToExcel() {
             status: filterStatus
         });
 
-        // Fetch complete transaction data from API with filters
-        const response = await fetch(`/api/transactions?${params.toString()}`);
+        // Get JWT token for authentication
+        const token = localStorage.getItem('jwt_token');
+        if (!token) {
+            alert('⚠️ Sesión expirada. Por favor, inicia sesión nuevamente.');
+            if (btn) btn.innerHTML = originalText;
+            return;
+        }
+
+        // Fetch complete transaction data from API with filters and authentication
+        const response = await fetch(`/api/transactions?${params.toString()}`, {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+
+        if (response.status === 401 || response.status === 403) {
+            alert('⚠️ No autorizado. Por favor, inicia sesión nuevamente.');
+            if (btn) btn.innerHTML = originalText;
+            return;
+        }
+
         if (!response.ok) {
             throw new Error('Error al obtener datos del servidor');
         }
