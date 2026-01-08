@@ -22,7 +22,8 @@ class RelayerEngine {
         // Better approach: Use execute() wrapper for all calls.
 
         this.faucetPrivateKey = faucetPrivateKey;
-        this.faucetWallet = new ethers.Wallet(faucetPrivateKey, this.provider);
+        this.faucetWallet = new ethers.Wallet(faucetPrivateKey, this.getProvider());
+        console.log(`[Engine] ⚙️  RelayerEngine Initialized | Faucet: ${this.faucetWallet.address} | Timeout: ${this.stuckTxTimeoutMinutes}m`);
 
         this.cachedChainId = null;
 
@@ -229,7 +230,7 @@ class RelayerEngine {
             for (const r of existingRelayersRes.rows) {
                 const pk = await vault.getRelayerKey(r.address);
                 if (pk) {
-                    relayers.push(new ethers.Wallet(pk, this.provider));
+                    relayers.push(new ethers.Wallet(pk, this.getProvider()));
                 } else {
                     console.error(`[Engine] ❌ Private key for relayer ${r.address} not found in Vault!`);
                 }
@@ -244,7 +245,7 @@ class RelayerEngine {
             const newRelayers = [];
             for (let i = 0; i < needed; i++) {
                 const wallet = ethers.Wallet.createRandom();
-                const connectedWallet = wallet.connect(this.provider);
+                const connectedWallet = wallet.connect(this.getProvider());
                 newRelayers.push(connectedWallet);
                 relayers.push(connectedWallet);
             }
@@ -284,10 +285,13 @@ class RelayerEngine {
         );
 
         const relayers = [];
+        const currentProvider = this.getProvider();
+
         for (const r of existingRelayersRes.rows) {
             const pk = await vault.getRelayerKey(r.address);
             if (pk) {
-                const w = new ethers.Wallet(pk, this.provider);
+                // Ensure each relayer wallet is connected to the ACTIVE provider
+                const w = new ethers.Wallet(pk, currentProvider);
                 w.batch_id = batchId; // Attach batch_id for workerLoop context
                 relayers.push(w);
             } else {
@@ -367,7 +371,8 @@ class RelayerEngine {
                 const parallelTasks = [];
 
                 // --- 1.1 MERKLE ROOT REGISTRATION (IF NEEDED) ---
-                const contract = new ethers.Contract(this.contractAddress, this.contractABI, this.provider);
+                const contract = new ethers.Contract(this.contractAddress, this.contractABI, this.getProvider());
+                console.log(`[Engine] 🔍 Checking Merkle Root for Batch ${batchId} on-chain...`);
                 const onChainRoot = await contract.batchRoots(funderAddress, batchId);
                 const dbBatchRes = await this.pool.query('SELECT merkle_root FROM batches WHERE id = $1', [batchId]);
                 const dbRoot = dbBatchRes.rows[0]?.merkle_root;
@@ -758,21 +763,21 @@ class RelayerEngine {
 
     async processTransaction(wallet, txDB, isRetry) {
         try {
-            // Dynamic Provider Reconnection (Failover Support)
             const currentProvider = this.getProvider();
             if (wallet.provider !== currentProvider) {
-                // console.log(`[Engine] 🔄 Reconnecting wallet ${wallet.address.substring(0,6)} to active provider...`);
+                console.log(`[Engine] 🔄 Worker ${wallet.address.substring(0, 6)}: Reconnecting to active provider...`);
                 wallet = wallet.connect(currentProvider);
             }
 
             const contract = new ethers.Contract(this.contractAddress, this.contractABI, wallet);
 
             if (!this.cachedChainId) {
-                const network = await this.getProvider().getNetwork();
+                const network = await currentProvider.getNetwork();
                 this.cachedChainId = network.chainId;
             }
             const chainId = this.cachedChainId;
 
+            console.log(`[Engine][Tx] 🔍 TxID ${txDB.id}: Retrieving Merkle Proof...`);
             const proof = await this.getMerkleProof(txDB.batch_id, txDB.id);
             const amountVal = BigInt(txDB.amount_usdc);
 
@@ -788,6 +793,7 @@ class RelayerEngine {
                 [chainId, this.contractAddress, BigInt(txDB.batch_id), BigInt(txDB.id), funder, txDB.wallet_address_to, amountVal]
             ));
 
+            console.log(`[Engine][Tx] 🔍 TxID ${txDB.id}: Checking idempotency (leafHash: ${leafHash.substring(0, 10)}...)`);
             const isProcessed = await contract.processedLeaves(leafHash);
             if (isProcessed) {
                 console.log(`[Engine] 🟢 Tx ${txDB.id} already processed on-chain. Recovering data...`);
@@ -811,8 +817,9 @@ class RelayerEngine {
                 const usdc = new ethers.Contract(this.usdcAddress, [
                     "function allowance(address,address) view returns (uint256)",
                     "function balanceOf(address) view returns (uint256)"
-                ], this.provider);
+                ], this.getProvider());
 
+                console.log(`[Engine][Tx] 🔍 TxID ${txDB.id}: Verifying USDC Balance/Allowance for ${funder.substring(0, 10)}...`);
                 const [allowance, balance] = await Promise.all([
                     usdc.allowance(funder, this.contractAddress),
                     usdc.balanceOf(funder)
@@ -830,6 +837,7 @@ class RelayerEngine {
                 if (preFlightErr.message.includes("Insufficient")) throw preFlightErr;
             }
 
+            console.log(`[Engine][Tx] ⛽ TxID ${txDB.id}: Estimating Gas...`);
             const gasLimit = await contract.executeTransaction.estimateGas(
                 txDB.batch_id, txDB.id, funder, txDB.wallet_address_to, amountVal, proof
             );
@@ -862,6 +870,7 @@ class RelayerEngine {
                 gasPrice = maxExecGasPrice;
             }
 
+            console.log(`[Engine][Tx] 🚀 SENDING: Batch ${txDB.batch_id} | TxID: ${txDB.id} | To: ${txDB.wallet_address_to} | Gas: ${ethers.formatUnits(gasPrice, 'gwei')} gwei`);
             const txResponse = await contract.executeTransaction(
                 txDB.batch_id, txDB.id, funder, txDB.wallet_address_to, amountVal, proof,
                 {
@@ -870,7 +879,7 @@ class RelayerEngine {
                 }
             );
 
-            console.log(`[Blockchain][Tx] SENT: ${txResponse.hash} | TxID: ${txDB.id} | From: ${wallet.address}`);
+            console.log(`[Blockchain][Tx] ✅ SENT: ${txResponse.hash} | TxID: ${txDB.id} | From: ${wallet.address}`);
 
             // Update status immediately to sync UI
             await this.pool.query(
@@ -879,10 +888,13 @@ class RelayerEngine {
             );
 
             // Increase timeout to 5 minutes for high congestion
+            console.log(`[Engine][Tx] ⏳ Waiting for confirmation: ${txResponse.hash}...`);
             const receipt = await Promise.race([
                 txResponse.wait(1), // Wait for 1 confirmation
                 new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout waiting for receipt (300s)")), 300000))
             ]);
+
+            console.log(`[Blockchain][Tx] 📝 RECEIPT RECEIVED: ${txResponse.hash} | Status: ${receipt.status === 1 ? 'SUCCESS' : 'FAILED'}`);
 
             if (receipt.status === 1) {
                 console.log(`[Blockchain][Tx] CONFIRMED: ${txResponse.hash} | Batch: ${txDB.batch_id} | TxID: ${txDB.id}`);
@@ -1037,19 +1049,21 @@ class RelayerEngine {
 
         // --- DYNAMIC RESERVE CALCULATION ---
         const feeData = await this.getProvider().getFeeData();
-        const gasPrice = feeData.gasPrice || ethers.parseUnits("50", "gwei"); // Fallback higher for safety
+        // Matching fundRelayers aggressive gas: 3x boost
+        const gasPrice = (feeData.gasPrice || ethers.parseUnits("50", "gwei")) * 300n / 100n;
 
         // Calculate Gas accurately for the Distribution Transaction itself
         // Formula matches fundRelayers: 200k base + 50k per relayer
         const distributeGasLimit = 200000n + (BigInt(relayers.length) * 50000n);
         const distributeTxCost = distributeGasLimit * gasPrice;
 
-        // Safety Margin for Distribution Tx (1.5x of estimated cost) + Floor of 0.5 MATIC
-        const dynamicReserve = (distributeTxCost * 150n) / 100n;
+        // Safety Margin for Distribution Tx (2.0x of estimated cost) + Floor of 0.5 MATIC
+        const dynamicReserve = (distributeTxCost * 200n) / 100n;
         const minReserve = ethers.parseEther("0.5");
         const reserveGas = dynamicReserve > minReserve ? dynamicReserve : minReserve;
 
-        console.log(`[Engine][Fund] ⛽ Est. Gas Cost for Distribution: ${ethers.formatEther(distributeTxCost)} MATIC. Using Reserve: ${ethers.formatEther(reserveGas)} MATIC`);
+        console.log(`[Engine][Fund] ⛽ Distribution Gas Estimate: Limit=${distributeGasLimit.toString()}, Price=${ethers.formatUnits(gasPrice, 'gwei')} gwei, Cost=${ethers.formatEther(distributeTxCost)} MATIC`);
+        console.log(`[Engine][Fund] 🛡️  Setting Reserve: ${ethers.formatEther(reserveGas)} MATIC`);
 
         // CONSERVATIVE BUFFER: User requested 2x (200%) default safety. Configurable via env.
         const bufferPercent = BigInt(process.env.RELAYER_GAS_BUFFER_PERCENT || "200");
@@ -1231,8 +1245,8 @@ class RelayerEngine {
 
         try {
             const address = targetWallet.address;
-            let latestNonce = await this.provider.getTransactionCount(address, "latest");
-            let pendingNonce = await this.provider.getTransactionCount(address, "pending");
+            let latestNonce = await this.getProvider().getTransactionCount(address, "latest");
+            let pendingNonce = await this.getProvider().getTransactionCount(address, "pending");
 
             console.log(`[AutoRepair][${address.substring(0, 8)}] 🔍 Nonce Check: L=${latestNonce} | P=${pendingNonce}`);
 
@@ -1243,7 +1257,7 @@ class RelayerEngine {
                 attempt++;
                 console.warn(`[AutoRepair][${address.substring(0, 8)}] ⚠️ Stuck Queue Detected (Diff: ${pendingNonce - latestNonce}). Clearing slot ${latestNonce}...`);
 
-                const feeData = await this.provider.getFeeData();
+                const feeData = await this.getProvider().getFeeData();
                 const boostPrice = (feeData.gasPrice * 30n) / 10n; // 3x aggressive gas
 
                 // Send 0-value self-transfer to overwrite the "head" of the stuck queue
@@ -1271,8 +1285,8 @@ class RelayerEngine {
                 }
 
                 // Refresh counts
-                latestNonce = await this.provider.getTransactionCount(address, "latest");
-                pendingNonce = await this.provider.getTransactionCount(address, "pending");
+                latestNonce = await this.getProvider().getTransactionCount(address, "latest");
+                pendingNonce = await this.getProvider().getTransactionCount(address, "pending");
             }
 
             if (pendingNonce > latestNonce) {
@@ -1428,7 +1442,7 @@ class RelayerEngine {
         }
         console.log(`[Refund] 🏦 Sweep Target: ${targetFaucetAddress}`);
 
-        const feeData = await this.provider.getFeeData();
+        const feeData = await this.getProvider().getFeeData();
         const gasPrice = feeData.gasPrice || 50000000000n; // Default 50 gwei
         const boostedGasPrice = (gasPrice * 130n) / 100n; // 30% Boost for speed
         const costWei = 21000n * boostedGasPrice;
@@ -1445,7 +1459,7 @@ class RelayerEngine {
         for (const r of activeRelayersRes.rows) {
             const pk = await vault.getRelayerKey(r.address);
             if (pk) {
-                activeRelayers.push(new ethers.Wallet(pk, this.provider));
+                activeRelayers.push(new ethers.Wallet(pk, this.getProvider()));
             }
         }
 
@@ -1461,7 +1475,7 @@ class RelayerEngine {
                 // Staggered start to prevent rate limits
                 await new Promise(res => setTimeout(res, idx * 100));
 
-                const bal = await this.provider.getBalance(wallet.address);
+                const bal = await this.getProvider().getBalance(wallet.address);
 
                 if (bal > (costWei + safetyBuffer)) {
                     // Send strictly calculated amount: Balance - (Cost + Buffer)
@@ -1527,8 +1541,8 @@ class RelayerEngine {
      */
     async _recoverFromEvents(batchId, txId) {
         try {
-            const contract = new ethers.Contract(this.contractAddress, this.contractABI, this.provider);
-            const latestBlock = await this.provider.getBlockNumber();
+            const contract = new ethers.Contract(this.contractAddress, this.contractABI, this.getProvider());
+            const latestBlock = await this.getProvider().getBlockNumber();
             const startBlock = latestBlock - 10000; // Search last ~5-6 hours
 
             const filter = contract.filters.TransactionExecuted(batchId, txId);
