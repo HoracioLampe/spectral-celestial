@@ -245,7 +245,13 @@
                         <button class="btn-glass mb-3" onclick="showBatchList()">⬅️ Volver a Lista</button>
 
                         <h2 id="detailBatchTitle">Lote #...</h2>
-                        <p id="detailBatchDesc" style="opacity: 0.8; margin-bottom: 1.5rem;">...</p>
+                        <div
+                            style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                            <p id="detailBatchDesc" style="opacity: 0.8; margin: 0;">...</p>
+                            <p id="detailBatchIdDisplay"
+                                style="opacity: 0.6; font-size: 0.85rem; margin: 0; background: rgba(255,255,255,0.05); padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1);">
+                                ID: ...</p>
+                        </div>
 
                         <!-- Trading Terminal Dashboard (ECharts) -->
                         <div id="tradingTerminalZone" class="hidden"

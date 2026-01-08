@@ -58,7 +58,6 @@ CREATE TABLE IF NOT EXISTS courses (
 CREATE TABLE IF NOT EXISTS faucets (
     id integer NOT NULL DEFAULT nextval('faucets_id_seq'::regclass),
     address character varying(42) NOT NULL,
-    private_key text NOT NULL,
     created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id)
 );
@@ -81,7 +80,6 @@ CREATE TABLE IF NOT EXISTS relayers (
     id integer NOT NULL DEFAULT nextval('relayers_id_seq'::regclass),
     batch_id integer,
     address character varying(42) NOT NULL,
-    private_key text NOT NULL,
     total_managed numeric DEFAULT 0,
     status character varying(20) DEFAULT 'active'::character varying,
     created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
@@ -90,6 +88,7 @@ CREATE TABLE IF NOT EXISTS relayers (
     transactionhash_deposit character varying(66) DEFAULT NULL::character varying,
     gas_cost character varying(50),
     drain_balance character varying(50),
+    vault_status character varying(10) DEFAULT 'pending'::character varying,
     PRIMARY KEY (id)
 );
 

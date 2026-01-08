@@ -4,8 +4,8 @@ const { ethers } = require('ethers');
 const path = require('path');
 const RelayerEngine = require('../services/relayerEngine');
 const RpcManager = require('../services/rpcManager');
-require('dotenv').config();
-
+const vault = require('../services/vault');
+const faucetService = require('../services/faucet');
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: { rejectUnauthorized: false }
@@ -28,35 +28,35 @@ async function resume() {
 
         const funderAddress = batchRes.rows[0].funder_address;
 
-        let faucetKey;
-        // Try precise match
-        const faucetRes = await pool.query('SELECT private_key FROM faucets WHERE LOWER(funder_address) = LOWER($1)', [funderAddress]);
-        if (faucetRes.rows.length > 0) {
-            faucetKey = faucetRes.rows[0].private_key;
-            console.log(`🎯 Usando Faucet Específica para ${funderAddress}`);
-        } else {
-            // Fallback
-            const fallbackRes = await pool.query('SELECT private_key FROM faucets ORDER BY id ASC LIMIT 1');
-            faucetKey = fallbackRes.rows[0]?.private_key;
-            console.log("⚠️ Usando Faucet Fallback (Global)");
-        }
+        // Use faucetService to get a properly connected faucet wallet
+        const faucetWallet = await faucetService.getFaucetWallet(pool, globalRpcManager.getProvider(), funderAddress);
 
-        if (!faucetKey) throw new Error("No Faucet Private Key found in DB.");
+        if (!faucetWallet) throw new Error("No Faucet Wallet found/generated.");
+        console.log(`🎯 Usando Faucet: ${faucetWallet.address} para ${funderAddress}`);
 
         // 2. Instantiate Engine with RpcManager
         console.log(`🔌 Engine inicializado con RPC Principal: ${RPC_PRIMARY.substring(0, 20)}...`);
-        const engine = new RelayerEngine(pool, globalRpcManager, faucetKey);
+        const engine = new RelayerEngine(pool, globalRpcManager, faucetWallet.privateKey);
 
         // 3. Fetch Existing Relayers for this batch
-        const relayersRes = await pool.query('SELECT private_key FROM relayers WHERE batch_id = $1 AND status = \'active\'', [BATCH_ID]);
+        const relayersRes = await pool.query('SELECT address FROM relayers WHERE batch_id = $1 AND status = \'active\'', [BATCH_ID]);
         if (relayersRes.rows.length === 0) {
             console.log("⚠️ No hay relayers activos para este batch. Re-intentando con TODOS los del batch...");
-            const allRelayersRes = await pool.query('SELECT private_key FROM relayers WHERE batch_id = $1', [BATCH_ID]);
+            const allRelayersRes = await pool.query('SELECT address FROM relayers WHERE batch_id = $1', [BATCH_ID]);
             if (allRelayersRes.rows.length === 0) throw new Error("No hay relayers registrados para este batch.");
             relayersRes.rows = allRelayersRes.rows;
         }
 
-        const relayers = relayersRes.rows.map(r => new ethers.Wallet(r.private_key, engine.provider));
+        const relayers = [];
+        for (const row of relayersRes.rows) {
+            const pk = await vault.getRelayerKey(row.address);
+            if (pk) {
+                relayers.push(new ethers.Wallet(pk, engine.provider));
+            } else {
+                console.warn(`⚠️ Relayer ${row.address} not found in Vault. Skipping.`);
+            }
+        }
+
         console.log(`👷 Re-activando ${relayers.length} relayers.`);
 
         // 4. Launch Swarm (Async heartbeat)

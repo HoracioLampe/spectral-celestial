@@ -1250,6 +1250,7 @@ function updateDetailView(batch) {
     // Explicitly Get Elements to avoid RefError
     const detailBatchTitle = document.getElementById('detailBatchTitle');
     const detailBatchDesc = document.getElementById('detailBatchDesc');
+    const detailBatchIdDisplay = document.getElementById('detailBatchIdDisplay');
     const batchStatsContainer = document.getElementById('batchStatsContainer');
     const detailTotalTx = document.getElementById('detailTotalTx');
     const detailTotalAmount = document.getElementById('detailTotalAmount');
@@ -1267,6 +1268,7 @@ function updateDetailView(batch) {
 
     if (detailBatchTitle) detailBatchTitle.textContent = `${batch.batch_number} - ${batch.detail}`;
     if (detailBatchDesc) detailBatchDesc.textContent = batch.description || "Sin descripción";
+    if (detailBatchIdDisplay) detailBatchIdDisplay.textContent = `ID de Lote: ${batch.id}`;
 
     // Stats logic
     if (batchStatsContainer) {

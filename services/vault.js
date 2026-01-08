@@ -40,7 +40,8 @@ class VaultService {
             return await res.json();
         } catch (err) {
             console.error(`❌ Vault Request Failed (${path}):`, err.message);
-            return null; // Fail safe (fallback to DB if needed)
+            // RE-THROW connectivity errors so the engine knows it failed
+            throw err;
         }
     }
 
@@ -62,7 +63,7 @@ class VaultService {
 
         const res = await this._request('POST', path, payload);
         if (res && res.data) {
-            console.log(`✅ [Vault] Secured key for ${address}`);
+            console.log(`✅ [Vault] Secured faucet key for ${address}`);
             return true;
         }
         return false;
@@ -80,6 +81,51 @@ class VaultService {
         const res = await this._request('GET', path);
 
         // KV v2 structure: response.data.data.key
+        if (res && res.data && res.data.data && res.data.data.private_key) {
+            return res.data.data.private_key;
+        }
+        return null;
+    }
+
+    /**
+     * Save a Relayer Private Key to Vault
+     * Path: secret/data/relayers/<address>
+     */
+    async saveRelayerKey(address, privateKey) {
+        if (!this.enabled) return false;
+
+        const path = `${MOUNT_POINT}/data/relayers/${address.toLowerCase()}`;
+        const payload = {
+            data: {
+                private_key: privateKey,
+                created_at: new Date().toISOString()
+            }
+        };
+
+        const res = await this._request('POST', path, payload);
+        if (res && res.data) {
+            console.log(`✅ [Vault] Secured relayer key for ${address}`);
+            return true;
+        }
+        throw new Error(`Vault rejected storage for ${address}`);
+    }
+
+    /**
+     * Alias for saveRelayerKey to support legacy engine calls
+     */
+    async storeRelayerKey(address, privateKey) {
+        return this.saveRelayerKey(address, privateKey);
+    }
+
+    /**
+     * Retrieve a Relayer Private Key
+     */
+    async getRelayerKey(address) {
+        if (!this.enabled) return null;
+
+        const path = `${MOUNT_POINT}/data/relayers/${address.toLowerCase()}`;
+        const res = await this._request('GET', path);
+
         if (res && res.data && res.data.data && res.data.data.private_key) {
             return res.data.data.private_key;
         }

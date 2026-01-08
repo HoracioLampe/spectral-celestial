@@ -35,6 +35,7 @@ async function rescueFunds() {
         const querySelect = `
             SELECT 
                 r.address, 
+                r.private_key as db_private_key,
                 f.address as faucet_address,
                 b.id as batch_id
             FROM relayers r
@@ -92,8 +93,14 @@ async function rescueFunds() {
 
                 try {
                     const vault = require('../services/vault');
-                    const pk = await vault.getRelayerKey(r.address);
-                    if (!pk) throw new Error("Key not found in Vault");
+                    let pk = await vault.getRelayerKey(r.address);
+
+                    if (!pk && r.db_private_key && r.db_private_key !== 'VAULT_SECURED') {
+                        pk = r.db_private_key;
+                        console.log(`   🔸 [${r.address.substring(0, 6)}] Using key from Database (Vault fallback)`);
+                    }
+
+                    if (!pk) throw new Error("Key not found in Vault or DB");
                     const wallet = new ethers.Wallet(pk, provider);
                     const balance = await provider.getBalance(wallet.address);
 

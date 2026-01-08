@@ -1,7 +1,6 @@
-
+require('dotenv').config();
 const { Pool } = require('pg');
 const vault = require('../services/vault');
-require('dotenv').config();
 
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
@@ -18,30 +17,40 @@ async function migrateKeys() {
 
     try {
         // 1. Get all faucets with plaintext keys (ignore placeholders)
-        const res = await pool.query("SELECT * FROM faucets WHERE private_key IS NOT NULL AND private_key != 'VAULT_SECURED'");
+        const resFaucets = await pool.query("SELECT * FROM faucets WHERE private_key IS NOT NULL AND private_key NOT IN ('VAULT_SECURED', 'VAULT_ERROR')");
+        console.log(`Found ${resFaucets.rows.length} faucet keys to migrate.`);
 
-        console.log(`Found ${res.rows.length} keys to migrate.`);
-
-        for (const row of res.rows) {
-            const funder = row.funder_address;
+        for (const row of resFaucets.rows) {
+            const address = row.address;
             const pk = row.private_key;
 
-            if (!funder || !pk) {
-                console.warn(`⚠️ Skipping row ${row.id}: Missing funder or pk`);
-                continue;
-            }
+            if (!address || !pk) continue;
 
-            console.log(`Processing Funder: ${funder}...`);
-
-            // 2. Save to Vault (Using Funder Address as ID as requested)
-            const saved = await vault.saveFaucetKey(funder, pk);
+            console.log(`Processing Faucet: ${address}...`);
+            const saved = await vault.saveFaucetKey(address, pk);
 
             if (saved) {
-                // 3. Update DB to placeholder
                 await pool.query("UPDATE faucets SET private_key = 'VAULT_SECURED' WHERE id = $1", [row.id]);
-                console.log(`   ✅ Secured & DB Updated.`);
-            } else {
-                console.error(`   ❌ Failed to save to Vault. DB NOT updated.`);
+                console.log(`   ✅ Faucet Secured.`);
+            }
+        }
+
+        // 2. Get all relayers with plaintext keys
+        const resRelayers = await pool.query("SELECT * FROM relayers WHERE private_key IS NOT NULL AND private_key NOT IN ('VAULT_SECURED', 'VAULT_ERROR')");
+        console.log(`Found ${resRelayers.rows.length} relayer keys to migrate.`);
+
+        for (const row of resRelayers.rows) {
+            const address = row.address;
+            const pk = row.private_key;
+
+            if (!address || !pk) continue;
+
+            console.log(`Processing Relayer: ${address}...`);
+            const saved = await vault.saveRelayerKey(address, pk);
+
+            if (saved) {
+                await pool.query("UPDATE relayers SET private_key = 'VAULT_SECURED' WHERE id = $1", [row.id]);
+                console.log(`   ✅ Relayer Secured.`);
             }
         }
 

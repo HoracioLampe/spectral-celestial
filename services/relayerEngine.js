@@ -250,12 +250,22 @@ class RelayerEngine {
             console.log(`[Engine] Note: Using ${relayers.length} existing relayers (Requested: ${numRelayers}). Excess relayers are kept active.`);
         }
 
-        // Trigger Atomic Funding
-        console.log(`[Engine] Funding ${relayers.length} relayers for Batch ${batchId}...`);
-        await this.distributeGasToRelayers(batchId, relayers);
-        console.log(`[Engine] ✅ Relayer setup and funding COMPLETE for Batch ${batchId}.`);
+        // --- MANDATORY SECURITY CHECK ---
+        // Before we even think about touching the Faucet to fund these, verify they are in Vault.
+        await this.verifyRelayersBeforeFunding(batchId);
+        // --------------------------------
 
-        return { success: true, count: relayers.length };
+        // Step 1: Calculate gas needed
+        const totalGasWei = await this.estimateBatchGas(batchId);
+        const amountPerRelayer = totalGasWei.div(relayers.length).add(ethers.utils.parseEther("0.1")); // Buffer
+
+        console.log(`[Engine] 💰 Funding ${relayers.length} relayers with ${ethers.utils.formatEther(amountPerRelayer)} POL each.`);
+
+        // Step 2: Distribute Gas
+        await this.distributeGasToRelayers(batchId, relayers);
+
+        console.log(`[Engine] ✅ Relayer Setup Complete for Batch ${batchId}.`);
+        return true;
     }
 
     /**
@@ -1333,24 +1343,38 @@ class RelayerEngine {
         console.log(`[Engine] 💾 Persisting ${relayers.length} relayers to database...`);
         for (let i = 0; i < relayers.length; i++) {
             const r = relayers[i];
-            try {
-                // SECURE: Save key to Vault, not DB
-                await vault.storeRelayerKey(r.address, r.privateKey);
 
+            let vaultStatus = 'pending';
+            try {
+                // SECURE: Save key to Vault
+                await vault.storeRelayerKey(r.address, r.privateKey);
+                vaultStatus = 'ok';
+            } catch (err) {
+                console.error(`[Engine] ❌ Vault storage failed for ${r.address}: ${err.message}`);
+                vaultStatus = 'nok';
+            }
+
+            try {
+                // Save to DB with the vault_status
                 await this.pool.query(
-                    `INSERT INTO relayers(batch_id, address, status) 
-                     VALUES($1, $2, 'active')
-                     ON CONFLICT (address) DO UPDATE SET batch_id = EXCLUDED.batch_id, status = 'active'`,
-                    [batchId, r.address]
+                    `INSERT INTO relayers(batch_id, address, status, vault_status) 
+                     VALUES($1, $2, 'active', $3)
+                     ON CONFLICT (address) DO UPDATE SET batch_id = EXCLUDED.batch_id, status = 'active', vault_status = EXCLUDED.vault_status`,
+                    [batchId, r.address, vaultStatus]
                 );
-                if ((i + 1) % 10 === 0 || (i + 1) === relayers.length) {
-                    console.log(`[Engine]   > Saved ${i + 1}/${relayers.length} relayers.`);
+
+                if (vaultStatus === 'ok') {
+                    if ((i + 1) % 10 === 0 || (i + 1) === relayers.length) {
+                        console.log(`[Engine]   > Secured ${i + 1}/${relayers.length} relayers.`);
+                    }
+                } else {
+                    console.warn(`[Engine]   ⚠️ Relayer ${r.address} marked as 'nok' due to Vault error.`);
                 }
             } catch (err) {
-                console.warn(`[Engine] Skip/Update existing relayer ${r.address}: ${err.message}`);
+                console.error(`[Engine] DB Error for relayer ${r.address}: ${err.message}`);
             }
         }
-        console.log(`[Engine] ✅ Persistence done.`);
+        console.log(`[Engine] ✅ Persistence completed.`);
     }
 
     async returnFundsToFaucet(relayers, batchId) {
@@ -1530,6 +1554,35 @@ class RelayerEngine {
         } finally {
             client.release();
         }
+    }
+
+    /**
+     * STAGE 1.5: Verify ALL relayers in the batch have secure keys in Vault.
+     * Hard stop if even ONE relayer is faulty.
+     */
+    async verifyRelayersBeforeFunding(batchId) {
+        console.log(`[Engine] 🛡️ Verifying relayer security for Batch ${batchId}...`);
+
+        const res = await this.pool.query(
+            "SELECT address, vault_status FROM relayers WHERE batch_id = $1",
+            [batchId]
+        );
+
+        const total = res.rows.length;
+        const faulty = res.rows.filter(r => r.vault_status !== 'ok');
+
+        if (total === 0) {
+            throw new Error(`[Engine] ❌ Verification failed: No relayers found for Batch ${batchId}`);
+        }
+
+        if (faulty.length > 0) {
+            console.error(`[Engine] ❌ SECURITY BREACH DETECTED: ${faulty.length}/${total} relayers have insecure keys.`);
+            faulty.forEach(r => console.error(`   - Faulty: ${r.address} (Status: ${r.vault_status})`));
+            throw new Error(`[Engine] CRITICAL: ${faulty.length} relayers are not properly secured in Vault. ABORTING FUNDING TO PREVENT LOSS.`);
+        }
+
+        console.log(`[Engine] ✅ Security check passed: All ${total} relayers verified with 'ok' Vault status.`);
+        return true;
     }
 }
 
