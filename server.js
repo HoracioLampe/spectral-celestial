@@ -119,7 +119,12 @@ initSessionTable().then(ready => {
     dbReady = ready;
     if (ready) {
         console.log("🔥 Database connection warmed up successfully");
-        autoUnseal(); // Trigger unseal check after DB is ready (or just at startup)
+        autoUnseal(); // Initial check
+
+        // --- CONTINUOUS RESILIENCE ---
+        // Check every 5 minutes to see if Vault is sealed (e.g. after a Vault-only restart)
+        setInterval(autoUnseal, 5 * 60 * 1000);
+        console.log("🔒 Vault Auto-Unseal Monitor: Enabled (checks every 5m)");
     }
 });
 
