@@ -649,7 +649,7 @@ app.get('/testConnection', async (req, res) => {
 app.get('/api/config', (req, res) => {
     res.json({
         CONTRACT_ADDRESS: process.env.CONTRACT_ADDRESS || "0x7B25Ce9800CCE4309E92e2834E09bD89453d90c5",
-        RPC_URL: RPC_PRIMARY
+        RPC_URL: rpcUrls[0] || ""
     });
 });
 
@@ -1648,7 +1648,7 @@ app.get('/api/logs', async (req, res) => {
 
 app.get('/api/config', (req, res) => {
     res.json({
-        RPC_URL: process.env.RPC_URL || "",
+        RPC_URL: rpcUrls[0] || "",
         WS_RPC_URL: process.env.WS_RPC_URL || "",
         CONTRACT_ADDRESS: process.env.CONTRACT_ADDRESS || "0x7B25Ce9800CCE4309E92e2834E09bD89453d90c5",
         // Unit: Seconds (Default: 2 Hours = 7200s)
