@@ -1404,12 +1404,13 @@ function startProgressPolling(batchId) {
 
                     // Trigger Completion Popup and UI Update
                     if (data.batch.status === 'COMPLETED') {
-                        // Update Button State to "Realizado" (Blue)
+                        // Update Button State to "Enviado con Éxito" (Pulsing Green)
                         const btnExecute = document.getElementById('btnExecuteBatch');
                         if (btnExecute) {
-                            btnExecute.textContent = "Realizado ✅";
-                            btnExecute.className = "btn w-full btn-completed"; // Apply new class
-                            btnExecute.disabled = true; // Disable click
+                            btnExecute.textContent = "✅ Enviado con Éxito";
+                            btnExecute.classList.add('badge-success-pulse');
+                            btnExecute.style.background = "#059669";
+                            btnExecute.disabled = true;
                         }
 
                         // Show Summary Modal
