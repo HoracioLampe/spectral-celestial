@@ -382,6 +382,12 @@ class RelayerEngine {
                         const registrationTask = (async () => {
                             const nonce = currentNonce++;
                             console.log(`[Engine][Root] 📝 Queueing Root Registration (Nonce: ${nonce})`);
+
+                            // Aggressive gas pricing for fast confirmation
+                            const feeData = await this.getProvider().getFeeData();
+                            const gasPrice = (feeData.gasPrice || ethers.parseUnits("50", "gwei")) * 500n / 100n; // 5x boost
+                            console.log(`[Engine][Root] ⛽ Gas Price: ${ethers.formatUnits(gasPrice, 'gwei')} gwei (5x boost)`);
+
                             const writerContract = contract.connect(this.faucetWallet);
                             const tx = await writerContract.setBatchRootWithSignature(
                                 rootSignatureData.funder,
@@ -390,7 +396,7 @@ class RelayerEngine {
                                 BigInt(rootSignatureData.totalTransactions),
                                 BigInt(rootSignatureData.totalAmount),
                                 rootSignatureData.signature,
-                                { nonce }
+                                { nonce, gasPrice }
                             );
                             console.log(`[Blockchain][Root] 🚀 Root TX Sent: ${tx.hash}`);
 
@@ -424,6 +430,12 @@ class RelayerEngine {
                     const permitTask = (async () => {
                         const nonce = currentNonce++;
                         console.log(`[Engine][Permit] 📩 Queueing Permit Submission (Nonce: ${nonce})`);
+
+                        // Aggressive gas pricing for fast confirmation
+                        const feeData = await this.getProvider().getFeeData();
+                        const gasPrice = (feeData.gasPrice || ethers.parseUnits("50", "gwei")) * 500n / 100n; // 5x boost
+                        console.log(`[Engine][Permit] ⛽ Gas Price: ${ethers.formatUnits(gasPrice, 'gwei')} gwei (5x boost)`);
+
                         const usdc = new ethers.Contract(this.usdcAddress, [
                             "function permit(address owner, address spender, uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s) external"
                         ], this.faucetWallet);
@@ -436,7 +448,7 @@ class RelayerEngine {
                             externalPermit.v,
                             externalPermit.r,
                             externalPermit.s,
-                            { nonce }
+                            { nonce, gasPrice }
                         );
                         console.log(`[Blockchain][Permit] 🚀 Permit TX Sent: ${tx.hash}`);
 
