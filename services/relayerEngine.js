@@ -632,6 +632,8 @@ class RelayerEngine {
                     [totalGasMatic, durationStr, JSON.stringify({ final: endMetrics }), batchId]
                 );
 
+                console.log(`[Engine] ✅ Batch ${batchId} status updated to COMPLETED in database`);
+
                 // Get final batch stats for summary
                 const statsRes = await this.pool.query(`
                     SELECT 
