@@ -598,7 +598,7 @@ class RelayerEngine {
                 const statsRes = await this.pool.query(`
                     SELECT 
                         b.id,
-                        b.batch_name,
+                        b.batch_number,
                         b.start_time,
                         b.end_time,
                         b.total_transactions,
@@ -621,7 +621,7 @@ class RelayerEngine {
                 console.log('║           📊 BATCH COMPLETION SUMMARY                      ║');
                 console.log('╠════════════════════════════════════════════════════════════╣');
                 console.log(`║ Batch ID:           ${String(stats.id).padEnd(38)} ║`);
-                console.log(`║ Batch Name:         ${(stats.batch_name || 'N/A').substring(0, 38).padEnd(38)} ║`);
+                console.log(`║ Batch Name:         ${(stats.batch_number || 'N/A').substring(0, 38).padEnd(38)} ║`);
                 console.log('╠════════════════════════════════════════════════════════════╣');
                 console.log(`║ Start Time:         ${startDate.toLocaleString('es-AR').padEnd(38)} ║`);
                 console.log(`║ End Time:           ${endDate.toLocaleString('es-AR').padEnd(38)} ║`);
