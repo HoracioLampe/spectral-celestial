@@ -2977,11 +2977,16 @@ async function pollBatchProgress(batchId) {
                     }
                 }
                 const btnExecute = document.getElementById('btnExecuteBatch');
+                console.log('[DEBUG] Batch completed, updating button. Button found:', !!btnExecute);
                 if (btnExecute) {
+                    console.log('[DEBUG] Button before update:', btnExecute.textContent, btnExecute.className);
                     btnExecute.textContent = "✅ Enviado con Éxito";
                     btnExecute.classList.add('badge-success-pulse');
                     btnExecute.style.background = "#059669";
                     btnExecute.disabled = true;
+                    console.log('[DEBUG] Button after update:', btnExecute.textContent, btnExecute.className);
+                } else {
+                    console.error('[DEBUG] Button btnExecuteBatch NOT FOUND in DOM');
                 }
 
                 // Slow down polling when finished to save resources
