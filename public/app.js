@@ -1062,7 +1062,7 @@ function getStatusBadge(status) {
     if (status === 'SUBMITTING_PERMIT') return '<span class="badge" style="background: #8b5cf6;">Enviando Permit...</span>';
     if (status === 'FUNDING_RELAYERS') return '<span class="badge" style="background: #8b5cf6;">Financiando Relayers...</span>';
     if (status === 'SENT') return '<span class="badge" style="background: #10b981;">Procesando Lote</span>';
-    if (status === 'COMPLETED') return '<span class="badge" style="background: #059669; box-shadow: 0 0 10px #059669;">Enviado con Exito</span>';
+    if (status === 'COMPLETED') return '<span class="badge badge-success-pulse" style="background: #059669;">✅ Enviado con Éxito</span>';
     if (status === 'PROCESSING') return '<span class="badge" style="background: #8b5cf6;">Procesando</span>';
     return '<span class="badge" style="background: #f59e0b; color: #000;">En Preparación</span>';
 }

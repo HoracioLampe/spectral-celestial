@@ -33,6 +33,25 @@
             background: rgba(255, 255, 255, 0.2);
             transform: scale(1.1);
         }
+
+        /* Pulsing animation for success badge */
+        @keyframes pulse-success {
+
+            0%,
+            100% {
+                box-shadow: 0 0 10px #059669, 0 0 20px #059669;
+                opacity: 1;
+            }
+
+            50% {
+                box-shadow: 0 0 20px #10b981, 0 0 30px #10b981, 0 0 40px #10b981;
+                opacity: 0.9;
+            }
+        }
+
+        .badge-success-pulse {
+            animation: pulse-success 2s ease-in-out infinite;
+        }
     </style>
 </head>
 
