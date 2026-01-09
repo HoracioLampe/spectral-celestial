@@ -393,7 +393,16 @@ class RelayerEngine {
                                 { nonce }
                             );
                             console.log(`[Blockchain][Root] 🚀 Root TX Sent: ${tx.hash}`);
+
+                            // Update status immediately to show progress
+                            await this.pool.query(
+                                `UPDATE batches SET status = 'REGISTERING_ROOT', updated_at = NOW() WHERE id = $1`,
+                                [batchId]
+                            );
+                            console.log(`[Engine][Root] 📊 Status updated: REGISTERING_ROOT`);
+
                             // Add Timeout to Root Wait
+                            console.log(`[Engine][Root] ⏳ Waiting for blockchain confirmation (up to 300s)...`);
                             const receipt = await Promise.race([
                                 tx.wait(),
                                 new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout waiting for Root registration (300s)")), 300000))
@@ -430,7 +439,16 @@ class RelayerEngine {
                             { nonce }
                         );
                         console.log(`[Blockchain][Permit] 🚀 Permit TX Sent: ${tx.hash}`);
+
+                        // Update status immediately to show progress
+                        await this.pool.query(
+                            `UPDATE batches SET status = 'SUBMITTING_PERMIT', updated_at = NOW() WHERE id = $1`,
+                            [batchId]
+                        );
+                        console.log(`[Engine][Permit] 📊 Status updated: SUBMITTING_PERMIT`);
+
                         // Add Timeout to Permit Wait
+                        console.log(`[Engine][Permit] ⏳ Waiting for blockchain confirmation (up to 300s)...`);
                         const receipt = await Promise.race([
                             tx.wait(),
                             new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout waiting for Permit registration (300s)")), 300000))
@@ -1154,7 +1172,16 @@ class RelayerEngine {
             );
 
             console.log(`[Blockchain][Fund] Atomic Batch SENT: ${tx.hash} `);
+
+            // Update status immediately to show progress (before waiting for confirmation)
+            await this.pool.query(
+                `UPDATE batches SET status = 'FUNDING_RELAYERS', updated_at = NOW() WHERE id = $1`,
+                [batchId]
+            );
+            console.log(`[Engine][Fund] 📊 Status updated: FUNDING_RELAYERS`);
+
             // Add Timeout to Funding Wait
+            console.log(`[Engine][Fund] ⏳ Waiting for blockchain confirmation (up to 300s)...`);
             const receipt = await Promise.race([
                 tx.wait(),
                 new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout waiting for Funding confirmation (300s)")), 300000))
