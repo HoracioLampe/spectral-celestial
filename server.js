@@ -19,10 +19,22 @@ require('dotenv').config();
 const JWT_SECRET = process.env.JWT_SECRET || 'dappsfactory-secret-key-2026';
 
 
-// RPC Configuration (Failover) - NO HARDCODED URLs
-const RPC_PRIMARY = process.env.RPC_URL;
-const RPC_FALLBACK = process.env.RPC_FALLBACK_URL;
-const globalRpcManager = new RpcManager(RPC_PRIMARY, RPC_FALLBACK);
+// RPC Configuration - Multi-RPC Support (1-5 RPCs)
+// Reads RPC_URL_1 through RPC_URL_5 from environment
+const rpcUrls = [
+    process.env.RPC_URL_1,
+    process.env.RPC_URL_2,
+    process.env.RPC_URL_3,
+    process.env.RPC_URL_4,
+    process.env.RPC_URL_5
+].filter(Boolean);
+
+if (rpcUrls.length === 0) {
+    throw new Error('[RPC] No RPC URLs configured. Set at least RPC_URL_1 in environment.');
+}
+
+console.log(`[RPC] Configuring ${rpcUrls.length} RPC endpoint(s)...`);
+const globalRpcManager = new RpcManager(rpcUrls);
 
 // ChainId from environment (default: 137 = Polygon Mainnet)
 const CHAIN_ID = parseInt(process.env.CHAIN_ID || '137');
