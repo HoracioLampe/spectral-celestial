@@ -363,6 +363,14 @@ class RelayerEngine {
             const funderAddress = batchRes.rows[0]?.funder_address;
 
             if (funderAddress) {
+                // --- 0. FAUCET NONCE VERIFICATION (CRITICAL) ---
+                console.log(`[Engine] 🛡️ Verifying Faucet nonce before critical operations...`);
+                const faucetHealthy = await this.verifyAndRepairNonce();
+
+                if (!faucetHealthy) {
+                    throw new Error('CRITICAL: Faucet nonce is stuck and could not be repaired. Aborting batch execution.');
+                }
+
                 // --- 1. PRE-FLIGHT PARALLELIZATION ---
                 console.log(`[Engine] ⚡ Initializing Parallel Pre-flight (Root, Permit, Funding)...`);
 
