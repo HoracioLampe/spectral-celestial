@@ -133,12 +133,13 @@ class VaultService {
     }
 
     /**
-     * CENTRALIZED AUTO-UNSEAL
+     * CENTRALIZED AUTO-UNSEAL (Non-blocking with timeout)
      * Checks health and attempts unseal if needed using VAULT_UNSEAL_KEYS env.
      */
     async ensureUnsealed() {
         if (!this.enabled) return;
 
+        const TIMEOUT_MS = 5000; // 5 second timeout
         const envKeys = process.env.VAULT_UNSEAL_KEYS;
         if (!envKeys) {
             console.log("[Vault] ⚠️ No UNSEAL keys found in environment. Skipping auto-unseal.");
@@ -147,18 +148,27 @@ class VaultService {
         const keys = envKeys.split(',').map(k => k.trim());
 
         try {
-            console.log(`[Vault] 🛡️ Checking seal status at ${VAULT_ADDR}...`);
-            const healthRes = await fetch(`${VAULT_ADDR}/${VAULT_API_V}/sys/health`);
+            console.log(`[Vault] 🛡️ Checking seal status at ${VAULT_ADDR}... (timeout: ${TIMEOUT_MS}ms)`);
+
+            // Add timeout to prevent blocking
+            const healthRes = await Promise.race([
+                fetch(`${VAULT_ADDR}/${VAULT_API_V}/sys/health`),
+                new Promise((_, reject) => setTimeout(() => reject(new Error('Vault health check timeout')), TIMEOUT_MS))
+            ]);
+
             const health = await healthRes.json();
 
             if (health.sealed) {
                 console.log("[Vault] 🔒 Vault is sealed! Attempting auto-unseal...");
                 for (const key of keys) {
-                    const res = await fetch(`${VAULT_ADDR}/${VAULT_API_V}/sys/unseal`, {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ key })
-                    });
+                    const res = await Promise.race([
+                        fetch(`${VAULT_ADDR}/${VAULT_API_V}/sys/unseal`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ key })
+                        }),
+                        new Promise((_, reject) => setTimeout(() => reject(new Error('Unseal timeout')), TIMEOUT_MS))
+                    ]);
                     const status = await res.json();
                     if (!status.sealed) {
                         console.log("[Vault] 🎉 Auto-unseal successful!");
@@ -169,7 +179,8 @@ class VaultService {
                 console.log("[Vault] ✅ Vault is already unsealed.");
             }
         } catch (e) {
-            console.error(`[Vault] ⚠️ Auto-unseal check failed: ${e.message}`);
+            console.warn(`[Vault] ⚠️ Auto-unseal check failed (non-critical): ${e.message}`);
+            console.log("[Vault] ℹ️ Continuing execution. Vault operations may fail if sealed.");
         }
     }
 }

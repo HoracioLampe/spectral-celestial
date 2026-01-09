@@ -24,6 +24,9 @@ const RPC_PRIMARY = process.env.RPC_URL;
 const RPC_FALLBACK = process.env.RPC_FALLBACK_URL;
 const globalRpcManager = new RpcManager(RPC_PRIMARY, RPC_FALLBACK);
 
+// ChainId from environment (default: 137 = Polygon Mainnet)
+const CHAIN_ID = parseInt(process.env.CHAIN_ID || '137');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -72,10 +75,11 @@ const initSessionTable = async (maxRetries = 5, delayMs = 2000) => {
     return false;
 };
 
-// --- AUTO-UNSEAL LOGIC ---
+// --- AUTO-UNSEAL LOGIC (Non-blocking with timeout) ---
 const autoUnseal = async () => {
     const VAULT_ADDR = process.env.VAULT_ADDR || "http://vault-railway-template.railway.internal:8200";
     const VAULT_API_V = 'v1';
+    const TIMEOUT_MS = 5000; // 5 second timeout
 
     // Security: Read keys from environment variable (comma separated)
     const envKeys = process.env.VAULT_UNSEAL_KEYS;
@@ -86,18 +90,27 @@ const autoUnseal = async () => {
     const keys = envKeys.split(',').map(k => k.trim());
 
     try {
-        console.log(`[Vault] 🛡️ Checking seal status at ${VAULT_ADDR}...`);
-        const healthRes = await fetch(`${VAULT_ADDR}/${VAULT_API_V}/sys/health`);
+        console.log(`[Vault] 🛡️ Checking seal status at ${VAULT_ADDR}... (timeout: ${TIMEOUT_MS}ms)`);
+
+        // Add timeout to prevent blocking
+        const healthRes = await Promise.race([
+            fetch(`${VAULT_ADDR}/${VAULT_API_V}/sys/health`),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Vault health check timeout')), TIMEOUT_MS))
+        ]);
+
         const health = await healthRes.json();
 
         if (health.sealed) {
             console.log("[Vault] 🔒 Vault is sealed! Attempting auto-unseal...");
             for (const key of keys) {
-                const res = await fetch(`${VAULT_ADDR}/${VAULT_API_V}/sys/unseal`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ key })
-                });
+                const res = await Promise.race([
+                    fetch(`${VAULT_ADDR}/${VAULT_API_V}/sys/unseal`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ key })
+                    }),
+                    new Promise((_, reject) => setTimeout(() => reject(new Error('Unseal timeout')), TIMEOUT_MS))
+                ]);
                 const status = await res.json();
                 if (!status.sealed) {
                     console.log("[Vault] 🎉 Auto-unseal successful!");
@@ -108,7 +121,8 @@ const autoUnseal = async () => {
             console.log("[Vault] ✅ Vault is already unsealed.");
         }
     } catch (e) {
-        console.error(`[Vault] ⚠️ Auto-unseal check failed: ${e.message}`);
+        console.warn(`[Vault] ⚠️ Auto-unseal check failed (non-critical): ${e.message}`);
+        console.log("[Vault] ℹ️ Server will continue startup. Vault operations may fail if sealed.");
     }
 };
 // -------------------------
@@ -1207,11 +1221,11 @@ app.post('/api/batches/:id/register-merkle', authenticateToken, async (req, res)
 
         if (txs.length === 0) throw new Error("No transactions in batch");
 
-        const provider = globalRpcManager.getProvider();
-        const { chainId } = await provider.getNetwork();
+        // Use constant chainId (no RPC call, no async)
+        const chainId = CHAIN_ID;
         const contractAddress = process.env.CONTRACT_ADDRESS || "0x7B25Ce9800CCE4309E92e2834E09bD89453d90c5";
 
-        // 1. Generate Leaves
+        // 1. Generate Leaves (100% local computation)
         const abiCoder = ethers.AbiCoder.defaultAbiCoder();
         const leaves = txs.map(tx => {
             const amountVal = BigInt(tx.amount_usdc);
@@ -1229,6 +1243,8 @@ app.post('/api/batches/:id/register-merkle', authenticateToken, async (req, res)
         // Clear old Merkle nodes for this batch
         await client.query('DELETE FROM merkle_nodes WHERE batch_id = $1', [batchId]);
 
+        console.log(`[Merkle] 🌳 Building tree for ${leaves.length} leaves...`);
+
         // 2. Build Tree Level by Level
         let currentLevelNodes = leaves.map((l, idx) => ({
             batch_id: batchId,
@@ -1238,18 +1254,32 @@ app.post('/api/batches/:id/register-merkle', authenticateToken, async (req, res)
             transaction_id: l.id
         }));
 
-        // Persist Level 0
-        for (const node of currentLevelNodes) {
-            await client.query(
-                'INSERT INTO merkle_nodes (batch_id, level, position_index, hash, transaction_id) VALUES ($1, $2, $3, $4, $5)',
-                [node.batch_id, node.level, node.position_index, node.hash, node.transaction_id]
-            );
+        // OPTIMIZED: Batch insert Level 0 (all leaves at once)
+        if (currentLevelNodes.length > 0) {
+            const valuesClauses = [];
+            const params = [];
+            let paramIndex = 1;
+
+            for (const node of currentLevelNodes) {
+                valuesClauses.push(`($${paramIndex}, $${paramIndex + 1}, $${paramIndex + 2}, $${paramIndex + 3}, $${paramIndex + 4})`);
+                params.push(node.batch_id, node.level, node.position_index, node.hash, node.transaction_id);
+                paramIndex += 5;
+            }
+
+            const batchInsertQuery = `
+                INSERT INTO merkle_nodes (batch_id, level, position_index, hash, transaction_id)
+                VALUES ${valuesClauses.join(', ')}
+            `;
+
+            await client.query(batchInsertQuery, params);
+            console.log(`[Merkle] ✅ Inserted ${currentLevelNodes.length} leaves (Level 0)`);
         }
 
         let level = 0;
         while (currentLevelNodes.length > 1) {
             level++;
             const nextLevelNodes = [];
+            const parentUpdates = []; // Store parent-child relationships
 
             for (let i = 0; i < currentLevelNodes.length; i += 2) {
                 const left = currentLevelNodes[i];
@@ -1268,26 +1298,60 @@ app.post('/api/batches/:id/register-merkle', authenticateToken, async (req, res)
                     hash: parentHash
                 };
 
-                await client.query(
-                    'INSERT INTO merkle_nodes (batch_id, level, position_index, hash) VALUES ($1, $2, $3, $4)',
-                    [parentNode.batch_id, parentNode.level, parentNode.position_index, parentNode.hash]
-                );
+                nextLevelNodes.push(parentNode);
 
-                // LINK CHILDREN TO PARENT
-                await client.query(
-                    'UPDATE merkle_nodes SET parent_hash = $1 WHERE batch_id = $2 AND hash = $3',
-                    [parentNode.hash, batchId, left.hash]
-                );
+                // Store relationships for batch update
+                parentUpdates.push({ parentHash, leftHash: left.hash, rightHash: right.hash });
+            }
 
-                if (right.hash !== left.hash) { // Avoid double update if self-paired (rare in this logic but possible)
-                    await client.query(
-                        'UPDATE merkle_nodes SET parent_hash = $1 WHERE batch_id = $2 AND hash = $3',
-                        [parentNode.hash, batchId, right.hash]
-                    );
+            // OPTIMIZED: Batch insert all nodes for this level
+            if (nextLevelNodes.length > 0) {
+                const valuesClauses = [];
+                const params = [];
+                let paramIndex = 1;
+
+                for (const node of nextLevelNodes) {
+                    valuesClauses.push(`($${paramIndex}, $${paramIndex + 1}, $${paramIndex + 2}, $${paramIndex + 3})`);
+                    params.push(node.batch_id, node.level, node.position_index, node.hash);
+                    paramIndex += 4;
                 }
 
-                nextLevelNodes.push(parentNode);
+                const batchInsertQuery = `
+                    INSERT INTO merkle_nodes (batch_id, level, position_index, hash)
+                    VALUES ${valuesClauses.join(', ')}
+                `;
+
+                await client.query(batchInsertQuery, params);
+                console.log(`[Merkle] ✅ Inserted ${nextLevelNodes.length} nodes (Level ${level})`);
             }
+
+            // OPTIMIZED: Batch update parent relationships using CASE statement
+            if (parentUpdates.length > 0) {
+                const whenClauses = [];
+                const hashList = [];
+
+                for (const update of parentUpdates) {
+                    whenClauses.push(`WHEN hash = '${update.leftHash}' THEN '${update.parentHash}'`);
+                    hashList.push(`'${update.leftHash}'`);
+
+                    if (update.rightHash !== update.leftHash) {
+                        whenClauses.push(`WHEN hash = '${update.rightHash}' THEN '${update.parentHash}'`);
+                        hashList.push(`'${update.rightHash}'`);
+                    }
+                }
+
+                const batchUpdateQuery = `
+                    UPDATE merkle_nodes
+                    SET parent_hash = CASE
+                        ${whenClauses.join(' ')}
+                    END
+                    WHERE batch_id = $1 AND hash IN (${hashList.join(', ')})
+                `;
+
+                await client.query(batchUpdateQuery, [batchId]);
+                console.log(`[Merkle] ✅ Updated ${parentUpdates.length} parent relationships (Level ${level})`);
+            }
+
             currentLevelNodes = nextLevelNodes;
         }
 

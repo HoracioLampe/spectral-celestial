@@ -1058,7 +1058,7 @@ function renderBatchesList(batches) {
 
 function getStatusBadge(status) {
     if (status === 'READY') return '<span class="badge" style="background: #3b82f6;">Preparado</span>';
-    if (status === 'SENT') return '<span class="badge" style="background: #10b981;">Enviando</span>';
+    if (status === 'SENT') return '<span class="badge" style="background: #10b981;">Procesando Lote</span>';
     if (status === 'COMPLETED') return '<span class="badge" style="background: #059669; box-shadow: 0 0 10px #059669;">Enviado con Exito</span>';
     if (status === 'PROCESSING') return '<span class="badge" style="background: #8b5cf6;">Procesando</span>';
     return '<span class="badge" style="background: #f59e0b; color: #000;">En Preparación</span>';
