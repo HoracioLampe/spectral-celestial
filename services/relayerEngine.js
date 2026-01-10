@@ -622,7 +622,6 @@ class RelayerEngine {
                 // Update Batch with Metrics and Final Status
                 await this.pool.query(
                     `UPDATE batches SET 
-                    status = 'COMPLETED', 
                     total_gas_used = $1, 
                     execution_time = $2, 
                     end_time = NOW(),
@@ -633,6 +632,36 @@ class RelayerEngine {
                 );
 
                 console.log(`[Engine] ✅ Batch ${batchId} status updated to COMPLETED in database`);
+
+                // Get final transaction counts to determine actual batch status
+                const finalCountRes = await this.pool.query(`
+                    SELECT 
+                        COUNT(*) as total,
+                        COUNT(CASE WHEN status = 'COMPLETED' THEN 1 END) as completed,
+                        COUNT(CASE WHEN status = 'FAILED' THEN 1 END) as failed
+                    FROM batch_transactions 
+                    WHERE batch_id = $1
+                `, [batchId]);
+
+                const counts = finalCountRes.rows[0];
+                const total = parseInt(counts.total);
+                const completed = parseInt(counts.completed);
+                const failed = parseInt(counts.failed);
+
+                // Determine final status based on actual transaction results
+                let finalStatus = 'COMPLETED';
+                if (completed < total) {
+                    finalStatus = 'FAILED'; // Not all transactions completed
+                    console.log(`[Engine] ⚠️ Batch ${batchId} marked as FAILED: ${completed}/${total} completed, ${failed} failed`);
+                } else {
+                    console.log(`[Engine] ✅ Batch ${batchId} fully completed: ${completed}/${total} transactions`);
+                }
+
+                // Update with correct status
+                await this.pool.query(
+                    `UPDATE batches SET status = $1 WHERE id = $2`,
+                    [finalStatus, batchId]
+                );
 
                 // Get final batch stats for summary
                 const statsRes = await this.pool.query(`

@@ -1080,7 +1080,7 @@ function renderBatchesList(batches) {
     batches.forEach(b => {
         const tr = document.createElement('tr');
         const statusBadge = getStatusBadge(b.status);
-        const progress = `${b.completed_count || 0} / ${b.total_transactions || 0}`;
+        const progress = `${b.sent_transactions || 0} / ${b.total_transactions || 0}`;
         // Fix: Divide by 1,000,000 for display
         let totalVal = (b.total_usdc !== null && b.total_usdc !== undefined) ? parseFloat(b.total_usdc) : 0;
         const total = (b.total_usdc !== null) ? `$${(totalVal / 1000000).toFixed(6)}` : '-';
