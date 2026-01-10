@@ -12,8 +12,6 @@ class VaultService {
         this.enabled = !!process.env.VAULT_TOKEN;
         if (!this.enabled) {
             console.warn("⚠️ VaultService: VAULT_TOKEN not found. Secrets will NOT be saved to Vault.");
-        } else {
-            console.log(`🔒 VaultService: Enabled. Connecting to ${VAULT_ADDR}`);
         }
     }
 
@@ -63,7 +61,6 @@ class VaultService {
 
         const res = await this._request('POST', path, payload);
         if (res && res.data) {
-            console.log(`✅ [Vault] Secured faucet key for ${address}`);
             return true;
         }
         return false;
@@ -104,7 +101,6 @@ class VaultService {
 
         const res = await this._request('POST', path, payload);
         if (res && res.data) {
-            console.log(`✅ [Vault] Secured relayer key for ${address}`);
             return true;
         }
         throw new Error(`Vault rejected storage for ${address}`);
@@ -142,13 +138,11 @@ class VaultService {
         const TIMEOUT_MS = 5000; // 5 second timeout
         const envKeys = process.env.VAULT_UNSEAL_KEYS;
         if (!envKeys) {
-            console.log("[Vault] ⚠️ No UNSEAL keys found in environment. Skipping auto-unseal.");
             return;
         }
         const keys = envKeys.split(',').map(k => k.trim());
 
         try {
-            console.log(`[Vault] 🛡️ Checking seal status at ${VAULT_ADDR}... (timeout: ${TIMEOUT_MS}ms)`);
 
             // Add timeout to prevent blocking
             const healthRes = await Promise.race([
@@ -175,12 +169,9 @@ class VaultService {
                         return;
                     }
                 }
-            } else {
-                console.log("[Vault] ✅ Vault is already unsealed.");
             }
         } catch (e) {
             console.warn(`[Vault] ⚠️ Auto-unseal check failed (non-critical): ${e.message}`);
-            console.log("[Vault] ℹ️ Continuing execution. Vault operations may fail if sealed.");
         }
     }
 }
