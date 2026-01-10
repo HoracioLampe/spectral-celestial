@@ -1685,6 +1685,31 @@ app.get('/api/balances/:address', authenticateToken, async (req, res) => {
     }
 });
 
+// NEW: Contract Nonce Endpoint (For Ledger Compatibility)
+app.get('/api/contract/nonce/:address', authenticateToken, async (req, res) => {
+    try {
+        const address = req.params.address;
+        const userAddress = req.user.address.toLowerCase();
+
+        // Security: Only allow fetching your own nonce
+        if (address.toLowerCase() !== userAddress) {
+            return res.status(403).json({ error: 'Unauthorized' });
+        }
+
+        const nonce = await globalRpcManager.execute(async (provider) => {
+            const contractAddr = process.env.CONTRACT_ADDRESS || "0x7B25Ce9800CCE4309E92e2834E09bD89453d90c5";
+            const distributorAbi = ["function nonces(address owner) view returns (uint256)"];
+            const contract = new ethers.Contract(contractAddr, distributorAbi, provider);
+            return await contract.nonces(address);
+        });
+
+        res.json({ nonce: nonce.toString() });
+    } catch (err) {
+        console.error("[Contract Nonce] Error:", err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 app.get('/api/logs', async (req, res) => {
     res.json({ message: "Logs are available in the console" });
 });

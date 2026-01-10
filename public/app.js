@@ -3151,9 +3151,24 @@ async function signBatchRoot(batchId) {
     const totalTransactions = data.batch.total_transactions || 0;
     const totalAmountBase = data.batch.total_usdc || "0";
 
-    const distributorAbi = ["function nonces(address owner) view returns (uint256)"];
-    const contract = new ethers.Contract(APP_CONFIG.CONTRACT_ADDRESS, distributorAbi, provider);
-    const nonce = await contract.nonces(userAddress);
+    // Try to get nonce from backend first (more reliable with Ledger)
+    let nonce;
+    try {
+        const nonceRes = await authenticatedFetch(`/api/contract/nonce/${userAddress}`);
+        if (nonceRes.ok) {
+            const nonceData = await nonceRes.json();
+            nonce = BigInt(nonceData.nonce);
+            console.log("✅ Nonce from backend:", nonce.toString());
+        } else {
+            throw new Error("Backend nonce fetch failed");
+        }
+    } catch (e) {
+        console.warn("⚠️ Backend nonce failed, using provider:", e.message);
+        const distributorAbi = ["function nonces(address owner) view returns (uint256)"];
+        const contract = new ethers.Contract(APP_CONFIG.CONTRACT_ADDRESS, distributorAbi, provider);
+        nonce = await contract.nonces(userAddress);
+        console.log("✅ Nonce from provider:", nonce.toString());
+    }
 
     const network = await provider.getNetwork();
     const chainId = 137; // Hardcoded for Polygon Mainnet consistency
