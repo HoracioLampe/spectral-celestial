@@ -1080,7 +1080,7 @@ function renderBatchesList(batches) {
     batches.forEach(b => {
         const tr = document.createElement('tr');
         const statusBadge = getStatusBadge(b.status);
-        const progress = `${b.sent_transactions || 0} / ${b.total_transactions || 0}`;
+        const progress = `${b.completed_count || 0} / ${b.total_transactions || 0}`;
         // Fix: Divide by 1,000,000 for display
         let totalVal = (b.total_usdc !== null && b.total_usdc !== undefined) ? parseFloat(b.total_usdc) : 0;
         const total = (b.total_usdc !== null) ? `$${(totalVal / 1000000).toFixed(6)}` : '-';
@@ -1111,7 +1111,7 @@ function getStatusBadge(status) {
     if (status === 'SUBMITTING_PERMIT') return '<span class="badge" style="background: #8b5cf6;">Enviando Permit...</span>';
     if (status === 'FUNDING_RELAYERS') return '<span class="badge" style="background: #8b5cf6;">Financiando Relayers...</span>';
     if (status === 'SENT') return '<span class="badge" style="background: #10b981;">Procesando Lote</span>';
-    if (status === 'COMPLETED') return '<span class="badge" style="background: #059669; box-shadow: 0 0 10px #059669;">Enviado con Exito</span>';
+    if (status === 'COMPLETED') return '<span class="badge" style="background: #059669; box-shadow: 0 0 10px #059669;">COMPLETED</span>';
     if (status === 'PROCESSING') return '<span class="badge" style="background: #8b5cf6;">Procesando</span>';
     return '<span class="badge" style="background: #f59e0b; color: #000;">En Preparación</span>';
 }
@@ -2543,7 +2543,7 @@ async function executeDistribution() {
 
         if (response.ok) {
             processStatus.textContent = "✅ Distribución iniciada con éxito.";
-            console.log('[DEBUG] Setting button to En curso. Button:', btnExecute, 'ID:', btnExecute?.id);
+            // Button set to En curso
             btnExecute.textContent = "✅ En curso";
             btnExecute.style.background = "#10b981"; // Green
             if (signHint) signHint.classList.add('hidden');
@@ -3023,12 +3023,10 @@ async function pollBatchProgress(batchId) {
             // Also check if timer already stopped (processing finished)
             const timerStopped = !window.processTimerInterval;
 
-            // Debug logging
-            console.log('[DEBUG Poll] Status:', status, '| Completed:', completed, '/', total, '| Pending:', pending, '| Failed:', failed);
-            console.log('[DEBUG Poll] isDoneStats:', isDoneStats, '| isBackendDone:', isBackendDone, '| timerStopped:', timerStopped);
+            // Polling status check
 
             if (isDoneStats || isBackendDone || timerStopped || (completed >= total && total > 0)) {
-                console.log('[DEBUG Poll] ✅ Batch completion detected! Updating UI...');
+                // Batch completion detected
                 stopTimer();
                 const processStatus = document.getElementById('merkleTestStatus');
                 if (processStatus) {
@@ -3041,16 +3039,13 @@ async function pollBatchProgress(batchId) {
                     }
                 }
                 const btnExecute = document.getElementById('btnExecuteBatch');
-                console.log('[DEBUG] Batch completed, updating button. Button found:', !!btnExecute);
                 if (btnExecute) {
-                    console.log('[DEBUG] Button before update:', btnExecute.textContent, btnExecute.className);
                     btnExecute.textContent = "✅ Enviado con Éxito";
                     btnExecute.classList.add('badge-success-pulse');
                     btnExecute.style.background = "#059669";
                     btnExecute.disabled = true;
-                    console.log('[DEBUG] Button after update:', btnExecute.textContent, btnExecute.className);
                 } else {
-                    console.error('[DEBUG] Button btnExecuteBatch NOT FOUND in DOM');
+                    console.warn('Button btnExecuteBatch not found');
                 }
 
                 // Slow down polling when finished to save resources
