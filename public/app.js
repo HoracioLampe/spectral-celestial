@@ -763,25 +763,62 @@ async function fetchBalances() {
         console.log("🌙 fetchBalances skipped: No userAddress or provider ready yet.");
         return;
     }
+
+    const elMatic = document.getElementById('maticBalance');
+    const elUsdc = document.getElementById('usdcBalance');
+
     try {
         console.log("💰 Fetching balances for:", userAddress);
-        const balance = await provider.getBalance(userAddress);
+
+        // Fetch MATIC balance with timeout
+        const balancePromise = provider.getBalance(userAddress);
+        const balance = await Promise.race([
+            balancePromise,
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout fetching MATIC')), 10000))
+        ]);
+
         const maticVal = parseFloat(ethers.formatEther(balance)).toFixed(4);
         console.log("💎 MATIC Balance:", maticVal);
+        if (elMatic) {
+            elMatic.textContent = maticVal;
+            elMatic.style.color = '#4ade80'; // Green on success
+        }
 
-        const elMatic = document.getElementById('maticBalance');
-        if (elMatic) elMatic.textContent = maticVal;
-
+        // Fetch USDC balance with timeout
         const usdcContract = new ethers.Contract(USDC_ADDRESS, USDC_ABI, provider);
-        const usdcRaw = await usdcContract.balanceOf(userAddress);
+        const usdcPromise = usdcContract.balanceOf(userAddress);
+        const usdcRaw = await Promise.race([
+            usdcPromise,
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout fetching USDC')), 10000))
+        ]);
+
         const usdcVal = parseFloat(ethers.formatUnits(usdcRaw, 6)).toFixed(2);
         console.log("💵 USDC Balance:", usdcVal);
-
-        const elUsdc = document.getElementById('usdcBalance');
-        if (elUsdc) elUsdc.textContent = usdcVal;
+        if (elUsdc) {
+            elUsdc.textContent = usdcVal;
+            elUsdc.style.color = '#4ade80'; // Green on success
+        }
 
     } catch (e) {
         console.error("❌ Error fetching balances:", e);
+
+        // Show visible error in UI
+        if (elMatic && elMatic.textContent === '0.0000') {
+            elMatic.textContent = 'Error RPC';
+            elMatic.style.color = '#ef4444'; // Red
+            elMatic.title = e.message;
+        }
+        if (elUsdc && elUsdc.textContent === '0.00') {
+            elUsdc.textContent = 'Error RPC';
+            elUsdc.style.color = '#ef4444'; // Red
+            elUsdc.title = e.message;
+        }
+
+        // Retry once after 2 seconds
+        setTimeout(() => {
+            console.log("🔄 Retrying balance fetch...");
+            fetchBalances();
+        }, 2000);
     }
 }
 
