@@ -2755,7 +2755,6 @@ async function signBatchRoot(batchId) {
     const contract = new ethers.Contract(APP_CONFIG.CONTRACT_ADDRESS, distributorAbi, provider);
     const nonce = await contract.nonces(userAddress);
 
-    const network = await provider.getNetwork();
     const chainId = 137; // Hardcoded for Polygon Mainnet consistency
     const domain = {
         name: 'BatchDistributor',
@@ -3180,7 +3179,6 @@ async function signBatchRoot(batchId) {
         console.log("✅ Nonce from provider:", nonce.toString());
     }
 
-    const network = await provider.getNetwork();
     const chainId = 137; // Hardcoded for Polygon Mainnet consistency
     const domain = {
         name: 'BatchDistributor',
