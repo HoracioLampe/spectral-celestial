@@ -692,7 +692,9 @@ async function ensureUserFaucet(userAddress) {
         await autoUnseal();
 
         console.log(`[Self-Heal] Ensuring Faucet for ${userAddress}...`);
-        await faucetService.getFaucetWallet(pool, globalRpcManager.getProvider(), userAddress);
+        await globalRpcManager.execute(async (provider) => {
+            await faucetService.getFaucetWallet(pool, provider, userAddress);
+        });
     } catch (e) {
         console.error(`[Self-Heal] Failed for ${userAddress}:`, e.message);
     }
@@ -948,13 +950,13 @@ app.post('/api/admin/unblock-faucets', authenticateToken, async (req, res) => {
                 const privateKey = await vault.getFaucetKey(faucet.address);
                 if (!privateKey) throw new Error("Key not found in Vault");
 
-                const wallet = new ethers.Wallet(privateKey, provider);
-                const address = wallet.address;
-
-                // Get nonce status
-                const latestNonce = await provider.getTransactionCount(address, "latest");
-                const pendingNonce = await provider.getTransactionCount(address, "pending");
-                const balance = await provider.getBalance(address);
+                const [latestNonce, pendingNonce, balance, feeData] = await globalRpcManager.execute(async (provider) => {
+                    const lNonce = await provider.getTransactionCount(address, "latest");
+                    const pNonce = await provider.getTransactionCount(address, "pending");
+                    const bal = await provider.getBalance(address);
+                    const fees = await provider.getFeeData();
+                    return [lNonce, pNonce, bal, fees];
+                });
 
                 const isBlocked = pendingNonce > latestNonce;
                 const nonceDiff = pendingNonce - latestNonce;
@@ -978,15 +980,17 @@ app.post('/api/admin/unblock-faucets', authenticateToken, async (req, res) => {
                     console.log(`[Admin] 🔧 Repairing ${address.substring(0, 10)}... (${nonceDiff} tx stuck)`);
 
                     try {
-                        const feeData = await provider.getFeeData();
                         const boostPrice = (feeData.gasPrice * 30n) / 10n; // 3x gas
 
-                        const tx = await wallet.sendTransaction({
-                            to: address,
-                            value: 0,
-                            nonce: latestNonce,
-                            gasLimit: 30000,
-                            gasPrice: boostPrice
+                        const tx = await globalRpcManager.execute(async (provider) => {
+                            const wallet = new ethers.Wallet(privateKey, provider);
+                            return await wallet.sendTransaction({
+                                to: address,
+                                value: 0,
+                                nonce: latestNonce,
+                                gasLimit: 30000,
+                                gasPrice: boostPrice
+                            });
                         });
 
                         console.log(`[Admin] 💉 Repair TX sent: ${tx.hash}`);
@@ -1404,7 +1408,9 @@ async function getFaucetCredentials(userAddress) {
 
     // Delegate to unified Faucet Service logic
     // This handles: DB lookup -> Vault lookup (by Faucet Address) -> Strict Integrity -> Generation -> Saving
-    const wallet = await faucetService.getFaucetWallet(pool, globalRpcManager.getProvider(), userAddress);
+    const wallet = await globalRpcManager.execute(async (provider) => {
+        return await faucetService.getFaucetWallet(pool, provider, userAddress);
+    });
 
     return wallet.privateKey;
 }
@@ -1529,19 +1535,44 @@ app.get('/api/faucet', authenticateToken, async (req, res) => {
 
         if (result.rows.length > 0) {
             const row = result.rows[0];
-            const provider = globalRpcManager.getProvider();
 
-            let balance = "0.0";
-            try {
+            // USE NEW SYSTEM: globalRpcManager.execute()
+            const balanceData = await globalRpcManager.execute(async (provider) => {
                 const balWei = await provider.getBalance(row.address);
-                balance = ethers.formatEther(balWei);
-            } catch (err) {
-                console.warn("Error fetching balance:", err.message);
-            }
+                const maticBalance = ethers.formatEther(balWei);
+
+                // Also fetch USDC balance for the Faucet
+                let usdcBalance = "0.00";
+                try {
+                    const usdcAddr = process.env.USDC_ADDRESS || "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359";
+                    const usdc = new ethers.Contract(usdcAddr, ["function balanceOf(address) view returns (uint256)"], provider);
+                    const balUsdc = await usdc.balanceOf(row.address);
+                    usdcBalance = ethers.formatUnits(balUsdc, 6);
+                } catch (e) {
+                    console.warn(`[API] Faucet USDC Fetch error for ${row.address}:`, e.message);
+                }
+
+                // Fetch fee data context
+                let gasReserve = "0.05";
+                let feeData = { maxFeePerGas: "0", maxPriorityFeePerGas: "0" };
+                try {
+                    const fData = await provider.getFeeData();
+                    feeData.maxFeePerGas = fData.maxFeePerGas ? fData.maxFeePerGas.toString() : "0";
+                    feeData.maxPriorityFeePerGas = fData.maxPriorityFeePerGas ? fData.maxPriorityFeePerGas.toString() : "0";
+
+                    const gasLimit = 21000n;
+                    const maxFee = fData.maxFeePerGas || ethers.parseUnits('100', 'gwei');
+                    const cost = (gasLimit * maxFee * 15n) / 10n;
+                    gasReserve = ethers.formatEther(cost);
+                } catch (err) {
+                    console.warn("Error fetching gas data:", err.message);
+                }
+
+                return { maticBalance, usdcBalance, gasReserve, feeData };
+            });
 
             let privateKey = "NOT_FOUND_IN_VAULT";
             try {
-                // CORRECT LOGIC: Funder -> Address(DB) -> PrivateKey(Vault)
                 const k = await vault.getFaucetKey(row.address);
                 if (k) privateKey = k;
             } catch (e) {
@@ -1549,66 +1580,29 @@ app.get('/api/faucet', authenticateToken, async (req, res) => {
                 privateKey = "VAULT_ERROR";
             }
 
-            // 3. Get current network gas fee data for dynamic calculation
-            let gasReserve = "0.05";
-            let feeData = { maxFeePerGas: "0", maxPriorityFeePerGas: "0" };
-            try {
-                const fData = await provider.getFeeData();
-                feeData.maxFeePerGas = fData.maxFeePerGas ? fData.maxFeePerGas.toString() : "0";
-                feeData.maxPriorityFeePerGas = fData.maxPriorityFeePerGas ? fData.maxPriorityFeePerGas.toString() : "0";
-
-                // Calculate recommended reserve for a standard 21000 gas transfer with 1.5x buffer
-                const gasLimit = 21000n;
-                const maxFee = fData.maxFeePerGas || ethers.parseUnits('100', 'gwei');
-                const cost = (gasLimit * maxFee * 15n) / 10n;
-                gasReserve = ethers.formatEther(cost);
-            } catch (err) {
-                console.warn("Error fetching gas data for faucet API:", err.message);
-            }
-
             res.json({
                 address: row.address,
                 privateKey: privateKey,
-                balance: balance,
-                gasReserve: gasReserve,
-                feeData: feeData
+                balance: balanceData.maticBalance,
+                usdcBalance: balanceData.usdcBalance,
+                gasReserve: balanceData.gasReserve,
+                feeData: balanceData.feeData
             });
         } else {
-            // AUTO-GENERATE for this user using Central Helper
+            // AUTO-GENERATE for this user
             console.log(`🔍 No Faucet found for ${userAddress}, generating new one via Vault...`);
-
-            // Reuse central logic which handles Vault saving
             const newPk = await getFaucetCredentials(userAddress);
-            // We need the address too. getFaucetCredentials returns PK only. 
-            // We can derive it or re-query. Re-query is safest to get stored public address.
-
             const newFaucetRes = await pool.query('SELECT * FROM faucets WHERE LOWER(funder_address) = $1 LIMIT 1', [userAddress]);
+
             if (newFaucetRes.rows.length > 0) {
                 const row = newFaucetRes.rows[0];
-                // 3. Get current network gas fee data for dynamic calculation
-                let gasReserve = "0.05"; // fallback human readable
-                let feeData = { maxFeePerGas: "0", maxPriorityFeePerGas: "0" };
-                try {
-                    const provider = globalRpcManager.getProvider(); // Ensure provider is available in this scope
-                    const fData = await provider.getFeeData();
-                    feeData.maxFeePerGas = fData.maxFeePerGas ? fData.maxFeePerGas.toString() : "0";
-                    feeData.maxPriorityFeePerGas = fData.maxPriorityFeePerGas ? fData.maxPriorityFeePerGas.toString() : "0";
-
-                    // Calculate recommended reserve for a standard 21000 gas transfer with 1.5x buffer
-                    const gasLimit = 21000n;
-                    const maxFee = fData.maxFeePerGas || ethers.parseUnits('100', 'gwei');
-                    const cost = (gasLimit * maxFee * 15n) / 10n;
-                    gasReserve = ethers.formatEther(cost);
-                } catch (err) {
-                    console.warn("Error fetching gas data for faucet API:", err.message);
-                }
-
                 res.json({
                     address: row.address,
                     privateKey: newPk,
                     balance: '0',
-                    gasReserve: gasReserve,
-                    feeData: feeData
+                    usdcBalance: '0',
+                    gasReserve: '0.05',
+                    feeData: { maxFeePerGas: "0", maxPriorityFeePerGas: "0" }
                 });
             } else {
                 throw new Error("Failed to generate faucet");
@@ -1629,7 +1623,9 @@ app.post('/api/faucet/generate', authenticateToken, async (req, res) => {
         await pool.query('DELETE FROM faucets WHERE LOWER(funder_address) = $1', [userAddress]);
 
         // faucetService.getFaucetWallet handles generation and secure Vault storage if not found
-        const wallet = await faucetService.getFaucetWallet(pool, provider, userAddress);
+        const wallet = await globalRpcManager.execute(async (provider) => {
+            return await faucetService.getFaucetWallet(pool, provider, userAddress);
+        });
 
         res.json({ address: wallet.address });
     } catch (err) {
@@ -1852,7 +1848,9 @@ r.id, r.address, r.status, r.last_activity, r.transactionhash_deposit, r.last_ba
             const chunkResults = await Promise.all(chunk.map(async (r) => {
                 try {
                     // Fetch live balance
-                    const balWei = await provider.getBalance(r.address);
+                    const balWei = await globalRpcManager.execute(async (provider) => {
+                        return provider.getBalance(r.address);
+                    });
                     const balFormatted = ethers.formatEther(balWei);
 
                     // Update DB async (fire and forget)
@@ -2238,7 +2236,9 @@ app.get('/api/admin/rescue-status', authenticateToken, async (req, res) => {
         const relayersWithBalance = await Promise.all(
             result.rows.map(async (r) => {
                 try {
-                    const balance = await provider.getBalance(r.address);
+                    const balance = await globalRpcManager.execute(async (provider) => {
+                        return provider.getBalance(r.address);
+                    });
                     const balanceEth = ethers.formatEther(balance);
                     const balanceNum = parseFloat(balanceEth);
 
@@ -2389,13 +2389,16 @@ app.post('/api/relayer/:address/recover', authenticateToken, async (req, res) =>
         const wallet = new ethers.Wallet(relayerPrivateKey, provider);
 
         // 2. Check Balance & Nonce Status
-        const balance = await provider.getBalance(wallet.address);
-        const latestNonce = await provider.getTransactionCount(wallet.address, "latest");
-        const pendingNonce = await provider.getTransactionCount(wallet.address, "pending");
+        const [balance, latestNonce, pendingNonce, feeData] = await globalRpcManager.execute(async (provider) => {
+            const bal = await provider.getBalance(wallet.address);
+            const lNonce = await provider.getTransactionCount(wallet.address, "latest");
+            const pNonce = await provider.getTransactionCount(wallet.address, "pending");
+            const fees = await provider.getFeeData();
+            return [bal, lNonce, pNonce, fees];
+        });
 
         console.log(`[RelayerRecovery] ${relayerAddress} | Balance: ${ethers.formatEther(balance)} | Latest: ${latestNonce} | Pending: ${pendingNonce} `);
 
-        const feeData = await provider.getFeeData();
         const gasPrice = (feeData.gasPrice * 150n) / 100n; // 1.5x Gas
         const gasLimit = 21000n;
         const minCost = gasPrice * gasLimit;
@@ -2437,7 +2440,9 @@ app.post('/api/relayer/:address/recover', authenticateToken, async (req, res) =>
         }
 
         // 4. Re-Check Balance after potential unblock cost
-        const finalBalance = await provider.getBalance(wallet.address);
+        const finalBalance = await globalRpcManager.execute(async (provider) => {
+            return provider.getBalance(wallet.address);
+        });
         if (finalBalance <= minCost) {
             return res.status(400).json({ error: `Insufficient funds after unblock attempt.Balance: ${ethers.formatEther(finalBalance)} MATIC` });
         }
@@ -2475,7 +2480,7 @@ const PORT_LISTEN = process.env.PORT || 3000;
 // ============================================
 async function monitorStuckTransactions() {
     try {
-        const provider = globalRpcManager.getProvider();
+        // Use execute() for polling if needed, but here we just need to ensure the system doesn't crash on node failure
 
         // 1. Reset WAITING_CONFIRMATION with no tx_hash (never sent)
         const stuckResult = await pool.query(`
@@ -2501,10 +2506,11 @@ async function monitorStuckTransactions() {
             LIMIT 50
         `);
 
-        let recovered = 0;
         for (const tx of waitingRes.rows) {
             try {
-                const receipt = await provider.getTransactionReceipt(tx.tx_hash);
+                const receipt = await globalRpcManager.execute(async (provider) => {
+                    return provider.getTransactionReceipt(tx.tx_hash);
+                });
                 if (receipt) {
                     const newStatus = receipt.status === 1 ? 'COMPLETED' : 'FAILED';
                     await pool.query(`UPDATE batch_transactions SET status = $1 WHERE id = $2`, [newStatus, tx.id]);

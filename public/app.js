@@ -140,6 +140,13 @@ async function checkFaucetStatus() {
             if (sideFaucetBalance) {
                 sideFaucetBalance.textContent = parseFloat(data.balance).toFixed(4);
             }
+
+            // NEW: Update Sidebar Faucet USDC
+            const sideFaucetUsdc = document.getElementById('sidebarFaucetUsdc');
+            if (sideFaucetUsdc && data.usdcBalance) {
+                sideFaucetUsdc.textContent = parseFloat(data.usdcBalance).toFixed(2);
+            }
+
             if (btnCopyFaucetSide) {
                 btnCopyFaucetSide.onclick = () => {
                     navigator.clipboard.writeText(data.address);
@@ -157,6 +164,9 @@ async function checkFaucetStatus() {
                 mainLink.dataset.address = data.address;
             }
             if (mainBalance) mainBalance.textContent = `${parseFloat(data.balance).toFixed(4)} POL`;
+
+            // Also poll Funder balances at the same time
+            fetchBalances();
 
             const balance = parseFloat(data.balance);
             if (balance <= 0) {

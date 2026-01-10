@@ -105,7 +105,9 @@ class RelayerEngine {
     async syncRelayerBalance(address) {
         try {
             await new Promise(r => setTimeout(r, 100)); // Throttle
-            const balWei = await this.getProvider().getBalance(address);
+            const balWei = await this.rpcManager.execute(async (provider) => {
+                return provider.getBalance(address);
+            });
             const balanceStr = ethers.formatEther(balWei);
             await this.pool.query(
                 `UPDATE relayers SET last_balance = $1, last_activity = NOW() WHERE address = $2`,
@@ -122,51 +124,57 @@ class RelayerEngine {
      * SELF-HEALING: Verify Faucet integrity and unclog stuck transactions
      * Use this before any critical Faucet operation.
      */
-    async verifyAndRepairNonce() {
-        console.log("[Engine] 🛡️ Verifying Faucet integrity...");
+    async verifyAndRepairNonce(wallet = null) {
+        const targetWallet = wallet || this.faucetWallet;
+        const address = targetWallet.address;
+        console.log(`[Engine] 🛡️ Verifying Nonce integrity for ${address.substring(0, 8)} (Resilient)...`);
         try {
-            const address = this.faucetWallet.address;
-            const nonce = await this.getProvider().getTransactionCount(address, 'latest');
-            const pending = await this.getProvider().getTransactionCount(address, 'pending');
+            // USE NEW SYSTEM: execute() for all calls
+            const counts = await this.rpcManager.execute(async (provider) => {
+                const nonce = await provider.getTransactionCount(address, 'latest');
+                const pending = await provider.getTransactionCount(address, 'pending');
+                return { nonce, pending };
+            });
 
-            if (pending > nonce) {
-                console.warn(`[Engine] ⚠️  GAP DETECTED in Faucet Nonce! Latest: ${nonce}, Pending: ${pending}.`);
+            if (counts.pending > counts.nonce) {
+                console.warn(`[Engine] ⚠️  GAP DETECTED in Nonce for ${address}! Latest: ${counts.nonce}, Pending: ${counts.pending}.`);
 
                 // ANTIBLOQUEO: Smart Wait
-                // Give it 5 seconds to resolve naturally (network propagation / mining)
                 console.log(`[Engine] ⏳ Waiting 5s for pending txs to clear naturally...`);
                 await new Promise(r => setTimeout(r, 5000));
 
-                const nonceAfterWait = await this.getProvider().getTransactionCount(address, 'latest');
+                const nonceAfterWait = await this.rpcManager.execute(async (provider) => {
+                    return provider.getTransactionCount(address, 'latest');
+                });
 
-                // If nonce moved up to covers the pending count we saw, we are good.
-                // Note: pending count might have increased too if new txs came in, 
-                // but we only care about the *gap* we saw closing.
-                if (nonceAfterWait >= pending) {
-                    console.log("[Engine] ✅ Gap resolved naturally.");
+                if (nonceAfterWait >= counts.pending) {
+                    console.log(`[Engine] ✅ Gap resolved naturally for ${address}.`);
                     return true;
                 }
 
-                console.warn(`[Engine] ⚠️ Gap persists (Stuck at ${nonceAfterWait}). Sanitizing...`);
+                console.warn(`[Engine] ⚠️ Gap persists for ${address} (Stuck at ${nonceAfterWait}). Sanitizing...`);
 
-                await this.sanitizeFaucet(nonceAfterWait, pending);
+                await this.sanitizeFaucet(nonceAfterWait, counts.pending, targetWallet);
 
                 // Post-Sanitization Check
-                const noncePost = await this.getProvider().getTransactionCount(address, 'latest');
-                const pendingPost = await this.getProvider().getTransactionCount(address, 'pending');
+                const countsPost = await this.rpcManager.execute(async (provider) => {
+                    const noncePost = await provider.getTransactionCount(address, 'latest');
+                    const pendingPost = await provider.getTransactionCount(address, 'pending');
+                    return { noncePost, pendingPost };
+                });
 
-                if (pendingPost > noncePost) {
-                    console.error(`[Engine] ❌ Repair failed. Gap still exists: ${noncePost} -> ${pendingPost}`);
+                if (countsPost.pendingPost > countsPost.noncePost) {
+                    console.error(`[Engine] ❌ Repair failed for ${address}. Gap still exists: ${countsPost.noncePost} -> ${countsPost.pendingPost}`);
                     return false;
                 }
-                console.log("[Engine] ✨ Faucet integrity restored.");
+                console.log(`[Engine] ✨ Integrity restored for ${address}.`);
                 return true;
             } else {
-                console.log("[Engine] ✅ Faucet Nonce is healthy.");
+                console.log(`[Engine] ✅ Nonce is healthy for ${address}.`);
                 return true;
             }
         } catch (e) {
-            console.error("[Engine] Nonce Check Failed:", e);
+            console.error(`[Engine] Nonce Check Failed for ${address}:`, e);
             return false;
         }
     }
@@ -174,30 +182,33 @@ class RelayerEngine {
     /**
      * Aggressively clears stuck transactions from the Faucet
      */
-    async sanitizeFaucet(startNonce, endNonce) {
-        console.log(`[Engine] 🧹 Sanitizing Faucet (Nonces ${startNonce} to ${endNonce - 1})...`);
-        const feeData = await this.getProvider().getFeeData();
-        // Use aggressive gas to ensure replacement
-        const aggressivePrice = (feeData.gasPrice || 30000000000n) * 10n; // 10x market price or fallback 300 gwei
+    async sanitizeFaucet(startNonce, endNonce, wallet = null) {
+        const targetWallet = wallet || this.faucetWallet;
+        console.log(`[Engine] 🧹 Sanitizing Nonces for ${targetWallet.address.substring(0, 8)} (${startNonce} to ${endNonce - 1})...`);
 
-        for (let n = startNonce; n < endNonce; n++) {
-            try {
-                console.log(`[Engine] Killing stuck nonce ${n}...`);
-                const tx = await this.faucetWallet.sendTransaction({
-                    to: this.faucetWallet.address,
-                    value: 0,
-                    nonce: n,
-                    gasPrice: aggressivePrice,
-                    gasLimit: 21000
-                });
-                console.log(`[Engine] 🔪 Kill Tx Sent: ${tx.hash}`);
-                await tx.wait(1);
-                console.log(`[Engine] ✨ Nonce ${n} cleared.`);
-            } catch (err) {
-                console.error(`[Engine] Failed to clear nonce ${n}: ${err.message}`);
-                // If replacement underpriced, go higher? For now, log.
+        await this.rpcManager.execute(async (provider) => {
+            const feeData = await provider.getFeeData();
+            // Use aggressive gas to ensure replacement
+            const aggressivePrice = (feeData.gasPrice || 30000000000n) * 10n;
+
+            for (let n = startNonce; n < endNonce; n++) {
+                try {
+                    console.log(`[Engine] Killing stuck nonce ${n} for ${targetWallet.address}...`);
+                    const tx = await targetWallet.connect(provider).sendTransaction({
+                        to: targetWallet.address,
+                        value: 0,
+                        nonce: n,
+                        gasPrice: aggressivePrice,
+                        gasLimit: 21000
+                    });
+                    console.log(`[Engine] 🔪 Kill Tx Sent: ${tx.hash}`);
+                    await tx.wait(1);
+                    console.log(`[Engine] ✨ Nonce ${n} cleared.`);
+                } catch (err) {
+                    console.error(`[Engine] Failed to clear nonce ${n}: ${err.message}`);
+                }
             }
-        }
+        });
     }
 
     /**
@@ -329,10 +340,14 @@ class RelayerEngine {
                 const funderAddress = batchRes.rows[0]?.funder_address;
 
                 if (funderAddress) {
-                    const fBal = await this.getProvider().getBalance(funderAddress);
+                    const fBal = await this.rpcManager.execute(async (provider) => {
+                        return provider.getBalance(funderAddress);
+                    });
                     startMetrics.funderBalance = ethers.formatEther(fBal);
                 }
-                const faucetBal = await this.getProvider().getBalance(this.faucetWallet.address);
+                const faucetBal = await this.rpcManager.execute(async (provider) => {
+                    return provider.getBalance(this.faucetWallet.address);
+                });
                 startMetrics.faucetBalance = ethers.formatEther(faucetBal);
 
                 await this.pool.query(
@@ -375,15 +390,16 @@ class RelayerEngine {
                 console.log(`[Engine] ⚡ Initializing Parallel Pre-flight (Root, Permit, Funding)...`);
 
                 // Get Current Nonce for Faucet (use 'pending' to avoid nonce collisions)
-                let currentNonce = await this.getProvider().getTransactionCount(this.faucetWallet.address, "pending");
+                let currentNonce = await this.rpcManager.execute(async (provider) => {
+                    return provider.getTransactionCount(this.faucetWallet.address, "pending");
+                });
                 const parallelTasks = [];
 
                 // --- 1.1 MERKLE ROOT REGISTRATION (IF NEEDED) ---
-                const contract = new ethers.Contract(this.contractAddress, this.contractABI, this.getProvider());
-                console.log(`[Engine] 🔍 Checking Merkle Root for Batch ${batchId} on-chain...`);
-                const onChainRoot = await contract.batchRoots(funderAddress, batchId);
-                const dbBatchRes = await this.pool.query('SELECT merkle_root FROM batches WHERE id = $1', [batchId]);
-                const dbRoot = dbBatchRes.rows[0]?.merkle_root;
+                const onChainRoot = await this.rpcManager.execute(async (provider) => {
+                    const contract = new ethers.Contract(this.contractAddress, this.contractABI, provider);
+                    return contract.batchRoots(funderAddress, batchId);
+                });
 
                 if (onChainRoot === ethers.ZeroHash) {
                     if (rootSignatureData) {
@@ -391,41 +407,41 @@ class RelayerEngine {
                             const nonce = currentNonce++;
                             console.log(`[Engine][Root] 📝 Queueing Root Registration (Nonce: ${nonce})`);
 
-                            // Aggressive gas pricing for fast confirmation
-                            const feeData = await this.getProvider().getFeeData();
-                            const gasPrice = (feeData.gasPrice || ethers.parseUnits("50", "gwei")) * 500n / 100n; // 5x boost
-                            console.log(`[Engine][Root] ⛽ Gas Price: ${ethers.formatUnits(gasPrice, 'gwei')} gwei (5x boost)`);
+                            await this.rpcManager.execute(async (provider) => {
+                                // Aggressive gas pricing for fast confirmation
+                                const feeData = await provider.getFeeData();
+                                const gasPrice = (feeData.gasPrice || ethers.parseUnits("50", "gwei")) * 500n / 100n; // 5x boost
+                                console.log(`[Engine][Root] ⛽ Gas Price: ${ethers.formatUnits(gasPrice, 'gwei')} gwei (5x boost)`);
 
-                            const writerContract = contract.connect(this.faucetWallet);
-                            const tx = await writerContract.setBatchRootWithSignature(
-                                rootSignatureData.funder,
-                                BigInt(batchId),
-                                rootSignatureData.merkleRoot,
-                                BigInt(rootSignatureData.totalTransactions),
-                                BigInt(rootSignatureData.totalAmount),
-                                rootSignatureData.signature,
-                                { nonce, gasPrice }
-                            );
-                            console.log(`[Blockchain][Root] 🚀 Root TX Sent: ${tx.hash}`);
+                                const writerContract = new ethers.Contract(this.contractAddress, this.contractABI, this.faucetWallet.connect(provider));
+                                const tx = await writerContract.setBatchRootWithSignature(
+                                    rootSignatureData.funder,
+                                    BigInt(batchId),
+                                    rootSignatureData.merkleRoot,
+                                    BigInt(rootSignatureData.totalTransactions),
+                                    BigInt(rootSignatureData.totalAmount),
+                                    rootSignatureData.signature,
+                                    { nonce, gasPrice }
+                                );
+                                console.log(`[Blockchain][Root] 🚀 Root TX Sent: ${tx.hash}`);
 
-                            // Update status immediately to show progress
-                            await this.pool.query(
-                                `UPDATE batches SET status = 'REGISTERING_ROOT', updated_at = NOW() WHERE id = $1`,
-                                [batchId]
-                            );
-                            console.log(`[Engine][Root] 📊 Status updated: REGISTERING_ROOT`);
+                                // Update status immediately to show progress
+                                await this.pool.query(
+                                    `UPDATE batches SET status = 'REGISTERING_ROOT', updated_at = NOW() WHERE id = $1`,
+                                    [batchId]
+                                );
 
-                            // Add Timeout to Root Wait
-                            console.log(`[Engine][Root] ⏳ Waiting for blockchain confirmation (up to 300s)...`);
-                            const receipt = await Promise.race([
-                                tx.wait(),
-                                new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout waiting for Root registration (300s)")), 300000))
-                            ]);
-                            console.log(`[Blockchain][Root] ✅ Root CONFIRMED (Block: ${receipt.blockNumber})`);
+                                console.log(`[Engine][Root] ⏳ Waiting for blockchain confirmation...`);
+                                const receipt = await Promise.race([
+                                    tx.wait(),
+                                    new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout waiting for Root registration (300s)")), 300000))
+                                ]);
+                                console.log(`[Blockchain][Root] ✅ Root CONFIRMED (Block: ${receipt.blockNumber})`);
 
-                            // Gas Tracking
-                            const fee = BigInt(receipt.gasUsed) * BigInt(receipt.effectiveGasPrice || 0);
-                            await this.pool.query(`UPDATE batches SET funding_amount = COALESCE(funding_amount, 0) + $1 WHERE id = $2`, [ethers.formatEther(fee), batchId]);
+                                // Gas Tracking
+                                const fee = BigInt(receipt.gasUsed) * BigInt(receipt.effectiveGasPrice || 0);
+                                await this.pool.query(`UPDATE batches SET funding_amount = COALESCE(funding_amount, 0) + $1 WHERE id = $2`, [ethers.formatEther(fee), batchId]);
+                            });
                         })();
                         parallelTasks.push(registrationTask);
                     } else {
@@ -439,45 +455,42 @@ class RelayerEngine {
                         const nonce = currentNonce++;
                         console.log(`[Engine][Permit] 📩 Queueing Permit Submission (Nonce: ${nonce})`);
 
-                        // Aggressive gas pricing for fast confirmation
-                        const feeData = await this.getProvider().getFeeData();
-                        const gasPrice = (feeData.gasPrice || ethers.parseUnits("50", "gwei")) * 500n / 100n; // 5x boost
-                        console.log(`[Engine][Permit] ⛽ Gas Price: ${ethers.formatUnits(gasPrice, 'gwei')} gwei (5x boost)`);
+                        await this.rpcManager.execute(async (provider) => {
+                            const feeData = await provider.getFeeData();
+                            const gasPrice = (feeData.gasPrice || ethers.parseUnits("50", "gwei")) * 500n / 100n; // 5x boost
+                            console.log(`[Engine][Permit] ⛽ Gas Price: ${ethers.formatUnits(gasPrice, 'gwei')} gwei (5x boost)`);
 
-                        const usdc = new ethers.Contract(this.usdcAddress, [
-                            "function permit(address owner, address spender, uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s) external"
-                        ], this.faucetWallet);
+                            const usdc = new ethers.Contract(this.usdcAddress, [
+                                "function permit(address owner, address spender, uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s) external"
+                            ], this.faucetWallet.connect(provider));
 
-                        const tx = await usdc.permit(
-                            externalPermit.owner || funderAddress,
-                            this.contractAddress,
-                            BigInt(externalPermit.amount),
-                            BigInt(externalPermit.deadline),
-                            externalPermit.v,
-                            externalPermit.r,
-                            externalPermit.s,
-                            { nonce, gasPrice }
-                        );
-                        console.log(`[Blockchain][Permit] 🚀 Permit TX Sent: ${tx.hash}`);
+                            const tx = await usdc.permit(
+                                externalPermit.owner || funderAddress,
+                                this.contractAddress,
+                                BigInt(externalPermit.amount),
+                                BigInt(externalPermit.deadline),
+                                externalPermit.v,
+                                externalPermit.r,
+                                externalPermit.s,
+                                { nonce, gasPrice }
+                            );
+                            console.log(`[Blockchain][Permit] 🚀 Permit TX Sent: ${tx.hash}`);
 
-                        // Update status immediately to show progress
-                        await this.pool.query(
-                            `UPDATE batches SET status = 'SUBMITTING_PERMIT', updated_at = NOW() WHERE id = $1`,
-                            [batchId]
-                        );
-                        console.log(`[Engine][Permit] 📊 Status updated: SUBMITTING_PERMIT`);
+                            await this.pool.query(
+                                `UPDATE batches SET status = 'SUBMITTING_PERMIT', updated_at = NOW() WHERE id = $1`,
+                                [batchId]
+                            );
 
-                        // Add Timeout to Permit Wait
-                        console.log(`[Engine][Permit] ⏳ Waiting for blockchain confirmation (up to 300s)...`);
-                        const receipt = await Promise.race([
-                            tx.wait(),
-                            new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout waiting for Permit registration (300s)")), 300000))
-                        ]);
-                        console.log(`[Blockchain][Permit] ✅ Permit CONFIRMED (Block: ${receipt.blockNumber})`);
+                            console.log(`[Engine][Permit] ⏳ Waiting for confirmation...`);
+                            const receipt = await Promise.race([
+                                tx.wait(),
+                                new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout waiting for Permit registration (300s)")), 300000))
+                            ]);
+                            console.log(`[Blockchain][Permit] ✅ Permit CONFIRMED (Block: ${receipt.blockNumber})`);
 
-                        // Gas Tracking
-                        const fee = BigInt(receipt.gasUsed) * BigInt(receipt.effectiveGasPrice || 0);
-                        await this.pool.query(`UPDATE batches SET funding_amount = COALESCE(funding_amount, 0) + $1 WHERE id = $2`, [ethers.formatEther(fee), batchId]);
+                            const fee = BigInt(receipt.gasUsed) * BigInt(receipt.effectiveGasPrice || 0);
+                            await this.pool.query(`UPDATE batches SET funding_amount = COALESCE(funding_amount, 0) + $1 WHERE id = $2`, [ethers.formatEther(fee), batchId]);
+                        });
                     })();
                     parallelTasks.push(permitTask);
                 }
@@ -485,7 +498,9 @@ class RelayerEngine {
                 // --- 1.3 RELAYER FUNDING (IF NEEDED) ---
                 let needsFunding = !isResumption;
                 if (isResumption && relayers.length > 0) {
-                    const firstRelBal = await this.getProvider().getBalance(relayers[0].address);
+                    const firstRelBal = await this.rpcManager.execute(async (provider) => {
+                        return provider.getBalance(relayers[0].address);
+                    });
                     if (firstRelBal < ethers.parseEther("0.01")) needsFunding = true;
                 }
 
@@ -493,7 +508,6 @@ class RelayerEngine {
                     const fundingTask = (async () => {
                         const nonce = currentNonce++;
                         console.log(`[Engine][Fund] 🪙 Queueing Relayer Funding (Nonce: ${nonce})`);
-                        // Note: distributeGasToRelayers will internally call fundRelayers which needs adjustment for nonce
                         await this.distributeGasToRelayers(batchId, relayers, nonce);
                     })();
                     parallelTasks.push(fundingTask);
@@ -832,61 +846,58 @@ class RelayerEngine {
 
     async processTransaction(wallet, txDB, isRetry) {
         try {
-            const currentProvider = this.getProvider();
-            if (wallet.provider !== currentProvider) {
-                console.log(`[Engine] 🔄 Worker ${wallet.address.substring(0, 6)}: Reconnecting to active provider...`);
-                wallet = wallet.connect(currentProvider);
-            }
+            // USE NEW SYSTEM: All work inside execute() block for multi-RPC resilience
+            return await this.rpcManager.execute(async (provider) => {
+                if (wallet.provider !== provider) {
+                    console.log(`[Engine] 🔄 Worker ${wallet.address.substring(0, 6)}: Connecting to active provider...`);
+                    wallet = wallet.connect(provider);
+                }
 
-            const contract = new ethers.Contract(this.contractAddress, this.contractABI, wallet);
+                const contract = new ethers.Contract(this.contractAddress, this.contractABI, wallet);
 
-            if (!this.cachedChainId) {
-                const network = await currentProvider.getNetwork();
-                this.cachedChainId = network.chainId;
-            }
-            const chainId = this.cachedChainId;
+                if (!this.cachedChainId) {
+                    const network = await provider.getNetwork();
+                    this.cachedChainId = network.chainId;
+                }
+                const chainId = this.cachedChainId;
 
-            console.log(`[Engine][Tx] 🔍 TxID ${txDB.id}: Retrieving Merkle Proof...`);
-            const proof = await this.getMerkleProof(txDB.batch_id, txDB.id);
-            const amountVal = BigInt(txDB.amount_usdc);
+                console.log(`[Engine][Tx] 🔍 TxID ${txDB.id}: Retrieving Merkle Proof...`);
+                const proof = await this.getMerkleProof(txDB.batch_id, txDB.id);
+                const amountVal = BigInt(txDB.amount_usdc);
 
-            // Fetch Funder FIRST (Needed for Idempotency Check)
-            const batchRes = await this.pool.query('SELECT funder_address FROM batches WHERE id = $1', [txDB.batch_id]);
-            const funder = batchRes.rows[0].funder_address;
+                // Fetch Funder FIRST (Needed for Idempotency Check)
+                const batchRes = await this.pool.query('SELECT funder_address FROM batches WHERE id = $1', [txDB.batch_id]);
+                const funder = batchRes.rows[0].funder_address;
 
-            // IDEMPOTENCY CHECK: Check if leaf is already processed on-chain
-            // Calculate Leaf Hash: keccak256(abi.encode(chainId, contract, batchId, txId, funder, recipient, amount))
-            const abiCoder = ethers.AbiCoder.defaultAbiCoder();
-            const leafHash = ethers.keccak256(abiCoder.encode(
-                ["uint256", "address", "uint256", "uint256", "address", "address", "uint256"],
-                [chainId, this.contractAddress, BigInt(txDB.batch_id), BigInt(txDB.id), funder, txDB.wallet_address_to, amountVal]
-            ));
+                // IDEMPOTENCY CHECK
+                const abiCoder = ethers.AbiCoder.defaultAbiCoder();
+                const leafHash = ethers.keccak256(abiCoder.encode(
+                    ["uint256", "address", "uint256", "uint256", "address", "address", "uint256"],
+                    [chainId, this.contractAddress, BigInt(txDB.batch_id), BigInt(txDB.id), funder, txDB.wallet_address_to, amountVal]
+                ));
 
-            console.log(`[Engine][Tx] 🔍 TxID ${txDB.id}: Checking idempotency (leafHash: ${leafHash.substring(0, 10)}...)`);
-            const isProcessed = await contract.processedLeaves(leafHash);
-            if (isProcessed) {
-                console.log(`[Engine] 🟢 Tx ${txDB.id} already processed on-chain. Recovering data...`);
+                console.log(`[Engine][Tx] 🔍 TxID ${txDB.id}: Checking idempotency (leafHash: ${leafHash.substring(0, 10)}...)`);
+                const isProcessed = await contract.processedLeaves(leafHash);
+                if (isProcessed) {
+                    console.log(`[Engine] 🟢 Tx ${txDB.id} already processed on-chain. Recovering data...`);
+                    const recovery = await this._recoverFromEvents(txDB.batch_id, txDB.id);
+                    const finalHash = recovery ? recovery.txHash : 'ON_CHAIN_DEDUPE';
+                    const finalAmount = recovery ? recovery.amount : txDB.amount_usdc.toString();
 
-                // Try to find the real hash and amount in events
-                const recovery = await this._recoverFromEvents(txDB.batch_id, txDB.id);
-                const finalHash = recovery ? recovery.txHash : 'ON_CHAIN_DEDUPE';
-                const finalAmount = recovery ? recovery.amount : txDB.amount_usdc.toString();
+                    await this.pool.query(
+                        `UPDATE batch_transactions SET status = 'COMPLETED', tx_hash = $1, amount_transferred = $2, updated_at = NOW() WHERE id = $3`,
+                        [finalHash, finalAmount, txDB.id]
+                    );
+                    return { success: true, txHash: finalHash, gasUsed: 0n, effectiveGasPrice: 0n };
+                }
 
-                await this.pool.query(
-                    `UPDATE batch_transactions SET status = 'COMPLETED', tx_hash = $1, amount_transferred = $2, updated_at = NOW() WHERE id = $3`,
-                    [finalHash, finalAmount, txDB.id]
-                );
-                return { success: true, txHash: finalHash, gasUsed: 0n, effectiveGasPrice: 0n };
-            }
+                console.log(`[Engine] Executing Standard for Batch ${txDB.batch_id} (TX #${txDB.id})`);
 
-            console.log(`[Engine] Executing Standard for Batch ${txDB.batch_id} (TX #${txDB.id})`);
-
-            // PRE-FLIGHT CHECK: Verify Allowance & Balance to avoid generic CALL_EXCEPTION
-            try {
+                // PRE-FLIGHT CHECK
                 const usdc = new ethers.Contract(this.usdcAddress, [
                     "function allowance(address,address) view returns (uint256)",
                     "function balanceOf(address) view returns (uint256)"
-                ], this.getProvider());
+                ], provider);
 
                 console.log(`[Engine][Tx] 🔍 TxID ${txDB.id}: Verifying USDC Balance/Allowance for ${funder.substring(0, 10)}...`);
                 const [allowance, balance] = await Promise.all([
@@ -900,111 +911,79 @@ class RelayerEngine {
                 if (allowance < amountVal) {
                     throw new Error(`Insufficient USDC Allowance. Funder approved ${ethers.formatUnits(allowance, 6)}, needs ${ethers.formatUnits(amountVal, 6)}`);
                 }
-            } catch (preFlightErr) {
-                console.warn(`[Engine] ⚠️ Pre-Flight Check Failed: ${preFlightErr.message}`);
-                // If it's our custom error, rethrow it to abort
-                if (preFlightErr.message.includes("Insufficient")) throw preFlightErr;
-            }
 
-            console.log(`[Engine][Tx] ⛽ TxID ${txDB.id}: Estimating Gas...`);
-            const gasLimit = await contract.executeTransaction.estimateGas(
-                txDB.batch_id, txDB.id, funder, txDB.wallet_address_to, amountVal, proof
-            );
-            const feeData = await this.getProvider().getFeeData();
-
-            // AGGRESSIVE GAS: Use 2.0x (200n) of current gas price to guarantee confirmation
-            let gasPrice = (feeData.gasPrice * 200n) / 100n;
-
-            // Safety cap check: If env var is too low (e.g. 150 gwei), we MUST ignore it to avoid stuck txs.
-            let envMax = parseInt(process.env.MAX_GAS_PRICE_GWEI || "3000");
-
-            // DYNAMIC OVERRIDE: If network price is insane, we MUST follow it or we fail.
-            // "arregla las transacciones para que siempre se produzcan"
-            const networkFloorGwei = Number(ethers.formatUnits(feeData.gasPrice, 'gwei'));
-
-            if (envMax < networkFloorGwei) {
-                console.warn(`[Engine] 🛡️ CRITICAL: Configured MAX_GAS (${envMax}) is below Network Price (${networkFloorGwei}). Overriding to ensure execution.`);
-                envMax = Math.ceil(networkFloorGwei * 1.5); // 50% buffer over network to capture
-            } else if (envMax < 2000) {
-                // Keep the hard safety floor for low config
-                console.warn(`[Engine] ⚠️ Configured MAX_GAS_PRICE_GWEI (${envMax}) is dangerously low. Overriding to 2000 Gwei.`);
-                envMax = 2000;
-            }
-
-            const maxExecGasPrice = BigInt(envMax) * 1000000000n;
-
-            if (gasPrice > maxExecGasPrice) {
-                // If aggressive boost is TOO high, cap it, but now we know maxExecGasPrice is at least > network price
-                console.log(`[Engine] 🚀 Capping aggressive gas price at ${envMax} gwei (estimated 2.0x was ${(Number(gasPrice) / 1e9).toFixed(2)} gwei)`);
-                gasPrice = maxExecGasPrice;
-            }
-
-            console.log(`[Engine][Tx] 🚀 SENDING: Batch ${txDB.batch_id} | TxID: ${txDB.id} | To: ${txDB.wallet_address_to} | Gas: ${ethers.formatUnits(gasPrice, 'gwei')} gwei`);
-            const txResponse = await contract.executeTransaction(
-                txDB.batch_id, txDB.id, funder, txDB.wallet_address_to, amountVal, proof,
-                {
-                    gasLimit: gasLimit * 150n / 100n, // 50% extra buffer
-                    gasPrice: gasPrice
-                }
-            );
-
-            console.log(`[Blockchain][Tx] ✅ SENT: ${txResponse.hash} | TxID: ${txDB.id} | From: ${wallet.address}`);
-
-            // Update status immediately to sync UI
-            await this.pool.query(
-                `UPDATE batch_transactions SET status = 'WAITING_CONFIRMATION', tx_hash = $1, updated_at = NOW() WHERE id = $2`,
-                [txResponse.hash, txDB.id]
-            );
-
-            // Increase timeout to 5 minutes for high congestion
-            console.log(`[Engine][Tx] ⏳ Waiting for confirmation: ${txResponse.hash}...`);
-            const receipt = await Promise.race([
-                txResponse.wait(1), // Wait for 1 confirmation
-                new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout waiting for receipt (300s)")), 300000))
-            ]);
-
-            console.log(`[Blockchain][Tx] 📝 RECEIPT RECEIVED: ${txResponse.hash} | Status: ${receipt.status === 1 ? 'SUCCESS' : 'FAILED'}`);
-
-            if (receipt.status === 1) {
-                console.log(`[Blockchain][Tx] CONFIRMED: ${txResponse.hash} | Batch: ${txDB.batch_id} | TxID: ${txDB.id}`);
-                await this.pool.query(
-                    `UPDATE batch_transactions SET status = 'COMPLETED', tx_hash = $1, amount_transferred = $2, updated_at = NOW() WHERE id = $3`,
-                    [txResponse.hash, txDB.amount_usdc.toString(), txDB.id]
+                console.log(`[Engine][Tx] ⛽ TxID ${txDB.id}: Estimating Gas...`);
+                const gasLimit = await contract.executeTransaction.estimateGas(
+                    txDB.batch_id, txDB.id, funder, txDB.wallet_address_to, amountVal, proof
                 );
-            } else {
-                console.warn(`[Blockchain][Tx] FAILED ON-CHAIN: ${txResponse.hash}`);
-                const nextStatus = (txDB.retry_count >= 100) ? 'FAILED' : 'WAITING_CONFIRMATION';
-                await this.pool.query(`UPDATE batch_transactions SET status = $1, tx_hash = $2, updated_at = NOW() WHERE id = $3`, [nextStatus, txResponse.hash, txDB.id]);
-            }
+                const feeData = await provider.getFeeData();
 
-            await this.syncRelayerBalance(wallet.address);
+                let gasPrice = (feeData.gasPrice * 200n) / 100n;
+                let envMax = parseInt(process.env.MAX_GAS_PRICE_GWEI || "3000");
+                const networkFloorGwei = Number(ethers.formatUnits(feeData.gasPrice, 'gwei'));
 
-            // Return receipt data so worker can track gas (Even if failed)
-            return {
-                success: receipt.status === 1,
-                txHash: txResponse.hash,
-                gasUsed: receipt ? receipt.gasUsed : 0n,
-                effectiveGasPrice: receipt ? receipt.effectiveGasPrice : 0n
-            };
-
-        } catch (e) {
-            // ERROR HANDLING & RPC FAILOVER TRIGGER
-            if (this.rpcManager && this.rpcManager.handleError) {
-                const handled = this.rpcManager.handleError(e);
-                if (handled) {
-                    console.log(`[Engine] ⚠️ RPC Error triggered failover/wait. Marking Tx ${txDB.id} for retry.`);
+                if (envMax < networkFloorGwei) {
+                    console.warn(`[Engine] 🛡️ CRITICAL: Configured MAX_GAS (${envMax}) is below Network Price (${networkFloorGwei}). Overriding to ensure execution.`);
+                    envMax = Math.ceil(networkFloorGwei * 1.5);
+                } else if (envMax < 2000) {
+                    console.warn(`[Engine] ⚠️ Configured MAX_GAS_PRICE_GWEI (${envMax}) is dangerously low. Overriding to 2000 Gwei.`);
+                    envMax = 2000;
                 }
-            }
 
+                const maxExecGasPrice = BigInt(envMax) * 1000000000n;
+                if (gasPrice > maxExecGasPrice) {
+                    gasPrice = maxExecGasPrice;
+                }
+
+                console.log(`[Engine][Tx] 🚀 SENDING: Batch ${txDB.batch_id} | TxID: ${txDB.id} | To: ${txDB.wallet_address_to} | Gas: ${ethers.formatUnits(gasPrice, 'gwei')} gwei`);
+                const txResponse = await contract.executeTransaction(
+                    txDB.batch_id, txDB.id, funder, txDB.wallet_address_to, amountVal, proof,
+                    {
+                        gasLimit: gasLimit * 150n / 100n,
+                        gasPrice: gasPrice
+                    }
+                );
+
+                console.log(`[Blockchain][Tx] ✅ SENT: ${txResponse.hash} | TxID: ${txDB.id} | From: ${wallet.address}`);
+                await this.pool.query(
+                    `UPDATE batch_transactions SET status = 'WAITING_CONFIRMATION', tx_hash = $1, updated_at = NOW() WHERE id = $2`,
+                    [txResponse.hash, txDB.id]
+                );
+
+                console.log(`[Engine][Tx] ⏳ Waiting for confirmation: ${txResponse.hash}...`);
+                const receipt = await Promise.race([
+                    txResponse.wait(1),
+                    new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout waiting for receipt (300s)")), 300000))
+                ]);
+
+                if (receipt.status === 1) {
+                    console.log(`[Blockchain][Tx] CONFIRMED: ${txResponse.hash} | Batch: ${txDB.batch_id} | TxID: ${txDB.id}`);
+                    await this.pool.query(
+                        `UPDATE batch_transactions SET status = 'COMPLETED', tx_hash = $1, amount_transferred = $2, updated_at = NOW() WHERE id = $3`,
+                        [txResponse.hash, txDB.amount_usdc.toString(), txDB.id]
+                    );
+                } else {
+                    console.warn(`[Blockchain][Tx] FAILED ON-CHAIN: ${txResponse.hash}`);
+                    const nextStatus = (txDB.retry_count >= 100) ? 'FAILED' : 'WAITING_CONFIRMATION';
+                    await this.pool.query(`UPDATE batch_transactions SET status = $1, tx_hash = $2, updated_at = NOW() WHERE id = $3`, [nextStatus, txResponse.hash, txDB.id]);
+                }
+
+                await this.syncRelayerBalance(wallet.address);
+                return {
+                    success: receipt.status === 1,
+                    txHash: txResponse.hash,
+                    gasUsed: receipt ? receipt.gasUsed : 0n,
+                    effectiveGasPrice: receipt ? receipt.effectiveGasPrice : 0n
+                };
+            });
+        } catch (e) {
             if (e.message && e.message.includes("Tx already executed")) {
                 console.log(`⚠️ Tx ${txDB.id} already on-chain. Recovered.`);
                 await this.pool.query(`UPDATE batch_transactions SET status = 'COMPLETED', tx_hash = 'RECOVERED', updated_at = NOW() WHERE id = $1`, [txDB.id]);
                 return { success: true, txHash: 'RECOVERED', gasUsed: 0n, effectiveGasPrice: 0n };
             }
             console.error(`Tx Failed: ${txDB.id}`, e.message);
-            // If it failed BEFORE receipt (e.g. estimation error, timeout), we have 0 gas
             const nextStatus = (txDB.retry_count >= 100) ? 'FAILED' : 'WAITING_CONFIRMATION';
-
             await this.pool.query(`UPDATE batch_transactions SET status = $1, updated_at = NOW() WHERE id = $2`, [nextStatus, txDB.id]);
             return { success: false, error: e.message, gasUsed: 0n, effectiveGasPrice: 0n };
         }
@@ -1050,7 +1029,9 @@ class RelayerEngine {
         // Configurable Buffer Percentage (default 15%)
         const bufferPercent = BigInt(process.env.GAS_BUFFER_PERCENT || 15);
         const bufferedGas = (averageGas * BigInt(txs.length)) * (100n + bufferPercent) / 100n;
-        const feeData = await this.getProvider().getFeeData();
+        const feeData = await this.rpcManager.execute(async (provider) => {
+            return provider.getFeeData();
+        });
 
         // Cap gas price at 100 gwei to prevent overestimation
         const maxGasPrice = 100000000000n; // 100 gwei
@@ -1100,10 +1081,12 @@ class RelayerEngine {
 
 
         // Check Faucet Balance BEFORE calculating per-relayer split
-        const faucetBalance = await this.getProvider().getBalance(funderFaucetAddress);
+        const [faucetBalance, feeData] = await this.rpcManager.execute(async (provider) => {
+            const bal = await provider.getBalance(funderFaucetAddress);
+            const fees = await provider.getFeeData();
+            return [bal, fees];
+        });
 
-        // --- DYNAMIC RESERVE CALCULATION ---
-        const feeData = await this.getProvider().getFeeData();
         // Matching fundRelayers aggressive gas: 3x boost
         const gasPrice = (feeData.gasPrice || ethers.parseUnits("50", "gwei")) * 300n / 100n;
 
@@ -1172,111 +1155,112 @@ class RelayerEngine {
 
         let walletToUse = actingFaucetWallet || this.faucetWallet;
 
-        // CRITICAL: Ensure wallet is connected to the ACTIVE provider
-        if (!walletToUse.provider || walletToUse.provider !== this.getProvider()) {
-            console.log(`[Engine] 🔌 Reconnecting Faucet Wallet to active provider...`);
-            walletToUse = walletToUse.connect(this.getProvider());
-        }
-
         try {
-            // STEP 0: AUTO-UNBLOCK - Verify and repair nonce BEFORE attempting atomic distribution
-            console.log(`[Engine][Fund] 🔧 Pre - flight: Verifying Faucet nonce status...`);
-            const nonceRepaired = await this.verifyAndRepairNonce(walletToUse);
-
-            if (!nonceRepaired) {
-                console.error(`[Engine][Fund] ❌ Nonce repair FAILED.Aborting atomic funding.`);
-                throw new Error("CRITICAL: Faucet Nonce blocked. Atomic funding aborted to prevent stuck tx.");
-            }
-
-            // Re-instantiate contract with specific signer
-            const contract = new ethers.Contract(this.contractAddress, this.contractABI, walletToUse);
-            const totalValueToSend = amountWei * BigInt(relayers.length);
-
-            // Double check balance (Race condition safety)
-            const faucetBalance = await this.getProvider().getBalance(walletToUse.address);
-            console.log(`[Engine][Fund] Faucet Balance(${walletToUse.address.substring(0, 6)}..): ${ethers.formatEther(faucetBalance)} MATIC`);
-
-            // Add slight tolerance check
-            if (faucetBalance < totalValueToSend) {
-                throw new Error(`Insufficient Faucet balance.Need ${ethers.formatEther(totalValueToSend)} MATIC, have ${ethers.formatEther(faucetBalance)}.`);
-            }
-
-            console.log(`[Engine][Fund] 🚀 Atomic Distribution START: ${relayers.length} relayers | ${ethers.formatEther(amountWei)} POL each.`);
-            console.log(`[Engine][Fund] Target: ${ethers.formatEther(amountWei)} MATIC each | Total: ${ethers.formatEther(totalValueToSend)} MATIC`);
-
-            // Gas Calculation: Aggressive Gas Price (3x boost) to ensure atomic inclusion
-            const feeData = await this.getProvider().getFeeData();
-            const gasPrice = (feeData.gasPrice * 300n) / 100n;
-            const safeGasLimit = 200000n + (BigInt(relayers.length) * 50000n);
-
-            console.log(`[Engine][Fund] 🚀 Atomic Distribution START: ${relayers.length} relayers | POL each: ${ethers.formatEther(amountWei)} | Gas Price: ${ethers.formatUnits(gasPrice, 'gwei')} gwei`);
-
-            const tx = await contract.distributeMatic(
-                relayers.map(r => r.address),
-                amountWei,
-                {
-                    value: totalValueToSend,
-                    gasLimit: safeGasLimit,
-                    gasPrice: gasPrice,
-                    nonce: explicitNonce !== null ? explicitNonce : undefined
+            // USE NEW SYSTEM: All work inside execute() block
+            await this.rpcManager.execute(async (provider) => {
+                // CRITICAL: Ensure wallet is connected to the ACTIVE provider
+                if (walletToUse.provider !== provider) {
+                    console.log(`[Engine] 🔌 Reconnecting Faucet Wallet to active provider...`);
+                    walletToUse = walletToUse.connect(provider);
                 }
-            );
 
-            console.log(`[Blockchain][Fund] Atomic Batch SENT: ${tx.hash} `);
+                // STEP 0: AUTO-UNBLOCK - Verify and repair nonce BEFORE attempting atomic distribution
+                console.log(`[Engine][Fund] 🔧 Pre - flight: Verifying Faucet nonce status...`);
+                const nonceRepaired = await this.verifyAndRepairNonce(walletToUse);
 
-            // Update status immediately to show progress (before waiting for confirmation)
-            await this.pool.query(
-                `UPDATE batches SET status = 'FUNDING_RELAYERS', updated_at = NOW() WHERE id = $1`,
-                [batchId]
-            );
-            console.log(`[Engine][Fund] 📊 Status updated: FUNDING_RELAYERS`);
+                if (!nonceRepaired) {
+                    console.error(`[Engine][Fund] ❌ Nonce repair FAILED.Aborting atomic funding.`);
+                    throw new Error("CRITICAL: Faucet Nonce blocked. Atomic funding aborted to prevent stuck tx.");
+                }
 
-            // Add Timeout to Funding Wait
-            console.log(`[Engine][Fund] ⏳ Waiting for blockchain confirmation (up to 300s)...`);
-            const receipt = await Promise.race([
-                tx.wait(),
-                new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout waiting for Funding confirmation (300s)")), 300000))
-            ]);
-            console.log(`[Blockchain][Fund] Atomic Batch CONFIRMED(Block: ${receipt.blockNumber})`);
+                // Re-instantiate contract with specific signer
+                const contract = new ethers.Contract(this.contractAddress, this.contractABI, walletToUse);
+                const totalValueToSend = amountWei * BigInt(relayers.length);
 
-            // Optimistic DB Update: Set balance immediately so UI is responsive
-            // We know exactly how much we sent: amountWei
-            const amountMaticStr = ethers.formatEther(amountWei);
-            await Promise.all(relayers.map(r =>
-                this.pool.query(
-                    `UPDATE relayers SET last_balance = $1, transactionhash_deposit = $2, last_activity = NOW(), status = 'active' WHERE address = $3 AND batch_id = $4`,
-                    [amountMaticStr, tx.hash, r.address, batchId]
-                )
-            ));
-            console.log(`[Engine][Fund] ⚡ Optimistic Balance Update: All relayers set to ${amountMaticStr} MATIC(and Reactivated)`);
+                // Double check balance (Race condition safety)
+                const faucetBalance = await provider.getBalance(walletToUse.address);
+                console.log(`[Engine][Fund] Faucet Balance(${walletToUse.address.substring(0, 6)}..): ${ethers.formatEther(faucetBalance)} MATIC`);
 
-            // Batched Verification (Optional / Background)
-            // We can still run sync, but maybe lazily or skipping if we trust the receipt.
-            // Let's keep it but it won't block the UI showing the value we just injected.
-            /*
-            const chunkSize = 5;
-            for (let i = 0; i < relayers.length; i += chunkSize) {
-                const chunk = relayers.slice(i, i + chunkSize);
-                await Promise.all(chunk.map(r => this.syncRelayerBalance(r.address)));
-                if (i + chunkSize < relayers.length) await new Promise(r => setTimeout(r, 200));
-            }
-            */
+                // Add slight tolerance check
+                if (faucetBalance < totalValueToSend) {
+                    throw new Error(`Insufficient Faucet balance.Need ${ethers.formatEther(totalValueToSend)} MATIC, have ${ethers.formatEther(faucetBalance)}.`);
+                }
 
-            // Save Funding Total to Batch (Value Sent + Approx Fee)
-            // Fee is approx execution gas * gasPrice. Let's precise using receipt.gasUsed
-            const gasUsed = BigInt(receipt.gasUsed);
-            const effectiveGasPriceVal = BigInt(receipt.effectiveGasPrice || 0);
-            const distributionFeeFn = gasUsed * effectiveGasPriceVal;
+                console.log(`[Engine][Fund] 🚀 Atomic Distribution START: ${relayers.length} relayers | ${ethers.formatEther(amountWei)} POL each.`);
 
-            // totalValueToSend is already BigInt (calculated above)
-            const totalFundingMatic = ethers.formatEther(totalValueToSend + distributionFeeFn);
+                // Gas Calculation: Aggressive Gas Price (3x boost) to ensure atomic inclusion
+                const feeData = await provider.getFeeData();
+                const gasPrice = (feeData.gasPrice * 300n) / 100n;
+                const safeGasLimit = 200000n + (BigInt(relayers.length) * 50000n);
 
-            await this.pool.query(
-                `UPDATE batches SET funding_amount = $1 WHERE id = $2`,
-                [totalFundingMatic, batchId]
-            );
-            console.log(`[Engine][Fund] 💾 Saved Funding Amount: ${totalFundingMatic} MATIC(incl.fee)`);
+                console.log(`[Engine][Fund] 🚀 Atomic Distribution START: ${relayers.length} relayers | POL each: ${ethers.formatEther(amountWei)} | Gas Price: ${ethers.formatUnits(gasPrice, 'gwei')} gwei`);
 
+                const tx = await contract.distributeMatic(
+                    relayers.map(r => r.address),
+                    amountWei,
+                    {
+                        value: totalValueToSend,
+                        gasLimit: safeGasLimit,
+                        gasPrice: gasPrice,
+                        nonce: explicitNonce !== null ? explicitNonce : undefined
+                    }
+                );
+
+                console.log(`[Blockchain][Fund] Atomic Batch SENT: ${tx.hash} `);
+
+                // Update status immediately to show progress (before waiting for confirmation)
+                await this.pool.query(
+                    `UPDATE batches SET status = 'FUNDING_RELAYERS', updated_at = NOW() WHERE id = $1`,
+                    [batchId]
+                );
+                console.log(`[Engine][Fund] 📊 Status updated: FUNDING_RELAYERS`);
+
+                // Add Timeout to Funding Wait
+                console.log(`[Engine][Fund] ⏳ Waiting for blockchain confirmation (up to 300s)...`);
+                const receipt = await Promise.race([
+                    tx.wait(),
+                    new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout waiting for Funding confirmation (300s)")), 300000))
+                ]);
+                console.log(`[Blockchain][Fund] Atomic Batch CONFIRMED(Block: ${receipt.blockNumber})`);
+
+                // Optimistic DB Update: Set balance immediately so UI is responsive
+                // We know exactly how much we sent: amountWei
+                const amountMaticStr = ethers.formatEther(amountWei);
+                await Promise.all(relayers.map(r =>
+                    this.pool.query(
+                        `UPDATE relayers SET last_balance = $1, transactionhash_deposit = $2, last_activity = NOW(), status = 'active' WHERE address = $3 AND batch_id = $4`,
+                        [amountMaticStr, tx.hash, r.address, batchId]
+                    )
+                ));
+                console.log(`[Engine][Fund] ⚡ Optimistic Balance Update: All relayers set to ${amountMaticStr} MATIC(and Reactivated)`);
+
+                // Batched Verification (Optional / Background)
+                // We can still run sync, but maybe lazily or skipping if we trust the receipt.
+                // Let's keep it but it won't block the UI showing the value we just injected.
+                /*
+                const chunkSize = 5;
+                for (let i = 0; i < relayers.length; i += chunkSize) {
+                    const chunk = relayers.slice(i, i + chunkSize);
+                    await Promise.all(chunk.map(r => this.syncRelayerBalance(r.address)));
+                    if (i + chunkSize < relayers.length) await new Promise(r => setTimeout(r, 200));
+                }
+                */
+
+                // Save Funding Total to Batch (Value Sent + Approx Fee)
+                // Fee is approx execution gas * gasPrice. Let's precise using receipt.gasUsed
+                const gasUsed = BigInt(receipt.gasUsed);
+                const effectiveGasPriceVal = BigInt(receipt.effectiveGasPrice || 0);
+                const distributionFeeFn = gasUsed * effectiveGasPriceVal;
+
+                // totalValueToSend is already BigInt (calculated above)
+                const totalFundingMatic = ethers.formatEther(totalValueToSend + distributionFeeFn);
+
+                await this.pool.query(
+                    `UPDATE batches SET funding_amount = $1 WHERE id = $2`,
+                    [totalFundingMatic, batchId]
+                );
+                console.log(`[Engine][Fund] 💾 Saved Funding Amount: ${totalFundingMatic} MATIC(incl.fee)`);
+            });
         } catch (err) {
             console.error(`❌ Atomic funding FAILED: `, err.message);
 
@@ -1299,73 +1283,6 @@ class RelayerEngine {
         }
     }
 
-    /**
-     * AUTO-REPAIR: Checks for stuck "ghost" transactions in mempool and clears them.
-     * Aggressively loops until Pending == Latest.
-     * @param {ethers.Wallet} wallet - The wallet to check and repair (defaults to faucetWallet)
-     */
-    async verifyAndRepairNonce(wallet = null) {
-        const targetWallet = wallet || this.faucetWallet;
-
-        try {
-            const address = targetWallet.address;
-            let latestNonce = await this.getProvider().getTransactionCount(address, "latest");
-            let pendingNonce = await this.getProvider().getTransactionCount(address, "pending");
-
-            console.log(`[AutoRepair][${address.substring(0, 8)}] 🔍 Nonce Check: L = ${latestNonce} | P=${pendingNonce} `);
-
-            let attempt = 0;
-            const MAX_ATTEMPTS = 10; // Safety break
-
-            while (pendingNonce > latestNonce && attempt < MAX_ATTEMPTS) {
-                attempt++;
-                console.warn(`[AutoRepair][${address.substring(0, 8)}] ⚠️ Stuck Queue Detected(Diff: ${pendingNonce - latestNonce}). Clearing slot ${latestNonce}...`);
-
-                const feeData = await this.getProvider().getFeeData();
-                const boostPrice = (feeData.gasPrice * 30n) / 10n; // 3x aggressive gas
-
-                // Send 0-value self-transfer to overwrite the "head" of the stuck queue
-                try {
-                    const tx = await targetWallet.sendTransaction({
-                        to: address,
-                        value: 0,
-                        nonce: latestNonce,
-                        gasLimit: 30000,
-                        gasPrice: boostPrice
-                    });
-                    console.log(`[AutoRepair][${address.substring(0, 8)}] 💉 Correction TX Sent: ${tx.hash}. Waiting...`);
-
-                    // Wait for confirmation with timeout
-                    await Promise.race([
-                        tx.wait(),
-                        new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 60000))
-                    ]);
-
-                    console.log(`[AutoRepair][${address.substring(0, 8)}] ✅ Slot ${latestNonce} cleared.`);
-                } catch (txErr) {
-                    console.warn(`[AutoRepair][${address.substring(0, 8)}] ⚠️ Tx Replacement failed: ${txErr.message}. Retrying check...`);
-                    // Wait a bit before retrying
-                    await new Promise(r => setTimeout(r, 3000));
-                }
-
-                // Refresh counts
-                latestNonce = await this.getProvider().getTransactionCount(address, "latest");
-                pendingNonce = await this.getProvider().getTransactionCount(address, "pending");
-            }
-
-            if (pendingNonce > latestNonce) {
-                console.warn(`[AutoRepair][${address.substring(0, 8)}] ⚠️ Queue still stuck after ${MAX_ATTEMPTS} attempts.Proceeding with caution.`);
-                return false; // Indicate repair failed
-            } else {
-                console.log(`[AutoRepair][${address.substring(0, 8)}] ✨ Mempool is clean.`);
-                return true; // Indicate success
-            }
-
-        } catch (e) {
-            console.warn(`[AutoRepair] ⚠️ Failed to auto - repair nonce: ${e.message} `);
-            return false;
-        }
-    }
 
     /**
      * RETRY LOGIC: 
@@ -1506,7 +1423,9 @@ class RelayerEngine {
         }
         console.log(`[Refund] 🏦 Sweep Target: ${targetFaucetAddress}`);
 
-        const feeData = await this.getProvider().getFeeData();
+        const [feeData] = await this.rpcManager.execute(async (provider) => {
+            return [await provider.getFeeData()];
+        });
         const gasPrice = feeData.gasPrice || 50000000000n; // Default 50 gwei
         const boostedGasPrice = (gasPrice * 130n) / 100n; // 30% Boost for speed
         const costWei = 21000n * boostedGasPrice;
@@ -1538,23 +1457,24 @@ class RelayerEngine {
 
         const worker = async (wallet, idx) => {
             try {
-                // 0. Ensure Wallet is connected to LATEST provider (Failover/Rotation safety)
-                const currentProvider = this.getProvider();
-                if (wallet.provider !== currentProvider) {
-                    wallet = wallet.connect(currentProvider);
-                }
+                // USE NEW SYSTEM: All work inside execute() block for multi-RPC resilience
+                const bal = await this.rpcManager.execute(async (provider) => {
+                    if (wallet.provider !== provider) {
+                        wallet = wallet.connect(provider);
+                    }
 
-                // 1. SELF-HEALING: Verify and Repair Nonce if blocked
-                process.stdout.write(`[Refund][${wallet.address.substring(0, 6)}] 🔧 Checking Nonce...\n`);
-                try {
-                    await this.verifyAndRepairNonce(wallet);
-                    process.stdout.write(`[Refund][${wallet.address.substring(0, 6)}] ✅ Nonce Checked.\n`);
-                } catch (nonceErr) {
-                    process.stdout.write(`[Refund][${wallet.address.substring(0, 6)}] ⚠️ Nonce Repair warning: ${nonceErr.message}\n`);
-                }
+                    // 1. SELF-HEALING: Verify and Repair Nonce if blocked
+                    process.stdout.write(`[Refund][${wallet.address.substring(0, 6)}] 🔧 Checking Nonce...\n`);
+                    try {
+                        await this.verifyAndRepairNonce(wallet);
+                        process.stdout.write(`[Refund][${wallet.address.substring(0, 6)}] ✅ Nonce Checked.\n`);
+                    } catch (nonceErr) {
+                        process.stdout.write(`[Refund][${wallet.address.substring(0, 6)}] ⚠️ Nonce Repair warning: ${nonceErr.message}\n`);
+                    }
 
-                process.stdout.write(`[Refund][${wallet.address.substring(0, 6)}] 💰 Getting Balance...\n`);
-                const bal = await currentProvider.getBalance(wallet.address);
+                    process.stdout.write(`[Refund][${wallet.address.substring(0, 6)}] 💰 Getting Balance...\n`);
+                    return provider.getBalance(wallet.address);
+                });
                 process.stdout.write(`[Refund][${wallet.address.substring(0, 6)}] 💵 Balance: ${ethers.formatEther(bal)}\n`);
 
                 if (bal > (costWei + safetyBuffer)) {
@@ -1642,20 +1562,23 @@ class RelayerEngine {
      */
     async _recoverFromEvents(batchId, txId) {
         try {
-            const contract = new ethers.Contract(this.contractAddress, this.contractABI, this.getProvider());
-            const latestBlock = await this.getProvider().getBlockNumber();
-            const startBlock = latestBlock - 10000; // Search last ~5-6 hours
+            return await this.rpcManager.execute(async (provider) => {
+                const contract = new ethers.Contract(this.contractAddress, this.contractABI, provider);
+                const latestBlock = await provider.getBlockNumber();
+                const startBlock = latestBlock - 20000; // Search last ~12 hours for safety
 
-            const filter = contract.filters.TransactionExecuted(batchId, txId);
-            const logs = await contract.queryFilter(filter, startBlock, latestBlock);
+                const filter = contract.filters.TransactionExecuted(batchId, txId);
+                const logs = await contract.queryFilter(filter, startBlock, latestBlock);
 
-            if (logs.length > 0) {
-                const log = logs[0];
-                return {
-                    txHash: log.transactionHash,
-                    amount: log.args.amount.toString()
-                };
-            }
+                if (logs.length > 0) {
+                    const log = logs[0];
+                    return {
+                        txHash: log.transactionHash,
+                        amount: log.args.amount.toString()
+                    };
+                }
+                return null;
+            });
         } catch (e) {
             console.warn(`[Engine] Recovery failed for Tx ${txId}: ${e.message}`);
         }
