@@ -983,10 +983,12 @@ function renderBatchFilters() {
             <label>📊 Estado</label>
             <select id="batchFilterStatus" onchange="fetchBatches(1)">
                 <option value="">Todos</option>
-                <option value="READY">Preparado 🔵</option>
-                <option value="SENT">Enviando 🟢</option>
-                <option value="COMPLETED">Completado ✅</option>
-                <option value="PREPARING">En Preparación 🟠</option>
+                <option value="PREPARING">PREPARING 🟠</option>
+                <option value="READY">READY 🔵</option>
+                <option value="COMPLETED">COMPLETED 🟢</option>
+                <option value="SENT">SENT 🔴</option>
+                <option value="PROCESSING">PROCESSING 🟣</option>
+                <option value="FAILED">FAILED 👺</option>
             </select>
         </div>
         <div class="filter-group">
