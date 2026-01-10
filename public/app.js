@@ -2966,7 +2966,12 @@ async function pollBatchProgress(batchId) {
             // Also check if timer already stopped (processing finished)
             const timerStopped = !window.processTimerInterval;
 
+            // Debug logging
+            console.log('[DEBUG Poll] Status:', status, '| Completed:', completed, '/', total, '| Pending:', pending, '| Failed:', failed);
+            console.log('[DEBUG Poll] isDoneStats:', isDoneStats, '| isBackendDone:', isBackendDone, '| timerStopped:', timerStopped);
+
             if (isDoneStats || isBackendDone || timerStopped || (completed >= total && total > 0)) {
+                console.log('[DEBUG Poll] ✅ Batch completion detected! Updating UI...');
                 stopTimer();
                 const processStatus = document.getElementById('merkleTestStatus');
                 if (processStatus) {
