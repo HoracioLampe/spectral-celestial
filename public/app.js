@@ -1678,18 +1678,13 @@ async function updateAllowanceDisplay(funderAddress) {
 async function fetchUSDCAllowance(address) {
     if (!address || !ethers.isAddress(address)) return "---";
     try {
-        let provider;
-        if (window.ethereum) {
-            provider = new ethers.BrowserProvider(window.ethereum);
-        } else {
-            provider = new ethers.JsonRpcProvider("https://polygon-rpc.com");
+        // Use backend API instead of direct provider call
+        const response = await authenticatedFetch(`/api/balances/${address}`);
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
         }
-        const usdcAddress = "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359";
-        const minABI = ["function allowance(address owner, address spender) view returns (uint256)"];
-        const contract = new ethers.Contract(usdcAddress, minABI, provider);
-        const allowance = await contract.allowance(address, APP_CONFIG.CONTRACT_ADDRESS);
-        const formatted = ethers.formatUnits(allowance, 6);
-        return `$${parseFloat(formatted).toFixed(6)} USDC`;
+        const data = await response.json();
+        return `$${parseFloat(data.allowance).toFixed(6)} USDC`;
     } catch (e) {
         console.error("Fetch Allowance Error", e);
         return "Error";
@@ -2404,18 +2399,13 @@ window.checkFunderBalance = checkFunderBalance;
 async function fetchUSDCBalance(address) {
     if (!address || !ethers.isAddress(address)) return "---";
     try {
-        let provider;
-        if (window.ethereum) {
-            provider = new ethers.BrowserProvider(window.ethereum);
-        } else {
-            provider = new ethers.JsonRpcProvider("https://polygon-rpc.com");
+        // Use backend API instead of direct provider call
+        const response = await authenticatedFetch(`/api/balances/${address}`);
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
         }
-        const usdcAddress = "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359";
-        const minABI = ["function balanceOf(address owner) view returns (uint256)"];
-        const contract = new ethers.Contract(usdcAddress, minABI, provider);
-        const usdcBal = await contract.balanceOf(address);
-        const usdcFormatted = ethers.formatUnits(usdcBal, 6);
-        return `$${parseFloat(usdcFormatted).toFixed(6)} USDC`;
+        const data = await response.json();
+        return `$${parseFloat(data.usdc).toFixed(6)} USDC`;
     } catch (e) {
         console.error("Fetch Balance Error", e);
         return "Error";

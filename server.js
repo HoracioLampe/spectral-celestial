@@ -1652,16 +1652,30 @@ app.get('/api/balances/:address', authenticateToken, async (req, res) => {
 
             // Fetch USDC balance
             let usdc = "0.00";
+            let allowance = "0.00";
             try {
                 const usdcAddr = process.env.USDC_ADDRESS || "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359";
-                const usdcContract = new ethers.Contract(usdcAddr, ["function balanceOf(address) view returns (uint256)"], provider);
+                const usdcContract = new ethers.Contract(
+                    usdcAddr,
+                    [
+                        "function balanceOf(address) view returns (uint256)",
+                        "function allowance(address owner, address spender) view returns (uint256)"
+                    ],
+                    provider
+                );
+
                 const usdcWei = await usdcContract.balanceOf(address);
                 usdc = ethers.formatUnits(usdcWei, 6);
+
+                // Fetch allowance for the contract
+                const contractAddr = process.env.CONTRACT_ADDRESS || "0x7B25Ce9800CCE4309E92e2834E09bD89453d90c5";
+                const allowanceWei = await usdcContract.allowance(address, contractAddr);
+                allowance = ethers.formatUnits(allowanceWei, 6);
             } catch (e) {
                 console.warn(`[API] USDC fetch error for ${address}:`, e.message);
             }
 
-            return { matic, usdc };
+            return { matic, usdc, allowance };
         });
 
         res.json(balances);
