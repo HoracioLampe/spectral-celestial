@@ -1634,6 +1634,43 @@ app.post('/api/faucet/generate', authenticateToken, async (req, res) => {
     }
 });
 
+// NEW: Resilient Balance Endpoint (Uses Backend RPC Manager)
+app.get('/api/balances/:address', authenticateToken, async (req, res) => {
+    try {
+        const address = req.params.address;
+        const userAddress = req.user.address.toLowerCase();
+
+        // Security: Only allow fetching your own balance
+        if (address.toLowerCase() !== userAddress) {
+            return res.status(403).json({ error: 'Unauthorized' });
+        }
+
+        const balances = await globalRpcManager.execute(async (provider) => {
+            // Fetch MATIC balance
+            const maticWei = await provider.getBalance(address);
+            const matic = ethers.formatEther(maticWei);
+
+            // Fetch USDC balance
+            let usdc = "0.00";
+            try {
+                const usdcAddr = process.env.USDC_ADDRESS || "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359";
+                const usdcContract = new ethers.Contract(usdcAddr, ["function balanceOf(address) view returns (uint256)"], provider);
+                const usdcWei = await usdcContract.balanceOf(address);
+                usdc = ethers.formatUnits(usdcWei, 6);
+            } catch (e) {
+                console.warn(`[API] USDC fetch error for ${address}:`, e.message);
+            }
+
+            return { matic, usdc };
+        });
+
+        res.json(balances);
+    } catch (err) {
+        console.error("[Balances] Error:", err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 app.get('/api/logs', async (req, res) => {
     res.json({ message: "Logs are available in the console" });
 });
