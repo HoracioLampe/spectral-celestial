@@ -2279,7 +2279,7 @@ async function runMerkleTest() {
 
                     // Debug: Calculate Leaf locally for comparison
                     try {
-                        const chainId = 137; // Hardcoded for Polygon Mainnet (avoid Ledger provider delays)
+                        const chainId = APP_CONFIG.CHAIN_ID || 137; // From config (env CHAIN_ID)
                         const encodedLeaf = ethers.AbiCoder.defaultAbiCoder().encode(
                             ["uint256", "address", "uint256", "uint256", "address", "address", "uint256"],
                             [

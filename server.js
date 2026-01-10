@@ -1744,6 +1744,7 @@ app.get('/api/config', (req, res) => {
         RPC_URL: rpcUrls[0] || "",
         WS_RPC_URL: process.env.WS_RPC_URL || "",
         CONTRACT_ADDRESS: process.env.CONTRACT_ADDRESS || "0x7B25Ce9800CCE4309E92e2834E09bD89453d90c5",
+        CHAIN_ID: parseInt(process.env.CHAIN_ID || '137'),
         // Unit: Seconds (Default: 2 Hours = 7200s)
         PERMIT_DEADLINE_SECONDS: process.env.PERMIT_DEADLINE_SECONDS || 7200
     });
