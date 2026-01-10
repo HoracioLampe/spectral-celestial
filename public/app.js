@@ -2222,15 +2222,10 @@ async function runMerkleTest() {
     }
 
     try {
-        // Setup Provider (Read-Only is fine)
-        let testProvider;
-        if (typeof provider !== 'undefined' && provider) {
-            testProvider = provider;
-        } else {
-            console.log("[Verify] Local provider missing, creating new JsonRpcProvider...");
-            if (!APP_CONFIG.RPC_URL) await getConfig();
-            testProvider = new ethers.JsonRpcProvider(APP_CONFIG.RPC_URL || "https://polygon-rpc.com");
-        }
+        // Setup Provider - Always use backend RPC for reliability (especially with Ledger)
+        if (!APP_CONFIG.RPC_URL) await getConfig();
+        const testProvider = new ethers.JsonRpcProvider(APP_CONFIG.RPC_URL || "https://polygon-rpc.com");
+        console.log("[Verify] Using RPC:", APP_CONFIG.RPC_URL);
 
         if (!testProvider) throw new Error("Could not initialize RPC Provider");
 
