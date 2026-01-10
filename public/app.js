@@ -2277,18 +2277,18 @@ async function runMerkleTest() {
                     // Verify On-Chain (View Call)
                     console.log(`[Verify] Testing Tx ${tx.id} | Funder: ${funder} | Recipient: ${tx.wallet_address_to} | Amount: ${amountVal.toString()}`);
 
-                    // Debug: Calculate Leaf locally for comparison (Ethers v5)
+                    // Debug: Calculate Leaf locally for comparison
                     try {
-                        const network = await provider.getNetwork();
+                        const chainId = 137; // Hardcoded for Polygon Mainnet (avoid Ledger provider delays)
                         const encodedLeaf = ethers.AbiCoder.defaultAbiCoder().encode(
                             ["uint256", "address", "uint256", "uint256", "address", "address", "uint256"],
                             [
-                                network.chainId,
+                                chainId,
                                 APP_CONFIG.CONTRACT_ADDRESS,
                                 BigInt(currentBatchId),
                                 BigInt(tx.id),
                                 funder,
-                                tx.wallet_address_to, // Check this!
+                                tx.wallet_address_to,
                                 amountVal
                             ]
                         );
