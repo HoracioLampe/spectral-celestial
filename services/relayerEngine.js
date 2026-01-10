@@ -1456,35 +1456,29 @@ class RelayerEngine {
         console.log(`[Refund] 🚀 Starting parallel recovery with ${concurrency} threads...`);
 
         const worker = async (wallet, idx) => {
+            const shortAddr = wallet.address.substring(0, 6);
             try {
-                // USE NEW SYSTEM: All work inside execute() block for multi-RPC resilience
-                const bal = await this.rpcManager.execute(async (provider) => {
+                // USE NEW SYSTEM: Entire worker logic inside execute() block for multi-RPC resilience
+                await this.rpcManager.execute(async (provider) => {
                     if (wallet.provider !== provider) {
                         wallet = wallet.connect(provider);
                     }
 
                     // 1. SELF-HEALING: Verify and Repair Nonce if blocked
-                    process.stdout.write(`[Refund][${wallet.address.substring(0, 6)}] 🔧 Checking Nonce...\n`);
                     try {
                         await this.verifyAndRepairNonce(wallet);
-                        process.stdout.write(`[Refund][${wallet.address.substring(0, 6)}] ✅ Nonce Checked.\n`);
                     } catch (nonceErr) {
-                        process.stdout.write(`[Refund][${wallet.address.substring(0, 6)}] ⚠️ Nonce Repair warning: ${nonceErr.message}\n`);
+                        process.stdout.write(`[Refund][${shortAddr}] ⚠️ Nonce Repair warning: ${nonceErr.message}\n`);
                     }
 
-                    process.stdout.write(`[Refund][${wallet.address.substring(0, 6)}] 💰 Getting Balance...\n`);
-                    return provider.getBalance(wallet.address);
-                });
-                process.stdout.write(`[Refund][${wallet.address.substring(0, 6)}] 💵 Balance: ${ethers.formatEther(bal)}\n`);
+                    // 2. CHECK BALANCE
+                    const bal = await provider.getBalance(wallet.address);
+                    process.stdout.write(`[Refund][${shortAddr}] 💵 Balance: ${ethers.formatEther(bal)}\n`);
 
-                if (bal > (costWei + safetyBuffer)) {
-                    // Send strictly calculated amount: Balance - (Cost + Buffer)
-                    // We knowingly leave 'Buffer' amount behind to guarantee success.
-                    let amount = bal - costWei - safetyBuffer;
-
-                    if (amount > 0n) {
-                        console.log(`[Refund] 💸 Sweeping ${ethers.formatEther(amount)} MATIC from ${wallet.address.substring(0, 6)}...`);
-                        try {
+                    if (bal > (costWei + safetyBuffer)) {
+                        let amount = bal - costWei - safetyBuffer;
+                        if (amount > 0n) {
+                            process.stdout.write(`[Refund][${shortAddr}] 💸 Sweeping ${ethers.formatEther(amount)} MATIC...\n`);
                             const txPayload = {
                                 to: targetFaucetAddress,
                                 value: amount,
@@ -1492,35 +1486,32 @@ class RelayerEngine {
                                 gasPrice: boostedGasPrice
                             };
 
-                            process.stdout.write(`[Refund][${wallet.address.substring(0, 6)}] 🚀 Sending Tx...\n`);
                             const tx = await wallet.sendTransaction(txPayload);
-                            process.stdout.write(`[Refund][${wallet.address.substring(0, 6)}] 📡 Tx Sent: ${tx.hash}\n`);
+                            process.stdout.write(`[Refund][${shortAddr}] 📡 Tx Sent: ${tx.hash}\n`);
 
-                            process.stdout.write(`[Refund][${wallet.address.substring(0, 6)}] ⏳ Waiting for Confirmation...\n`);
                             const receipt = await tx.wait();
-                            process.stdout.write(`[Refund][${wallet.address.substring(0, 6)}] 🧾 Confirmed in block ${receipt.blockNumber}\n`);
+                            process.stdout.write(`[Refund][${shortAddr}] 🧾 Confirmed in block ${receipt.blockNumber}\n`);
 
                             recoveredWei += amount;
 
-                            // Mark drained effectively
+                            // Mark drained effectively in DB
                             await this.pool.query(
                                 `UPDATE relayers SET last_balance = '0', drain_balance = $1, transactionhash_deposit = $2, status = 'drained', last_activity = NOW() WHERE address = $3 AND batch_id = $4`,
                                 [ethers.formatEther(bal), tx.hash, wallet.address, batchId]
                             );
-
-                        } catch (txErr) {
-                            console.error(`[Refund] ❌ Tx Failed for ${wallet.address.substring(0, 6)}:`, txErr.message);
                         }
+                    } else {
+                        // Mark as drained even if we didn't extract funds (it's dust)
+                        process.stdout.write(`[Refund][${shortAddr}] 🌫️ Low balance (dust), marking drained.\n`);
+                        await this.pool.query(
+                            `UPDATE relayers SET last_balance = $1, drain_balance = $1, status = 'drained', last_activity = NOW() WHERE address = $2 AND batch_id = $3`,
+                            [ethers.formatEther(bal), wallet.address, batchId]
+                        );
                     }
-                } else {
-                    // Mark as drained even if we didn't extract funds (it's dust)
-                    await this.pool.query(
-                        `UPDATE relayers SET last_balance = $1, drain_balance = $1, status = 'drained', last_activity = NOW() WHERE address = $2 AND batch_id = $3`,
-                        [ethers.formatEther(bal), wallet.address, batchId]
-                    );
-                }
+                });
             } catch (err) {
-                process.stdout.write(`[Refund] ⚠️ CRITICAL WORKER ERROR for ${wallet.address.substring(0, 6)}: ${err.stack || err}\n`);
+                process.stdout.write(`[Refund] ❌ CRITICAL FAILURE for ${shortAddr}: ${err.message}\n`);
+                // IMPORTANT: We do NOT throw here so other relayers in the same chunk/batch can continue.
             }
         };
 

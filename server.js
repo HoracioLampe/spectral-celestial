@@ -1859,6 +1859,7 @@ r.id, r.address, r.status, r.last_activity, r.transactionhash_deposit, r.last_ba
                     return {
                         ...r,
                         balance: balFormatted, // Override with live data
+                        last_activity: new Date().toISOString(), // Reflect sync activity
                         private_key: undefined // Don't leak PK
                     };
                 } catch (e) {

@@ -560,8 +560,12 @@
                 <!-- Relayer Balances Table (Integrated) -->
                 <div id="relayerGridSection" class="hidden"
                     style="margin-top: 2.5rem; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 1.5rem;">
-                    <div class="top-bar">
+                    <div class="top-bar" style="display: flex; justify-content: space-between; align-items: center;">
                         <h3>⚡ Balances de Relayers</h3>
+                        <button onclick="refreshRelayerBalances()" class="btn-glass"
+                            style="font-size: 0.75rem; padding: 0.4rem 1rem; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
+                            🔄 Refrescar Grilla
+                        </button>
                     </div>
                     <div id="relayerGridInfo" style="margin-bottom: 0.5rem;"></div>
                     <table id="relayerBalancesTable" class="glass-panel"

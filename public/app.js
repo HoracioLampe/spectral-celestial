@@ -699,7 +699,13 @@ async function connectWallet() {
     } catch (error) {
         console.error(error);
         if (error.code !== 4001) {
-            alert("Error: " + error.message);
+            let msg = "Error: " + error.message;
+            if (error.message.includes("Ledger") || error.message.includes("undecipherable") || error.message.includes("0x650f")) {
+                msg += "\n\n💡 TIP PARA LEDGER:\n1. Abre la App de Ethereum en tu Ledger.\n2. Ve a Settings -> Blind Signing y ponlo en 'Enabled'.\n3. Desbloquea el Ledger antes de firmar.";
+            } else if (error.message.includes("timed out")) {
+                msg += "\n\n💡 Reintenta de nuevo, el Ledger tardó demasiado en responder.";
+            }
+            alert(msg);
         }
         if (btnEnter) {
             btnEnter.disabled = false;
@@ -3224,7 +3230,7 @@ function renderRelayerBalances(explicitData) {
                 </td>
                 <td style="padding:0.75rem; color:${balanceColor}; font-weight:bold;">${balanceDisplay}</td>
                 <td style="padding:0.75rem; color:#94a3b8; font-size:0.8rem;">
-                    ${r.lastActivity ? new Date(r.lastActivity).toLocaleTimeString() : 'Sin actividad'}
+                    ${r.last_activity ? new Date(r.last_activity).toLocaleTimeString() : 'Sin actividad'}
                 </td>
                 <td style="padding:0.75rem; text-align:center; font-weight:bold; color: #fff;">
                     ${txCount}
@@ -3324,12 +3330,19 @@ window.triggerGasDistribution = async () => {
     await setupRelayerBatch();
 };
 
-window.refreshRelayerBalances = () => {
+window.refreshRelayerBalances = async () => {
     if (currentBatchId) {
-        fetchRelayerBalances(currentBatchId);
+        const btn = document.querySelector('[onclick="refreshRelayerBalances()"]');
+        if (btn) btn.innerHTML = '<span>⏳</span> Refrescando...';
+
+        try {
+            await fetchRelayerBalances(currentBatchId);
+        } finally {
+            if (btn) btn.innerHTML = '🔄 Refrescar Grilla';
+        }
     } else {
         const tbody = document.getElementById('relayerBalancesTableBody');
-        if (tbody) tbody.innerHTML = '<tr><td colspan="3" style="text-align:center; padding:1rem;">Seleccione un lote para ver relayers</td></tr>';
+        if (tbody) tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:1rem;">Seleccione un lote para ver relayers</td></tr>';
     }
 };
 
