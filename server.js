@@ -847,24 +847,20 @@ app.get('/api/batches', authenticateToken, async (req, res) => {
     }
 });
 
-// Get batch details + transactions (Secure & Isolated)
-app.get('/api/batches/:id', authenticateToken, async (req, res) => {
+// Get batch details + transactions (Public for polling - no auth required for GET)
+app.get('/api/batches/:id', async (req, res) => {
     try {
         const batchId = parseInt(req.params.id);
-        const userAddress = req.user.address.toLowerCase().trim();
 
-        // Use Case Insensitive Owner Check
+        // Get batch without authentication (public for polling)
         const batchRes = await pool.query(`
             SELECT b.* 
             FROM batches b 
-            WHERE b.id = $1 ${req.user.role !== 'SUPER_ADMIN' ? 'AND LOWER(b.funder_address) = $2' : ''}
-        `, req.user.role !== 'SUPER_ADMIN' ? [batchId, userAddress] : [batchId]);
-
-        console.log(`[DEBUG] Batch Lookup: ID=${batchId}, User=${userAddress}, Role=${req.user.role}, Rows=${batchRes.rows.length}`);
-
+            WHERE b.id = $1
+        `, [batchId]);
 
         if (batchRes.rows.length === 0) {
-            return res.status(404).json({ error: 'Batch not found or access denied' });
+            return res.status(404).json({ error: 'Batch not found' });
         }
 
         const batch = batchRes.rows[0];
