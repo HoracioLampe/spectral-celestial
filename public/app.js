@@ -1106,14 +1106,21 @@ function renderBatchesList(batches) {
 }
 
 function getStatusBadge(status) {
-    if (status === 'READY') return '<span class="badge" style="background: #3b82f6;">Preparado</span>';
-    if (status === 'REGISTERING_ROOT') return '<span class="badge" style="background: #8b5cf6;">Registrando Merkle Root...</span>';
-    if (status === 'SUBMITTING_PERMIT') return '<span class="badge" style="background: #8b5cf6;">Enviando Permit...</span>';
-    if (status === 'FUNDING_RELAYERS') return '<span class="badge" style="background: #8b5cf6;">Financiando Relayers...</span>';
-    if (status === 'SENT') return '<span class="badge" style="background: #10b981;">Procesando Lote</span>';
-    if (status === 'COMPLETED') return '<span class="badge" style="background: #059669; box-shadow: 0 0 10px #059669;">COMPLETED</span>';
-    if (status === 'PROCESSING') return '<span class="badge" style="background: #8b5cf6;">Procesando</span>';
-    return '<span class="badge" style="background: #f59e0b; color: #000;">En Preparación</span>';
+    // Color mapping for each status
+    const colors = {
+        'PREPARING': '#f59e0b',      // Yellow/Orange
+        'READY': '#3b82f6',          // Blue
+        'COMPLETED': '#059669',      // Green
+        'SENT': '#ef4444',           // Red
+        'PROCESSING': '#8b5cf6',     // Purple
+        'REGISTERING_ROOT': '#8b5cf6',
+        'SUBMITTING_PERMIT': '#8b5cf6',
+        'FUNDING_RELAYERS': '#8b5cf6',
+        'FAILED': '#dc2626'          // Dark Red
+    };
+
+    const color = colors[status] || '#64748b'; // Default gray
+    return `<span class="badge" style="background: ${color};">${status}</span>`;
 }
 
 async function createBatch() {
