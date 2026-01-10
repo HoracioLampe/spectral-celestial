@@ -1710,6 +1710,31 @@ app.get('/api/contract/nonce/:address', authenticateToken, async (req, res) => {
     }
 });
 
+// NEW: USDC Nonce Endpoint (For Permit Signature with Ledger)
+app.get('/api/usdc/nonce/:address', authenticateToken, async (req, res) => {
+    try {
+        const address = req.params.address;
+        const userAddress = req.user.address.toLowerCase();
+
+        // Security: Only allow fetching your own nonce
+        if (address.toLowerCase() !== userAddress) {
+            return res.status(403).json({ error: 'Unauthorized' });
+        }
+
+        const nonce = await globalRpcManager.execute(async (provider) => {
+            const usdcAddr = process.env.USDC_ADDRESS || "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359";
+            const usdcAbi = ["function nonces(address) view returns (uint256)"];
+            const contract = new ethers.Contract(usdcAddr, usdcAbi, provider);
+            return await contract.nonces(address);
+        });
+
+        res.json({ nonce: nonce.toString() });
+    } catch (err) {
+        console.error("[USDC Nonce] Error:", err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 app.get('/api/logs', async (req, res) => {
     res.json({ message: "Logs are available in the console" });
 });

@@ -1580,14 +1580,24 @@ async function signBatchPermit(batchId) {
 
     if (totalUSDC === 0n) return null;
 
-    // 2. Get Current Allowance & Nonce
-    const usdcAbi = [
-        "function nonces(address) view returns (uint256)",
-        "function allowance(address, address) view returns (uint256)"
-    ];
-    const usdcContract = new ethers.Contract(USDC_ADDRESS, usdcAbi, signer);
-
-    const nonce = await usdcContract.nonces(userAddress);
+    // 2. Get Current Nonce from backend (more reliable with Ledger)
+    let nonce;
+    try {
+        const nonceRes = await authenticatedFetch(`/api/usdc/nonce/${userAddress}`);
+        if (nonceRes.ok) {
+            const nonceData = await nonceRes.json();
+            nonce = BigInt(nonceData.nonce);
+            console.log("✅ USDC Nonce from backend:", nonce.toString());
+        } else {
+            throw new Error("Backend USDC nonce fetch failed");
+        }
+    } catch (e) {
+        console.warn("⚠️ Backend USDC nonce failed, using provider:", e.message);
+        const usdcAbi = ["function nonces(address) view returns (uint256)"];
+        const usdcContract = new ethers.Contract(USDC_ADDRESS, usdcAbi, signer);
+        nonce = await usdcContract.nonces(userAddress);
+        console.log("✅ USDC Nonce from provider:", nonce.toString());
+    }
     // const allowance = await usdcContract.allowance(userAddress, APP_CONFIG.CONTRACT_ADDRESS);
 
     // 2.1 Calculate Total Required for ALL Active Batches (Concurrency Support)
