@@ -1346,6 +1346,14 @@ function updateDetailView(batch) {
     } else {
         if (detailUploadContainer) detailUploadContainer.classList.add('hidden');
 
+        // Hide execute button for sent/completed batches
+        const paymentTriggerZone = document.getElementById('paymentTriggerZone');
+        if (batch.status === 'SENT' || batch.status === 'COMPLETED' || batch.status === 'PROCESSING' || batch.status === 'FAILED') {
+            if (paymentTriggerZone) paymentTriggerZone.classList.add('hidden');
+        } else {
+            if (paymentTriggerZone) paymentTriggerZone.classList.remove('hidden');
+        }
+
         // Merkle Logic (For Ready/Sent batches)
         if (merkleContainer) {
             merkleContainer.classList.remove('hidden');
