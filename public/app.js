@@ -24,7 +24,56 @@ async function authenticatedFetch(url, options = {}) {
         ...options.headers,
         'Authorization': `Bearer ${token}`
     };
-    return fetch(url, { ...options, headers });
+
+    const response = await fetch(url, { ...options, headers });
+
+    // If 401 Unauthorized, try to renew token silently
+    if (response.status === 401) {
+        console.warn('[Auth] Token expired (401). Attempting silent renewal...');
+
+        try {
+            // Try to get a new token using the existing wallet connection
+            if (signer && userAddress) {
+                const newToken = await renewAuthToken();
+                if (newToken) {
+                    // Retry the request with new token
+                    const newHeaders = {
+                        ...options.headers,
+                        'Authorization': `Bearer ${newToken}`
+                    };
+                    return fetch(url, { ...options, headers: newHeaders });
+                }
+            }
+        } catch (err) {
+            console.error('[Auth] Token renewal failed:', err);
+        }
+    }
+
+    return response;
+}
+
+async function renewAuthToken() {
+    try {
+        const message = `Sign in to Spectral Celestial\nAddress: ${userAddress}\nTimestamp: ${Date.now()}`;
+        const signature = await signer.signMessage(message);
+
+        const response = await fetch('/api/auth/verify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ address: userAddress, signature, message })
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+            AUTH_TOKEN = data.token;
+            localStorage.setItem('jwt_token', data.token);
+            console.log('[Auth] ✅ Token renewed successfully');
+            return data.token;
+        }
+    } catch (err) {
+        console.error('[Auth] Token renewal error:', err);
+    }
+    return null;
 }
 
 
