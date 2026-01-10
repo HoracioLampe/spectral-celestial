@@ -2486,7 +2486,9 @@ async function executeDistribution() {
 
         if (response.ok) {
             processStatus.textContent = "✅ Distribución iniciada con éxito.";
+            console.log('[DEBUG] Setting button to En curso. Button:', btnExecute, 'ID:', btnExecute?.id);
             btnExecute.textContent = "✅ En curso";
+            btnExecute.style.background = "#10b981"; // Green
             if (signHint) signHint.classList.add('hidden');
 
             // Start Timer
