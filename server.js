@@ -665,21 +665,34 @@ app.get('/api/debug/audit-vault', async (req, res) => {
 
         // 1. Attempt Auto-Unseal if sealed
         const unsealKeys = process.env.VAULT_UNSEAL_KEYS ? process.env.VAULT_UNSEAL_KEYS.split(',').filter(k => k.trim()).length : 0;
+
+        // Initial health check
+        let initialHealth = {};
+        try {
+            const hReq = await fetch(`${VAULT_ADDR}/v1/sys/health`);
+            initialHealth = await hReq.json();
+        } catch (e) { initialHealth = { error: e.message }; }
+
         console.log(`[Audit] Triggering auto-unseal check... (Keys found: ${unsealKeys})`);
         await vault.ensureUnsealed();
 
         const auditResults = {
             vault_health: {},
-            unseal_info: { keys_found: unsealKeys },
+            unseal_info: {
+                keys_found: unsealKeys,
+                sealed_before: initialHealth.sealed,
+                sealed_after: null
+            },
             faucets: [],
             relayers: [],
             db_comparison: []
         };
 
-        // 1. Vault Health
+        // 1. Vault Health (After unseal attempt)
         try {
             const hRes = await fetch(`${VAULT_ADDR}/v1/sys/health`);
             auditResults.vault_health = await hRes.json();
+            auditResults.unseal_info.sealed_after = auditResults.vault_health.sealed;
         } catch (e) {
             auditResults.vault_health = { error: e.message };
         }
@@ -786,10 +799,15 @@ app.get('/api/debug/audit-vault', async (req, res) => {
                     
                     ${isSealed ? `
                     <div class="warning-box">
-                        <h2>⚠️ Vault está SELLADO (SEALED)</h2>
-                        <p>No se pueden leer las llaves privadas porque el Vault está bloqueado. <br/>
-                        <strong>Estado de unseal automático:</strong> Se encontraron ${auditResults.unseal_info.keys_found} llaves en el servidor.</p>
-                        <p><strong>RECUERDA:</strong> Tu Vault dice <code>"initialized": true</code>. Esto significa que <strong>TUS DATOS EXISTEN</strong>, pero están encriptados. No los has perdido, solo hay que abrirlos.</p>
+                        <h2>⚠️ Vault sigue SELLADO (SEALED)</h2>
+                        <p>Estado inicial: <b>${auditResults.unseal_info.sealed_before ? 'SELLADO' : 'ABIERTO'}</b></p>
+                        <p>Estado después de intentar abrirlo: <b>${auditResults.unseal_info.sealed_after ? 'SIGUE SELLADO' : '¡ABIERTO!'}</b></p>
+                        <p>Llaves encontradas en variables de entorno: <b>${auditResults.unseal_info.keys_found}</b></p>
+                        
+                        <hr style="border: 0; border-top: 1px solid rgba(255,255,255,0.2); margin: 15px 0;"/>
+                        
+                        <p><strong>RECUERDA:</strong> Tu Vault dice <code>"initialized": true</code>. Esto significa que <strong>TUS DATOS EXISTEN</strong>.</p>
+                        <p>Si las 3 llaves que tienes no lo abren, es posible que el Vault se haya re-inicializado automáticamente en un volumen vacío. Si esto pasó, las <b>NUEVAS llaves</b> estarán en los logs de Railway del servicio <code>vault-railway-template</code>.</p>
                     </div>
                     ` : ''}
 
