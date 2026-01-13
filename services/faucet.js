@@ -27,7 +27,7 @@ async function getFaucetWallet(pool, provider, funderAddress = null) {
         // Search by both: it could be the funder_address OR the address itself.
         // CRITICAL: Prioritize match with 'address' to avoid using a sub-faucet if the input IS a faucet address.
         const result = await client.query(`
-            SELECT address, funder_address 
+            SELECT address, funder_address, encrypted_key 
             FROM faucets 
             WHERE LOWER(funder_address) = $1 
                OR LOWER(address) = $1 
@@ -37,26 +37,23 @@ async function getFaucetWallet(pool, provider, funderAddress = null) {
 
         if (result.rows.length > 0) {
             faucetAddress = result.rows[0].address;
+            const encryptedKey = result.rows[0].encrypted_key;
             console.log(`[FaucetService] Resolved Faucet: ${faucetAddress} (Input: ${targetFunder})`);
 
-            // 2. Try VAULT using FAUCET ADDRESS (Public Key)
-            // Flow: DB Lookup -> FaucetAddress -> Vault(Key: address) -> PrivateKey
+            // 2. Decrypt key from DATABASE
             try {
-                privateKey = await vault.getFaucetKey(faucetAddress);
-
-                if (privateKey) {
-                    console.log(`🔒 [FaucetService] Loaded key from Vault for Faucet ${faucetAddress}`);
-                } else {
-                    // STRICT MODE: If DB has it, Vault MUST have it. Do not auto-regenerate.
-                    console.error(`❌ [FaucetService] FATAL: Faucet Address ${faucetAddress} exists in DB (Funder: ${targetFunder}), but Key NOT found in Vault under ${faucetAddress}.`);
-                    throw new Error(`INTEGRITY_ERROR: Faucet key missing in Vault for ${faucetAddress}`);
+                if (!encryptedKey) {
+                    console.error(`❌ [FaucetService] FATAL: Faucet ${faucetAddress} exists but has no encrypted_key`);
+                    throw new Error(`INTEGRITY_ERROR: Faucet key missing in database for ${faucetAddress}`);
                 }
+
+                const encryption = require('./encryption');
+                privateKey = encryption.decrypt(encryptedKey);
+                console.log(`🔒 [FaucetService] Decrypted key from database for Faucet ${faucetAddress}`);
             } catch (e) {
-                // If the error is our own Integrity Error, rethrow it.
                 if (e.message.includes('INTEGRITY_ERROR')) throw e;
-                console.warn(`⚠️ [FaucetService] Vault lookup failed: ${e.message}`);
-                // If Vault is down, we definitely shouldn't generate a new one.
-                throw new Error(`VAULT_CONNECTION_ERROR: Could not retrieve key for ${faucetAddress}`);
+                console.error(`❌ [FaucetService] Decryption failed: ${e.message}`);
+                throw new Error(`DECRYPTION_ERROR: Could not decrypt key for ${faucetAddress}`);
             }
         }
 
@@ -69,28 +66,25 @@ async function getFaucetWallet(pool, provider, funderAddress = null) {
             privateKey = wallet.privateKey;
             faucetAddress = wallet.address;
 
-            // B. Save to VAULT (Key: Public Address, Value: Private Key)
-            console.log(`🔒 [FaucetService] Saving new key to Vault under Faucet Address: ${faucetAddress}`);
+            // B. Encrypt and save to DATABASE (more reliable than Vault)
+            console.log(`🔒 [FaucetService] Saving encrypted key to database for: ${faucetAddress}`);
             try {
-                const saved = await vault.saveFaucetKey(faucetAddress, privateKey);
-                if (!saved) {
-                    throw new Error("Vault save returned false (Check Vault Status/Token)");
-                }
-            } catch (e) {
-                console.error(`❌ [FaucetService] CRITICAL: Failed to save to Vault: ${e.message}`);
-                throw new Error(`SECURE_STORAGE_FAILED: Could not save Faucet Key to Vault for ${faucetAddress}`);
-            }
+                const encryption = require('./encryption');
+                const encryptedKey = encryption.encrypt(privateKey);
 
-            // C. Save to DB (Atomic Insert - IMMUTABLE)
-            // Once a faucet is assigned to a funder, it NEVER changes
-            // ON CONFLICT DO NOTHING ensures we don't overwrite existing assignments
-            await client.query(`
-                INSERT INTO faucets (address, funder_address) 
-                VALUES ($1, $2)
-                ON CONFLICT (funder_address) 
-                DO NOTHING
-            `, [faucetAddress, targetFunder]);
-            console.log(`🪙 [FaucetService] Saved Faucet entry for ${targetFunder} (address: ${faucetAddress})`);
+                // C. Save to DB with encrypted key
+                await client.query(`
+                    INSERT INTO faucets (address, funder_address, encrypted_key) 
+                    VALUES ($1, $2, $3)
+                    ON CONFLICT (funder_address) 
+                    DO NOTHING
+                `, [faucetAddress, targetFunder, encryptedKey]);
+
+                console.log(`🪙 [FaucetService] Saved Faucet entry for ${targetFunder} (address: ${faucetAddress})`);
+            } catch (e) {
+                console.error(`❌ [FaucetService] CRITICAL: Failed to save encrypted key: ${e.message}`);
+                throw new Error(`SECURE_STORAGE_FAILED: Could not save Faucet Key for ${faucetAddress}`);
+            }
         } else {
             // IMMUTABILITY CHECK: Verify DB and Vault match
             const wallet = new ethers.Wallet(privateKey);

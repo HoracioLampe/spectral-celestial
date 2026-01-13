@@ -230,20 +230,21 @@ class RelayerEngine {
 
         // Check for existing relayers in DB
         const existingRelayersRes = await this.pool.query(
-            'SELECT address FROM relayers WHERE batch_id = $1',
+            'SELECT address, encrypted_key FROM relayers WHERE batch_id = $1',
             [batchId]
         );
 
         let relayers = [];
         if (existingRelayersRes.rows.length > 0) {
             console.log(`[Engine] Found ${existingRelayersRes.rows.length} existing relayers for Batch ${batchId}.`);
-            // Securely load keys from Vault
+            // Securely load keys from encrypted database
+            const encryption = require('./encryption');
             for (const r of existingRelayersRes.rows) {
-                const pk = await vault.getRelayerKey(r.address);
-                if (pk) {
+                if (r.encrypted_key) {
+                    const pk = encryption.decrypt(r.encrypted_key);
                     relayers.push(new ethers.Wallet(pk, this.getProvider()));
                 } else {
-                    console.error(`[Engine] ❌ Private key for relayer ${r.address} not found in Vault!`);
+                    console.error(`[Engine] ❌ Encrypted key for relayer ${r.address} not found in database!`);
                 }
             }
         }
@@ -291,22 +292,23 @@ class RelayerEngine {
         console.log(`[Engine] 🚀 startExecution(id = ${batchId}, hasPermit=${!!permitData}, hasRootSig=${!!rootSignatureData})`);
 
         const existingRelayersRes = await this.pool.query(
-            'SELECT address FROM relayers WHERE batch_id = $1',
+            'SELECT address, encrypted_key FROM relayers WHERE batch_id = $1',
             [batchId]
         );
 
         const relayers = [];
         const currentProvider = this.getProvider();
+        const encryption = require('./encryption');
 
         for (const r of existingRelayersRes.rows) {
-            const pk = await vault.getRelayerKey(r.address);
-            if (pk) {
+            if (r.encrypted_key) {
+                const pk = encryption.decrypt(r.encrypted_key);
                 // Ensure each relayer wallet is connected to the ACTIVE provider
                 const w = new ethers.Wallet(pk, currentProvider);
                 w.batch_id = batchId; // Attach batch_id for workerLoop context
                 relayers.push(w);
             } else {
-                console.error(`[Engine] ❌ Private key for relayer ${r.address} not found in Vault!`);
+                console.error(`[Engine] ❌ Encrypted key for relayer ${r.address} not found in database!`);
             }
         }
 
@@ -1356,26 +1358,28 @@ class RelayerEngine {
 
     async persistRelayers(batchId, relayers) {
         console.log(`[Engine] 💾 Persisting ${relayers.length} relayers to database...`);
+        const encryption = require('./encryption'); // Require encryption module once
         for (let i = 0; i < relayers.length; i++) {
             const r = relayers[i];
 
+            let encryptedKey = null;
             let vaultStatus = 'pending';
             try {
-                // SECURE: Save key to Vault
-                await vault.storeRelayerKey(r.address, r.privateKey);
+                // Encrypt and save to database
+                encryptedKey = encryption.encrypt(r.privateKey);
                 vaultStatus = 'ok';
             } catch (err) {
-                console.error(`[Engine] ❌ Vault storage failed for ${r.address}: ${err.message} `);
+                console.error(`[Engine] ❌ Encryption failed for ${r.address}: ${err.message} `);
                 vaultStatus = 'nok';
             }
 
             try {
-                // Save to DB with the vault_status
+                // Save to DB with the vault_status and encrypted key
                 await this.pool.query(
-                    `INSERT INTO relayers(batch_id, address, status, vault_status)
-        VALUES($1, $2, 'active', $3)
-                     ON CONFLICT(address) DO UPDATE SET batch_id = EXCLUDED.batch_id, status = 'active', vault_status = EXCLUDED.vault_status`,
-                    [batchId, r.address, vaultStatus]
+                    `INSERT INTO relayers (address, batch_id, status, last_balance, encrypted_key, vault_status)
+                    VALUES ($1, $2, 'ACTIVE', '0', $3, $4)
+                     ON CONFLICT(address) DO UPDATE SET batch_id = EXCLUDED.batch_id, status = 'active', encrypted_key = EXCLUDED.encrypted_key, vault_status = EXCLUDED.vault_status`,
+                    [r.address, batchId, encryptedKey, vaultStatus]
                 );
 
                 if (vaultStatus === 'ok') {
@@ -1436,12 +1440,13 @@ class RelayerEngine {
         console.log(`[Refund] ⛽ Gas Price: ${ethers.formatUnits(boostedGasPrice, 'gwei')} gwei | Min Cost: ${ethers.formatEther(costWei)}`);
 
         // Note: 'relayers' argument might be partial if process restarted. Fetch from DB for authority.
-        const activeRelayersRes = await this.pool.query('SELECT address FROM relayers WHERE batch_id = $1', [batchId]);
+        const activeRelayersRes = await this.pool.query('SELECT address, encrypted_key FROM relayers WHERE batch_id = $1', [batchId]);
 
         const activeRelayers = [];
+        const encryption = require('./encryption');
         for (const r of activeRelayersRes.rows) {
-            const pk = await vault.getRelayerKey(r.address);
-            if (pk) {
+            if (r.encrypted_key) {
+                const pk = encryption.decrypt(r.encrypted_key);
                 activeRelayers.push(new ethers.Wallet(pk, this.getProvider()));
             }
         }
