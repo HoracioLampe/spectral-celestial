@@ -664,11 +664,13 @@ app.get('/api/debug/audit-vault', async (req, res) => {
         }
 
         // 1. Attempt Auto-Unseal if sealed
-        console.log("[Audit] Triggering auto-unseal check...");
+        const unsealKeys = process.env.VAULT_UNSEAL_KEYS ? process.env.VAULT_UNSEAL_KEYS.split(',').filter(k => k.trim()).length : 0;
+        console.log(`[Audit] Triggering auto-unseal check... (Keys found: ${unsealKeys})`);
         await vault.ensureUnsealed();
 
         const auditResults = {
             vault_health: {},
+            unseal_info: { keys_found: unsealKeys },
             faucets: [],
             relayers: [],
             db_comparison: []
@@ -786,7 +788,8 @@ app.get('/api/debug/audit-vault', async (req, res) => {
                     <div class="warning-box">
                         <h2>⚠️ Vault está SELLADO (SEALED)</h2>
                         <p>No se pueden leer las llaves privadas porque el Vault está bloqueado. <br/>
-                        <strong>DEBES DESBLOQUEARLO (UNSEAL) EN RAILWAY PRIMERO.</strong></p>
+                        <strong>Estado de unseal automático:</strong> Se encontraron ${auditResults.unseal_info.keys_found} llaves en el servidor.</p>
+                        <p><strong>RECUERDA:</strong> Tu Vault dice <code>"initialized": true</code>. Esto significa que <strong>TUS DATOS EXISTEN</strong>, pero están encriptados. No los has perdido, solo hay que abrirlos.</p>
                     </div>
                     ` : ''}
 
