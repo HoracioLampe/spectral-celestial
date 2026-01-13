@@ -678,10 +678,16 @@ app.get('/api/debug/audit-vault', async (req, res) => {
             auditResults.vault_health = { error: e.message };
         }
 
-        // 2. Helper to list keys (Vault KV v2 metadata path)
+        // 2. Helper to list keys (Vault KV v2 metadata path AND v1 fallback)
         async function listKeys(subpath) {
-            const url = `${VAULT_ADDR}/v1/secret/metadata/${subpath}?list=true`;
-            const res = await fetch(url, { headers });
+            const v2Url = `${VAULT_ADDR}/v1/secret/metadata/${subpath}?list=true`;
+            let res = await fetch(v2Url, { headers });
+            if (res.ok) {
+                const data = await res.json();
+                return data.data.keys || [];
+            }
+            const v1Url = `${VAULT_ADDR}/v1/secret/${subpath}?list=true`;
+            res = await fetch(v1Url, { headers });
             if (res.ok) {
                 const data = await res.json();
                 return data.data.keys || [];
@@ -689,21 +695,56 @@ app.get('/api/debug/audit-vault', async (req, res) => {
             return [];
         }
 
+        // Deep search helper for recovery
+        async function deepGetKey(addr) {
+            const paths = [
+                `secret/data/faucets/${addr.toLowerCase()}`,
+                `secret/faucets/${addr.toLowerCase()}`,
+                `secret/data/relayers/${addr.toLowerCase()}`,
+                `secret/relayers/${addr.toLowerCase()}`,
+                `secret/data/${addr.toLowerCase()}`,
+                `secret/${addr.toLowerCase()}`,
+                `secret/data/faucets/${addr}`,
+                `secret/faucets/${addr}`
+            ];
+
+            for (const p of paths) {
+                try {
+                    const url = `${VAULT_ADDR}/v1/${p}`;
+                    const r = await fetch(url, { headers });
+                    if (r.ok) {
+                        const d = await r.json();
+                        if (d.data?.data?.private_key) return d.data.data.private_key;
+                        if (d.data?.private_key) return d.data.private_key;
+                    }
+                } catch (e) { }
+            }
+            return null;
+        }
+
         const faucetAddresses = await listKeys('faucets');
         const relayerAddresses = await listKeys('relayers');
 
-        // 3. Retrieve Private Keys using the server's Vault service
+        // Targeted search for the problematic address
+        const TARGET_FAUCET = "0xe14b99363D029AD0E0723958a283dE0e9978D888";
+        if (!faucetAddresses.includes(TARGET_FAUCET.toLowerCase()) && !faucetAddresses.includes(TARGET_FAUCET)) {
+            faucetAddresses.push(TARGET_FAUCET);
+        }
+
+        // 3. Retrieve Private Keys
         for (const addr of faucetAddresses) {
-            const pk = await vault.getFaucetKey(addr);
-            auditResults.faucets.push({ address: addr, private_key: pk || "MISSING" });
+            const pk = await deepGetKey(addr);
+            if (pk || addr === TARGET_FAUCET) {
+                auditResults.faucets.push({ address: addr, private_key: pk || "NOT_FOUND_IN_VAULT_PATHS" });
+            }
         }
         for (const addr of relayerAddresses) {
-            const pk = await vault.getRelayerKey(addr);
+            const pk = await deepGetKey(addr);
             auditResults.relayers.push({ address: addr, private_key: pk || "MISSING" });
         }
 
-        // 4. DB Comparison
-        const dbRes = await pool.query('SELECT address, funder_address FROM faucets');
+        // 4. DB Comparison (Full Check)
+        const dbRes = await pool.query('SELECT address, funder_address, created_at FROM faucets ORDER BY created_at DESC');
         auditResults.db_comparison = dbRes.rows;
 
         // 5. Render HTML
