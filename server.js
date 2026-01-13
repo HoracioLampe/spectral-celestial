@@ -744,11 +744,18 @@ app.get('/api/debug/audit-vault', async (req, res) => {
         }
 
         // 4. DB Comparison (Full Check)
-        const dbRes = await pool.query('SELECT address, funder_address, created_at FROM faucets ORDER BY created_at DESC');
-        auditResults.db_comparison = dbRes.rows;
+        const dbFaucets = await pool.query('SELECT address, funder_address, created_at FROM faucets ORDER BY created_at DESC');
+        const dbRelayers = await pool.query('SELECT address, status, last_balance FROM relayers ORDER BY created_at DESC');
+        const dbRbac = await pool.query('SELECT address, role, name FROM rbac_users');
+
+        auditResults.db_comparison = {
+            faucets: dbFaucets.rows,
+            relayers: dbRelayers.rows,
+            rbac_users: dbRbac.rows
+        };
 
         // 5. Render HTML
-        // 5. Render HTML
+        const isSealed = auditResults.vault_health.sealed;
         let html = `
             <!DOCTYPE html>
             <html>
@@ -761,6 +768,7 @@ app.get('/api/debug/audit-vault', async (req, res) => {
                     h2 { color: #58a6ff; border-bottom: 1px solid #30363d; padding-bottom: 10px; margin-top: 0; }
                     pre { background: #0d1117; padding: 15px; border-radius: 6px; overflow-x: auto; border: 1px solid #21262d; color: #79c0ff; }
                     .error { color: #f85149; font-weight: bold; }
+                    .warning-box { background: #7d1212; color: white; padding: 20px; border-radius: 8px; margin-bottom: 30px; text-align: center; border: 2px solid #f85149; }
                     .key-reveal { color: #ffa657; font-weight: bold; font-size: 1.1em; letter-spacing: 1px; }
                     .addr { color: #d2a8ff; font-weight: bold; }
                     .item { margin-bottom: 15px; padding: 10px; border-radius: 6px; background: #0d1117; }
@@ -769,8 +777,15 @@ app.get('/api/debug/audit-vault', async (req, res) => {
             <body>
                 <div class="container">
                     <h1>🛡️ Vault Audit & Recovery Tool</h1>
-                    <p style="color: #8b949e;">Usa esta página para verificar que tus claves privadas están a salvo en el servidor.</p>
                     
+                    ${isSealed ? `
+                    <div class="warning-box">
+                        <h2>⚠️ Vault está SELLADO (SEALED)</h2>
+                        <p>No se pueden leer las llaves privadas porque el Vault está bloqueado. <br/>
+                        <strong>DEBES DESBLOQUEARLO (UNSEAL) EN RAILWAY PRIMERO.</strong></p>
+                    </div>
+                    ` : ''}
+
                     <div class="card">
                         <h2>Estado del Vault</h2>
                         <pre>${JSON.stringify(auditResults.vault_health, null, 2)}</pre>
@@ -784,7 +799,7 @@ app.get('/api/debug/audit-vault', async (req, res) => {
                                 <strong>PRIVATE KEY:</strong> <span class="key-reveal">${f.private_key}</span>
                             </div>
                         `).join('')}
-                        ${auditResults.faucets.length === 0 ? '<p class="error">No se encontraron faucets en el Vault.</p>' : ''}
+                        ${auditResults.faucets.length === 0 ? '<p class="error">No se encontraron faucets en el Vault (¿Está sellado?).</p>' : ''}
                     </div>
 
                     <div class="card">
@@ -799,8 +814,13 @@ app.get('/api/debug/audit-vault', async (req, res) => {
                     </div>
 
                     <div class="card">
-                        <h2>Asignaciones en Base de Datos</h2>
-                        <pre>${JSON.stringify(auditResults.db_comparison, null, 2)}</pre>
+                        <h2>Explorador de Base de Datos</h2>
+                        <h2>Faucets (${auditResults.db_comparison.faucets.length})</h2>
+                        <pre>${JSON.stringify(auditResults.db_comparison.faucets, null, 2)}</pre>
+                        <h2>Relayers (${auditResults.db_comparison.relayers.length})</h2>
+                        <pre>${JSON.stringify(auditResults.db_comparison.relayers, null, 2)}</pre>
+                        <h2>Usuarios RBAC (${auditResults.db_comparison.rbac_users.length})</h2>
+                        <pre>${JSON.stringify(auditResults.db_comparison.rbac_users, null, 2)}</pre>
                     </div>
 
                     <p style="color: #f85149; border-top: 1px solid #30363d; padding-top: 10px; margin-top: 40px;">
