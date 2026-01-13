@@ -703,7 +703,7 @@ app.get('/api/debug/audit-vault', async (req, res) => {
         }
 
         // 4. DB Comparison
-        const dbRes = await pool.query('SELECT address, funder_address, status FROM faucets');
+        const dbRes = await pool.query('SELECT address, funder_address FROM faucets');
         auditResults.db_comparison = dbRes.rows;
 
         // 5. Render HTML
