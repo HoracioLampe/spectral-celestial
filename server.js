@@ -663,6 +663,10 @@ app.get('/api/debug/audit-vault', async (req, res) => {
             return res.status(500).send("<h1>Error</h1><p>VAULT_TOKEN missing in environment.</p>");
         }
 
+        // 1. Attempt Auto-Unseal if sealed
+        console.log("[Audit] Triggering auto-unseal check...");
+        await vault.ensureUnsealed();
+
         const auditResults = {
             vault_health: {},
             faucets: [],
