@@ -2707,6 +2707,7 @@ const PORT_LISTEN = process.env.PORT || 3000;
 // ============================================
 async function monitorStuckTransactions() {
     try {
+        let recovered = 0;
         // Use execute() for polling if needed, but here we just need to ensure the system doesn't crash on node failure
 
         // 1. Reset WAITING_CONFIRMATION with no tx_hash (never sent)
