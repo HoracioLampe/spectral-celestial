@@ -1,10 +1,8 @@
 // services/faucet.js
 // Simple faucet utility for Polygon Mainnet.
-// Modernized to fetch keys from HashiCorp Vault.
-// STRICT: Target Funder -> DB -> Vault(by Address) -> Generate
+// Uses encrypted database storage for private keys.
 
 const { ethers } = require('ethers');
-const vault = require('./vault');
 
 // Helper to get a "Default" funder if we are running in a script context
 const DEFAULT_FUNDER = 'SYSTEM_FAUCET_DEPLOYER';

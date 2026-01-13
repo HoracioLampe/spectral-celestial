@@ -1,5 +1,4 @@
 const ethers = require('ethers');
-const vault = require('./vault'); // Import Vault Service
 
 // Relayer Engine for High Throughput Processing
 class RelayerEngine {
@@ -216,10 +215,6 @@ class RelayerEngine {
      */
     async prepareRelayers(batchId, numRelayers) {
         console.log(`[Engine] 🏗️ prepareRelayers(id = ${batchId}, count = ${numRelayers})`);
-
-        // Step -2: Ensure Vault is accessible (Auto-Unseal if needed)
-        // This prevents initialization failures if Vault is sealed.
-        await vault.ensureUnsealed();
 
         // Step -1: Recover Stale Transactions (Self-Healing)
         await this.recoverStaleTransactions(batchId);
