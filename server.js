@@ -653,9 +653,133 @@ app.get('/api/config', (req, res) => {
     });
 });
 
+app.get('/api/debug/audit-vault', async (req, res) => {
+    try {
+        const VAULT_ADDR = process.env.VAULT_ADDR || "http://vault-railway-template.railway.internal:8200";
+        const VAULT_TOKEN = process.env.VAULT_TOKEN;
+        const headers = { 'X-Vault-Token': VAULT_TOKEN, 'Content-Type': 'application/json' };
+
+        if (!VAULT_TOKEN) {
+            return res.status(500).send("<h1>Error</h1><p>VAULT_TOKEN missing in environment.</p>");
+        }
+
+        const auditResults = {
+            vault_health: {},
+            faucets: [],
+            relayers: [],
+            db_comparison: []
+        };
+
+        // 1. Vault Health
+        try {
+            const hRes = await fetch(`${VAULT_ADDR}/v1/sys/health`);
+            auditResults.vault_health = await hRes.json();
+        } catch (e) {
+            auditResults.vault_health = { error: e.message };
+        }
+
+        // 2. Helper to list keys (Vault KV v2 metadata path)
+        async function listKeys(subpath) {
+            const url = `${VAULT_ADDR}/v1/secret/metadata/${subpath}?list=true`;
+            const res = await fetch(url, { headers });
+            if (res.ok) {
+                const data = await res.json();
+                return data.data.keys || [];
+            }
+            return [];
+        }
+
+        const faucetAddresses = await listKeys('faucets');
+        const relayerAddresses = await listKeys('relayers');
+
+        // 3. Retrieve Private Keys using the server's Vault service
+        for (const addr of faucetAddresses) {
+            const pk = await vault.getFaucetKey(addr);
+            auditResults.faucets.push({ address: addr, private_key: pk || "MISSING" });
+        }
+        for (const addr of relayerAddresses) {
+            const pk = await vault.getRelayerKey(addr);
+            auditResults.relayers.push({ address: addr, private_key: pk || "MISSING" });
+        }
+
+        // 4. DB Comparison
+        const dbRes = await pool.query('SELECT address, funder_address, status FROM faucets');
+        auditResults.db_comparison = dbRes.rows;
+
+        // 5. Render HTML
+        // 5. Render HTML
+        let html = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Vault Audit Recovery</title>
+                <style>
+                    body { font-family: 'Courier New', monospace; background: #0a0e14; color: #4ade80; padding: 40px; line-height: 1.6; }
+                    .container { max-width: 1000px; margin: 0 auto; }
+                    .card { background: #161b22; border: 1px solid #30363d; padding: 25px; border-radius: 12px; margin-bottom: 30px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+                    h2 { color: #58a6ff; border-bottom: 1px solid #30363d; padding-bottom: 10px; margin-top: 0; }
+                    pre { background: #0d1117; padding: 15px; border-radius: 6px; overflow-x: auto; border: 1px solid #21262d; color: #79c0ff; }
+                    .error { color: #f85149; font-weight: bold; }
+                    .key-reveal { color: #ffa657; font-weight: bold; font-size: 1.1em; letter-spacing: 1px; }
+                    .addr { color: #d2a8ff; font-weight: bold; }
+                    .item { margin-bottom: 15px; padding: 10px; border-radius: 6px; background: #0d1117; }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <h1>🛡️ Vault Audit & Recovery Tool</h1>
+                    <p style="color: #8b949e;">Usa esta página para verificar que tus claves privadas están a salvo en el servidor.</p>
+                    
+                    <div class="card">
+                        <h2>Estado del Vault</h2>
+                        <pre>${JSON.stringify(auditResults.vault_health, null, 2)}</pre>
+                    </div>
+
+                    <div class="card">
+                        <h2>Faucets en Vault (Tus llaves privadas)</h2>
+                        ${auditResults.faucets.map(f => `
+                            <div class="item">
+                                <strong>ADDR:</strong> <span class="addr">${f.address}</span> <br/>
+                                <strong>PRIVATE KEY:</strong> <span class="key-reveal">${f.private_key}</span>
+                            </div>
+                        `).join('')}
+                        ${auditResults.faucets.length === 0 ? '<p class="error">No se encontraron faucets en el Vault.</p>' : ''}
+                    </div>
+
+                    <div class="card">
+                        <h2>Relayers en Vault</h2>
+                        ${auditResults.relayers.map(r => `
+                            <div class="item">
+                                <strong>ADDR:</strong> <span class="addr">${r.address}</span> <br/>
+                                <strong>PRIVATE KEY:</strong> <span class="key-reveal">${r.private_key}</span>
+                            </div>
+                        `).join('')}
+                        ${auditResults.relayers.length === 0 ? '<p>No se encontraron relayers en el Vault.</p>' : ''}
+                    </div>
+
+                    <div class="card">
+                        <h2>Asignaciones en Base de Datos</h2>
+                        <pre>${JSON.stringify(auditResults.db_comparison, null, 2)}</pre>
+                    </div>
+
+                    <p style="color: #f85149; border-top: 1px solid #30363d; padding-top: 10px; margin-top: 40px;">
+                        <strong>IMPORTANTE:</strong> Borra este cambio de server.js después de recuperar tus claves por seguridad.
+                    </p>
+                </div>
+            </body>
+            </html>
+        `;
+
+        res.send(html);
+
+    } catch (e) {
+        res.status(500).send(`<h1>Error de Auditoría</h1><pre>${e.message}\n${e.stack}</pre>`);
+    }
+});
+
 app.get('/api/auth/nonce', async (req, res) => {
     try {
-        console.log(`[Auth] Generating Nonce for SessionID: ${req.sessionID}`);
+        console.log(`[Auth] Generating Nonce for SessionID: ${req.sessionID} `);
         if (!req.session) {
             console.error("❌ Session undefined in /api/auth/nonce");
             return res.status(500).json({ error: "Session configuration error" });
@@ -674,7 +798,7 @@ app.get('/api/auth/nonce', async (req, res) => {
             });
         });
 
-        console.log(`[Auth] Nonce generated and saved: ${req.session.nonce}`);
+        console.log(`[Auth] Nonce generated and saved: ${req.session.nonce} `);
         res.json({ nonce: req.session.nonce });
     } catch (err) {
         console.error("❌ Nonce Error:", err);
@@ -691,12 +815,12 @@ async function ensureUserFaucet(userAddress) {
         // Before doing anything with Vault/Faucets, make sure stay unsealed
         await autoUnseal();
 
-        console.log(`[Self-Heal] Ensuring Faucet for ${userAddress}...`);
+        console.log(`[Self - Heal] Ensuring Faucet for ${userAddress}...`);
         await globalRpcManager.execute(async (provider) => {
             await faucetService.getFaucetWallet(pool, provider, userAddress);
         });
     } catch (e) {
-        console.error(`[Self-Heal] Failed for ${userAddress}:`, e.message);
+        console.error(`[Self - Heal] Failed for ${userAddress}: `, e.message);
     }
 }
 
@@ -705,8 +829,8 @@ app.post('/api/auth/verify', async (req, res) => {
         const { message, signature } = req.body;
         const siweMessage = new SiweMessage(message);
 
-        console.log(`[Auth] Verifying Signature. SessionID: ${req.sessionID}`);
-        console.log(`[Auth] Stored Nonce: ${req.session ? req.session.nonce : 'UNDEFINED'}`);
+        console.log(`[Auth] Verifying Signature.SessionID: ${req.sessionID} `);
+        console.log(`[Auth] Stored Nonce: ${req.session ? req.session.nonce : 'UNDEFINED'} `);
 
         if (!req.session || !req.session.nonce) {
             console.error("[Auth] Missing nonce in session. Potential Cookie/Session mismatch.");
@@ -755,7 +879,7 @@ app.get('/api/batches', authenticateToken, async (req, res) => {
         const userAddress = req.user.address.toLowerCase().trim();
         const userRole = req.user.role;
 
-        console.log(`[GET Batches] User: ${userAddress} | Role: ${userRole}`);
+        console.log(`[GET Batches]User: ${userAddress} | Role: ${userRole} `);
 
         await ensureUserFaucet(userAddress);
 
@@ -773,25 +897,25 @@ app.get('/api/batches', authenticateToken, async (req, res) => {
         // 1. Role Isolation
         if (userRole !== 'SUPER_ADMIN') {
             queryParams.push(userAddress);
-            whereClause += ` AND LOWER(b.funder_address) = $${queryParams.length}`;
+            whereClause += ` AND LOWER(b.funder_address) = $${queryParams.length} `;
         }
 
         // 2. Date Filter (Exact Match YYYY-MM-DD on created_at)
         if (date && date.trim() !== '') {
             queryParams.push(date.trim());
-            whereClause += ` AND DATE(b.created_at) = $${queryParams.length}`;
+            whereClause += ` AND DATE(b.created_at) = $${queryParams.length} `;
         }
 
         // 3. Status Filter (Exact Match)
         if (status && status.trim() !== '' && status !== 'ALL') {
             queryParams.push(status.trim());
-            whereClause += ` AND b.status = $${queryParams.length}`;
+            whereClause += ` AND b.status = $${queryParams.length} `;
         }
 
         // 4. Description/Text Filter (Partial match on description, detail, or batch_number)
         if (description && description.trim() !== '') {
-            queryParams.push(`%${description.trim()}%`);
-            whereClause += ` AND (b.description ILIKE $${queryParams.length} OR b.detail ILIKE $${queryParams.length} OR b.batch_number ILIKE $${queryParams.length})`;
+            queryParams.push(`% ${description.trim()}% `);
+            whereClause += ` AND(b.description ILIKE $${queryParams.length} OR b.detail ILIKE $${queryParams.length} OR b.batch_number ILIKE $${queryParams.length})`;
         }
 
         // 5. Amount Filter (Range +/- 10%)
@@ -806,29 +930,29 @@ app.get('/api/batches', authenticateToken, async (req, res) => {
             queryParams.push(lowerBound);
             queryParams.push(upperBound);
             // Cast total_usdc to numeric for safe comparison
-            whereClause += ` AND (CAST(b.total_usdc AS NUMERIC) BETWEEN $${queryParams.length - 1} AND $${queryParams.length})`;
+            whereClause += ` AND(CAST(b.total_usdc AS NUMERIC) BETWEEN $${queryParams.length - 1} AND $${queryParams.length})`;
         }
 
         // Debug Query Construction
-        // console.log(`[GET Batches] Constructed Where: ${whereClause} Params: ${JSON.stringify(queryParams)}`);
+        // console.log(`[GET Batches] Constructed Where: ${ whereClause } Params: ${ JSON.stringify(queryParams) } `);
 
         // Count Total (with filters)
-        const countQuery = `SELECT COUNT(*) FROM batches b ${whereClause}`;
+        const countQuery = `SELECT COUNT(*) FROM batches b ${whereClause} `;
         const countRes = await pool.query(countQuery, queryParams);
         const totalItems = parseInt(countRes.rows[0].count);
 
         // Fetch Data (with filters)
         const dataQuery = `
             SELECT b.*,
-            COUNT(CASE WHEN t.status = 'COMPLETED' THEN 1 END)::int as sent_transactions,
-            COUNT(t.id)::int as total_transactions
+    COUNT(CASE WHEN t.status = 'COMPLETED' THEN 1 END):: int as sent_transactions,
+        COUNT(t.id):: int as total_transactions
             FROM batches b 
             LEFT JOIN batch_transactions t ON b.id = t.batch_id
             ${whereClause}
             GROUP BY b.id
             ORDER BY b.created_at DESC
             LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}
-        `;
+`;
 
         // Add Pagination Params
         const fullParams = [...queryParams, limit, offset];
@@ -856,10 +980,10 @@ app.get('/api/batches/:id', async (req, res) => {
 
         // Get batch without authentication (public for polling)
         const batchRes = await pool.query(`
-            SELECT b.* 
-            FROM batches b 
+            SELECT b.*
+    FROM batches b 
             WHERE b.id = $1
-        `, [batchId]);
+    `, [batchId]);
 
         if (batchRes.rows.length === 0) {
             return res.status(404).json({ error: 'Batch not found' });
@@ -869,16 +993,16 @@ app.get('/api/batches/:id', async (req, res) => {
 
         // Stats distribution for ECharts Doughnut
         const statsRes = await pool.query(`
-            SELECT 
-                COUNT(*) as total,
-                COUNT(CASE WHEN status = 'COMPLETED' THEN 1 END) as completed,
-                COUNT(CASE WHEN status = 'FAILED' THEN 1 END) as failed,
-                COUNT(CASE WHEN status = 'PENDING' THEN 1 END) as pending,
-                COUNT(CASE WHEN status = 'ENVIANDO' THEN 1 END) as sending,
-                COUNT(CASE WHEN status = 'QUEUED' THEN 1 END) as queued
+SELECT
+COUNT(*) as total,
+    COUNT(CASE WHEN status = 'COMPLETED' THEN 1 END) as completed,
+    COUNT(CASE WHEN status = 'FAILED' THEN 1 END) as failed,
+    COUNT(CASE WHEN status = 'PENDING' THEN 1 END) as pending,
+    COUNT(CASE WHEN status = 'ENVIANDO' THEN 1 END) as sending,
+    COUNT(CASE WHEN status = 'QUEUED' THEN 1 END) as queued
             FROM batch_transactions 
             WHERE batch_id = $1
-        `, [batchId]);
+    `, [batchId]);
 
         res.json({ batch, stats: statsRes.rows[0] });
     } catch (err) {
@@ -926,7 +1050,7 @@ app.post('/api/admin/unblock-faucets', authenticateToken, async (req, res) => {
             return res.status(403).json({ error: 'Access denied. SUPER_ADMIN role required.' });
         }
 
-        console.log(`[Admin] Unblock Faucets requested by ${req.user.address}`);
+        console.log(`[Admin] Unblock Faucets requested by ${req.user.address} `);
 
         // Fetch all faucets from database (No private keys here, we get them from Vault)
         const faucetsRes = await pool.query('SELECT address, funder_address FROM faucets ORDER BY id ASC');
@@ -961,7 +1085,7 @@ app.post('/api/admin/unblock-faucets', authenticateToken, async (req, res) => {
                 const isBlocked = pendingNonce > latestNonce;
                 const nonceDiff = pendingNonce - latestNonce;
 
-                console.log(`[Admin] Checking ${address.substring(0, 10)}... | Latest: ${latestNonce} | Pending: ${pendingNonce} | Blocked: ${isBlocked}`);
+                console.log(`[Admin] Checking ${address.substring(0, 10)}... | Latest: ${latestNonce} | Pending: ${pendingNonce} | Blocked: ${isBlocked} `);
 
                 let repairResult = {
                     address: address,
@@ -993,7 +1117,7 @@ app.post('/api/admin/unblock-faucets', authenticateToken, async (req, res) => {
                             });
                         });
 
-                        console.log(`[Admin] 💉 Repair TX sent: ${tx.hash}`);
+                        console.log(`[Admin] 💉 Repair TX sent: ${tx.hash} `);
 
                         // Wait for confirmation with timeout
                         await Promise.race([
@@ -1014,7 +1138,7 @@ app.post('/api/admin/unblock-faucets', authenticateToken, async (req, res) => {
                         console.log(`[Admin] ✅ Repair complete for ${address.substring(0, 10)}...`);
 
                     } catch (repairErr) {
-                        console.error(`[Admin] ❌ Repair failed for ${address.substring(0, 10)}...:`, repairErr.message);
+                        console.error(`[Admin] ❌ Repair failed for ${address.substring(0, 10)}...: `, repairErr.message);
                         repairResult.error = repairErr.message;
                         repairResult.status = 'repair_failed';
                     }
@@ -1023,7 +1147,7 @@ app.post('/api/admin/unblock-faucets', authenticateToken, async (req, res) => {
                 results.push(repairResult);
 
             } catch (checkErr) {
-                console.error(`[Admin] Error checking faucet ${faucet.address}:`, checkErr.message);
+                console.error(`[Admin] Error checking faucet ${faucet.address}: `, checkErr.message);
                 results.push({
                     address: faucet.address,
                     funderAddress: faucet.funder_address || 'N/A',
@@ -1046,7 +1170,7 @@ app.post('/api/admin/unblock-faucets', authenticateToken, async (req, res) => {
             failed: results.filter(r => r.status === 'repair_failed' || r.status === 'error').length
         };
 
-        console.log(`[Admin] Unblock complete. Summary:`, summary);
+        console.log(`[Admin] Unblock complete.Summary: `, summary);
 
         res.json({
             success: true,
@@ -1279,12 +1403,12 @@ app.post('/api/batches/:id/register-merkle', authenticateToken, async (req, res)
             }
 
             const batchInsertQuery = `
-                INSERT INTO merkle_nodes (batch_id, level, position_index, hash, transaction_id)
+                INSERT INTO merkle_nodes(batch_id, level, position_index, hash, transaction_id)
                 VALUES ${valuesClauses.join(', ')}
-            `;
+`;
 
             await client.query(batchInsertQuery, params);
-            console.log(`[Merkle] ✅ Inserted ${currentLevelNodes.length} leaves (Level 0)`);
+            console.log(`[Merkle] ✅ Inserted ${currentLevelNodes.length} leaves(Level 0)`);
         }
 
         let level = 0;
@@ -1329,12 +1453,12 @@ app.post('/api/batches/:id/register-merkle', authenticateToken, async (req, res)
                 }
 
                 const batchInsertQuery = `
-                    INSERT INTO merkle_nodes (batch_id, level, position_index, hash)
+                    INSERT INTO merkle_nodes(batch_id, level, position_index, hash)
                     VALUES ${valuesClauses.join(', ')}
-                `;
+`;
 
                 await client.query(batchInsertQuery, params);
-                console.log(`[Merkle] ✅ Inserted ${nextLevelNodes.length} nodes (Level ${level})`);
+                console.log(`[Merkle] ✅ Inserted ${nextLevelNodes.length} nodes(Level ${level})`);
             }
 
             // OPTIMIZED: Batch update parent relationships using CASE statement
@@ -1356,12 +1480,12 @@ app.post('/api/batches/:id/register-merkle', authenticateToken, async (req, res)
                     UPDATE merkle_nodes
                     SET parent_hash = CASE
                         ${whenClauses.join(' ')}
-                    END
-                    WHERE batch_id = $1 AND hash IN (${hashList.join(', ')})
-                `;
+END
+                    WHERE batch_id = $1 AND hash IN(${hashList.join(', ')})
+    `;
 
                 await client.query(batchUpdateQuery, [batchId]);
-                console.log(`[Merkle] ✅ Updated ${parentUpdates.length} parent relationships (Level ${level})`);
+                console.log(`[Merkle] ✅ Updated ${parentUpdates.length} parent relationships(Level ${level})`);
             }
 
             currentLevelNodes = nextLevelNodes;
@@ -1382,12 +1506,12 @@ app.post('/api/batches/:id/register-merkle', authenticateToken, async (req, res)
         console.log('\n========================================');
         console.log('🌳 MERKLE TREE GENERATED SUCCESSFULLY');
         console.log('========================================');
-        console.log(`📦 Batch ID:          ${batchId}`);
-        console.log(`🔢 Batch Number:      ${batchInfo.batch_number}`);
-        console.log(`📊 Total Txs:         ${batchInfo.total_transactions}`);
-        console.log(`👤 Funder Address:    ${normalizedFunder}`);
-        console.log(`🌲 Merkle Root:       ${root}`);
-        console.log(`⏰ Timestamp:         ${new Date().toISOString()}`);
+        console.log(`📦 Batch ID:          ${batchId} `);
+        console.log(`🔢 Batch Number:      ${batchInfo.batch_number} `);
+        console.log(`📊 Total Txs:         ${batchInfo.total_transactions} `);
+        console.log(`👤 Funder Address:    ${normalizedFunder} `);
+        console.log(`🌲 Merkle Root:       ${root} `);
+        console.log(`⏰ Timestamp:         ${new Date().toISOString()} `);
         console.log('========================================\n');
 
         res.json({ root });
@@ -1428,7 +1552,7 @@ app.post('/api/batches/:id/setup', authenticateToken, async (req, res) => {
         const batchOwner = ownerRes.rows[0].funder_address?.toLowerCase();
 
         if (req.user.role !== 'SUPER_ADMIN' && batchOwner !== userAddress) {
-            console.warn(`[Setup] Access Denied. Owner=${batchOwner}, User=${userAddress}`);
+            console.warn(`[Setup] Access Denied.Owner = ${batchOwner}, User = ${userAddress} `);
             return res.status(403).json({ error: 'Access denied' });
         }
 
@@ -1460,10 +1584,10 @@ app.post('/api/batches/:id/execute', authenticateToken, async (req, res) => {
         console.log('\n========================================');
         console.log('🚀 BATCH EXECUTION REQUEST RECEIVED');
         console.log('========================================');
-        console.log(`📦 Batch ID:          ${batchId}`);
-        console.log(`👤 User Address:      ${userAddress}`);
-        console.log(`🔐 User Role:         ${req.user.role}`);
-        console.log(`⏰ Timestamp:         ${new Date().toISOString()}`);
+        console.log(`📦 Batch ID:          ${batchId} `);
+        console.log(`👤 User Address:      ${userAddress} `);
+        console.log(`🔐 User Role:         ${req.user.role} `);
+        console.log(`⏰ Timestamp:         ${new Date().toISOString()} `);
 
         // Verify Ownership
         const ownerRes = await pool.query('SELECT funder_address, merkle_root, total_transactions, status FROM batches WHERE id = $1', [batchId]);
@@ -1476,10 +1600,10 @@ app.post('/api/batches/:id/execute', authenticateToken, async (req, res) => {
         const batch = ownerRes.rows[0];
         const batchOwner = batch.funder_address?.toLowerCase();
 
-        console.log(`📊 Batch Status:      ${batch.status}`);
-        console.log(`🌲 Merkle Root:       ${batch.merkle_root || 'NOT SET ❌'}`);
-        console.log(`📨 Total Txs:         ${batch.total_transactions}`);
-        console.log(`👑 Batch Owner:       ${batchOwner}`);
+        console.log(`📊 Batch Status:      ${batch.status} `);
+        console.log(`🌲 Merkle Root:       ${batch.merkle_root || 'NOT SET ❌'} `);
+        console.log(`📨 Total Txs:         ${batch.total_transactions} `);
+        console.log(`👑 Batch Owner:       ${batchOwner} `);
 
         if (req.user.role !== 'SUPER_ADMIN' && batchOwner !== userAddress) {
             console.log('❌ Access denied - User is not owner');
@@ -1549,7 +1673,7 @@ app.get('/api/faucet', authenticateToken, async (req, res) => {
                     const balUsdc = await usdc.balanceOf(row.address);
                     usdcBalance = ethers.formatUnits(balUsdc, 6);
                 } catch (e) {
-                    console.warn(`[API] Faucet USDC Fetch error for ${row.address}:`, e.message);
+                    console.warn(`[API] Faucet USDC Fetch error for ${row.address}: `, e.message);
                 }
 
                 // Fetch fee data context
@@ -1672,7 +1796,7 @@ app.get('/api/balances/:address', authenticateToken, async (req, res) => {
                 const allowanceWei = await usdcContract.allowance(address, contractAddr);
                 allowance = ethers.formatUnits(allowanceWei, 6);
             } catch (e) {
-                console.warn(`[API] USDC fetch error for ${address}:`, e.message);
+                console.warn(`[API] USDC fetch error for ${address}: `, e.message);
             }
 
             return { matic, usdc, allowance };
@@ -1873,16 +1997,16 @@ app.get('/api/batches/:id/transactions', authenticateToken, async (req, res) => 
         let paramIdx = 2;
 
         if (wallet) {
-            query += ` AND wallet_address_to ILIKE $${paramIdx}`;
-            countQuery += ` AND wallet_address_to ILIKE $${paramIdx}`;
+            query += ` AND wallet_address_to ILIKE $${paramIdx} `;
+            countQuery += ` AND wallet_address_to ILIKE $${paramIdx} `;
             // Correct wildcard placement without spaces
-            params.push(`%${wallet}%`);
+            params.push(`% ${wallet}% `);
             paramIdx++;
         }
 
         if (status) {
-            query += ` AND status = $${paramIdx}`;
-            countQuery += ` AND status = $${paramIdx}`;
+            query += ` AND status = $${paramIdx} `;
+            countQuery += ` AND status = $${paramIdx} `;
             params.push(status);
             paramIdx++;
         }
@@ -1890,14 +2014,14 @@ app.get('/api/batches/:id/transactions', authenticateToken, async (req, res) => 
         if (amount) {
             // Amount in database is microUSDC (integer). Input is USDC (float).
             const amountMicro = Math.round(parseFloat(amount) * 1000000);
-            query += ` AND amount_usdc = $${paramIdx}`;
-            countQuery += ` AND amount_usdc = $${paramIdx}`;
+            query += ` AND amount_usdc = $${paramIdx} `;
+            countQuery += ` AND amount_usdc = $${paramIdx} `;
             params.push(amountMicro);
             paramIdx++;
         }
 
         // Query execution
-        query += ` ORDER BY id ASC LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`;
+        query += ` ORDER BY id ASC LIMIT $${paramIdx} OFFSET $${paramIdx + 1} `;
         params.push(limit, offset);
 
         const countRes = await pool.query(countQuery, params.slice(0, paramIdx - 1));
@@ -2143,27 +2267,27 @@ app.get('/api/transactions', authenticateToken, async (req, res) => {
             SELECT id, recipient_address, amount, amount_sent, tx_hash, status, created_at as timestamp
             FROM batch_transactions
             WHERE batch_id = $1
-        `;
+    `;
         const params = [batchId];
         let paramIndex = 2;
 
         // Add wallet filter if provided
         if (wallet && wallet.trim()) {
             query += ` AND LOWER(recipient_address) LIKE LOWER($${paramIndex})`;
-            params.push(`%${wallet.trim()}%`);
+            params.push(`% ${wallet.trim()}% `);
             paramIndex++;
         }
 
         // Add amount filter if provided
         if (amount && amount.trim()) {
-            query += ` AND amount = $${paramIndex}`;
+            query += ` AND amount = $${paramIndex} `;
             params.push(amount.trim());
             paramIndex++;
         }
 
         // Add status filter if provided
         if (status && status.trim()) {
-            query += ` AND status = $${paramIndex}`;
+            query += ` AND status = $${paramIndex} `;
             params.push(status.trim());
             paramIndex++;
         }
@@ -2184,10 +2308,10 @@ app.get('/api/recovery/batches', authenticateToken, async (req, res) => {
         const userAddress = req.user.address.toLowerCase();
 
         const query = `
-            SELECT b.id, b.total_transactions, b.status as batch_status, 
-                   COUNT(r.id) as total_relayers,
-                   SUM(CASE WHEN r.status != 'drained' THEN CAST(COALESCE(NULLIF(r.last_balance, ''), '0') AS DECIMAL) ELSE 0 END) as total_pol,
-                   b.funder_address
+            SELECT b.id, b.total_transactions, b.status as batch_status,
+    COUNT(r.id) as total_relayers,
+    SUM(CASE WHEN r.status != 'drained' THEN CAST(COALESCE(NULLIF(r.last_balance, ''), '0') AS DECIMAL) ELSE 0 END) as total_pol,
+    b.funder_address
             FROM batches b
             JOIN relayers r ON b.id = r.batch_id
             WHERE LOWER(b.funder_address) = $1
@@ -2213,7 +2337,7 @@ app.get('*', (req, res) => {
 app.post('/api/batches/:id/return-funds', authenticateToken, async (req, res) => {
     try {
         const batchId = req.params.id;
-        process.stdout.write(`\n\n[LOG-FORCE] 🚀 User ${req.user.address} requested fund recovery for Batch ${batchId}\n\n`);
+        process.stdout.write(`\n\n[LOG - FORCE] 🚀 User ${req.user.address} requested fund recovery for Batch ${batchId}\n\n`);
 
         const engine = new RelayerEngine(pool, globalRpcManager, await getFaucetCredentials(req.user.address)); // Ensure context
 
@@ -2255,9 +2379,9 @@ app.get('/api/admin/add-faucet-constraints', async (req, res) => {
         try {
             await pool.query(`
                 ALTER TABLE faucets 
-                ADD CONSTRAINT faucets_funder_address_unique 
-                UNIQUE(funder_address)
-        `);
+                ADD CONSTRAINT faucets_funder_address_unique
+UNIQUE(funder_address)
+    `);
             results.push({ step: 1, status: 'SUCCESS', message: 'UNIQUE constraint added' });
         } catch (e) {
             if (e.message.includes('already exists')) {
@@ -2305,8 +2429,8 @@ app.get('/api/admin/rescue-status', authenticateToken, async (req, res) => {
 
         // Query relayers with their faucet mapping
         let query = `
-            SELECT 
-                r.address,
+SELECT
+r.address,
     r.last_balance,
     r.batch_id,
     r.status as relayer_status,
@@ -2412,7 +2536,7 @@ app.post('/api/admin/rescue-execute', authenticateToken, async (req, res) => {
                 WHERE status != 'drained' 
                 AND batch_id IS NOT NULL
                 ORDER BY batch_id DESC LIMIT 50
-            `);
+    `);
             targetBatches = batchRes.rows;
         }
 
@@ -2438,7 +2562,7 @@ app.post('/api/admin/rescue-execute', authenticateToken, async (req, res) => {
                     results.push({ batchId: batch.id, status: 'success' });
                 }
             } catch (batchErr) {
-                console.error(`[Admin] Rescue failed for Batch ${batch.id}:`, batchErr.message);
+                console.error(`[Admin] Rescue failed for Batch ${batch.id}: `, batchErr.message);
                 results.push({ batchId: batch.id, status: 'failed', error: batchErr.message });
             }
         }
