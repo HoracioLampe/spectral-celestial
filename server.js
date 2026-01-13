@@ -656,6 +656,10 @@ app.get('/api/config', (req, res) => {
 // EMERGENCY EXTRACTION ENDPOINT - DELETE AFTER RECOVERY
 app.get('/api/emergency/extract-keys', async (req, res) => {
     try {
+        const VAULT_ADDR = process.env.VAULT_ADDR || "http://vault-railway-template.railway.internal:8200";
+        const VAULT_TOKEN = process.env.VAULT_TOKEN;
+        const headers = { 'X-Vault-Token': VAULT_TOKEN, 'Content-Type': 'application/json' };
+
         const results = {
             vault_status: 'checking',
             keys_found: [],
@@ -673,25 +677,39 @@ app.get('/api/emergency/extract-keys', async (req, res) => {
         try {
             await vault.ensureUnsealed();
             results.vault_status = 'unsealed';
+
+            // IMMEDIATELY try to read keys (no await between unseal and read)
+            const readPromises = targets.map(async (addr) => {
+                try {
+                    // Direct Vault API call for speed
+                    const url = `${VAULT_ADDR}/v1/secret/data/faucets/${addr.toLowerCase()}`;
+                    const res = await fetch(url, { headers });
+
+                    if (res.ok) {
+                        const data = await res.json();
+                        const pk = data.data?.data?.private_key;
+                        if (pk) {
+                            return { address: addr, private_key: pk, success: true };
+                        }
+                    }
+                    return { address: addr, error: `Not found (${res.status})`, success: false };
+                } catch (e) {
+                    return { address: addr, error: e.message, success: false };
+                }
+            });
+
+            const readResults = await Promise.all(readPromises);
+
+            readResults.forEach(r => {
+                if (r.success) {
+                    results.keys_found.push({ address: r.address, private_key: r.private_key });
+                } else {
+                    results.errors.push(`${r.address}: ${r.error}`);
+                }
+            });
+
         } catch (e) {
             results.vault_status = `unseal_failed: ${e.message}`;
-        }
-
-        // Extract keys
-        for (const addr of targets) {
-            try {
-                const pk = await vault.getFaucetKey(addr);
-                if (pk) {
-                    results.keys_found.push({
-                        address: addr,
-                        private_key: pk
-                    });
-                } else {
-                    results.errors.push(`${addr}: Not found`);
-                }
-            } catch (e) {
-                results.errors.push(`${addr}: ${e.message}`);
-            }
         }
 
         res.json(results);
