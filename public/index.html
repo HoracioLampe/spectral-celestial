@@ -1,0 +1,857 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wallet Manager | Spectral Celestial</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <!-- SheetJS for Excel Export -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/ethers@6.7.0/dist/ethers.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <style>
+        .btn-icon {
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            color: white;
+            padding: 2px 6px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .btn-icon:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: scale(1.1);
+        }
+
+        /* Pulsing animation for success badge */
+        @keyframes pulse-success {
+
+            0%,
+            100% {
+                box-shadow: 0 0 10px #059669, 0 0 20px #059669;
+                opacity: 1;
+            }
+
+            50% {
+                box-shadow: 0 0 20px #10b981, 0 0 30px #10b981, 0 0 40px #10b981;
+                opacity: 0.9;
+            }
+        }
+
+        .badge-success-pulse {
+            animation: pulse-success 2s ease-in-out infinite;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="background-orbs">
+        <div class="orb orb-1"></div>
+        <div class="orb orb-2"></div>
+        <div class="orb orb-3"></div>
+    </div>
+
+    <!-- LANDING PAGE SECTION -->
+    <section id="landingSection" class="landing-page">
+        <div class="landing-content">
+            <header class="landing-header">
+                <img src="assets/logo_dappsfactory.png" alt="DappsFactory" class="logo-hero">
+            </header>
+
+            <main class="hero-section">
+                <div class="hero-text">
+                    <h1 class="glitch-text" data-text="Next-Gen Distro">Next-Gen USDC Distribution</h1>
+                    <p class="hero-subtitle">Gestión masiva de pagos con seguridad Merkle Tree y autenticación SIWE.
+                        Transparente, rápido y ultra-seguro.</p>
+
+                    <div class="hero-features">
+                        <div class="feature-tag"><span>🛡️</span> Merkle Proofs</div>
+                        <div class="feature-tag"><span>⚡</span> Global Payroll</div>
+                        <div class="feature-tag"><span>🦊</span> SIWE Auth</div>
+                    </div>
+
+                    <div class="hero-actions">
+                        <button id="btnEnterApp" class="btn btn-primary btn-hero">
+                            <span>🚀</span> Ingresar al Sistema
+                        </button>
+                    </div>
+                </div>
+
+                <div class="hero-visual">
+                    <div class="visual-card">
+                        <div class="card-glow"></div>
+                        <img src="assets/logo_dappsfactory.png" alt="Card" class="visual-img">
+                    </div>
+                </div>
+            </main>
+
+            <footer class="landing-footer">
+                <p>© 2026 DappsFactory IO. Protocolo de Distribución Descentralizada.</p>
+            </footer>
+        </div>
+    </section>
+
+    <!-- MAIN APP LAYOUT (Hidden until Auth) -->
+    <div id="appLayout" class="app-layout hidden">
+        <!-- SIDEBAR -->
+        <aside class="sidebar">
+            <div class="sidebar-top">
+                <div class="logo-container">
+                    <img src="assets/logo_dappsfactory.png" alt="DappsFactory" class="logo-img">
+                </div>
+                <nav class="side-nav">
+                    <a href="#" class="nav-link">
+                        <span class="nav-icon">📊</span> Dashboard
+                    </a>
+                    <a href="#" class="nav-link active">
+                        <span class="nav-icon">📤</span> Transacciones
+                    </a>
+                    <a href="#" id="navAdmin" class="nav-link hidden">
+                        <span class="nav-icon">⚡</span> Admin Portal
+                    </a>
+                    <a href="recovery.html" class="nav-link">
+                        <span class="nav-icon">💰</span> Recuperar Fondos
+                    </a>
+                    <a href="#" id="adminRescueFunds" class="nav-link hidden" title="Rescatar Fondos (Sweep)">
+                        <span class="nav-icon">🧹</span> Rescatar Fondos
+                    </a>
+                </nav>
+            </div>
+
+            <div class="sidebar-bottom">
+                <button id="themeToggle" class="theme-toggle" title="Cambiar Tema">
+                    <span id="themeIcon">🌙</span>
+                </button>
+                <div id="walletInfo" class="wallet-info hidden"
+                    style="display: flex; flex-direction: column; gap: 1rem;">
+
+                    <!-- Funder Wallet Section -->
+                    <div class="wallet-section">
+                        <div class="wallet-label">Address Funder</div>
+                        <div class="address-container-sidebar">
+                            <a id="userAddressLink" href="#" target="_blank" class="badge-address-link">0x...</a>
+                            <button id="btnCopyAddress" class="btn-icon-copy" title="Copiar Address">📋</button>
+                        </div>
+                        <div class="balances">
+                            <div class="balance-item">💰 <span class="unit-label">USDC</span> <span
+                                    id="usdcBalance">0.00</span></div>
+                            <div class="balance-item">⛽ <span class="unit-label">POL</span> <span
+                                    id="maticBalance">0.00</span></div>
+                        </div>
+                    </div>
+
+                    <!-- Faucet Wallet Section -->
+                    <div class="wallet-section"
+                        style="border-top: 1px solid rgba(255,255,255,0.1); padding-top: 0.5rem;">
+                        <div class="wallet-label">Address Faucet</div>
+                        <div class="address-container-sidebar">
+                            <a id="sidebarFaucetLink" href="#" target="_blank"
+                                class="badge-address-link">Cargando...</a>
+                            <button id="btnCopyFaucetSidebar" class="btn-icon-copy"
+                                title="Copiar Faucet Address">📋</button>
+                        </div>
+                        <div class="balances">
+                            <div class="balance-item">💰 <span class="unit-label">USDC</span> <span
+                                    id="sidebarFaucetUsdc">0.00</span></div>
+                            <div class="balance-item">⛽ <span class="unit-label">POL</span> <span
+                                    id="sidebarFaucetBalance">0.00</span></div>
+                        </div>
+                        <button id="btnSendPol" class="btn btn-glass w-full"
+                            style="margin-top: 0.5rem; font-size: 0.85rem;" onclick="openSendPolModal()">
+                            💸 Enviar POL
+                        </button>
+                    </div>
+
+                </div>
+                <button id="btnConnect" class="btn btn-glass w-full">
+                    🦊 Conectar
+                </button>
+            </div>
+            <div class="sidebar-bottom">
+                <div class="sidebar-divider"></div>
+                <button id="btnLogout" class="btn btn-glass btn-logout">
+                    <span class="nav-icon">🚪</span> Cerrar Sesión
+                </button>
+            </div>
+        </aside>
+
+        <!-- RESTRICTED ACCESS VIEW (For users with REGISTERED role) -->
+        <main id="restrictedView" class="restricted-overlay hidden">
+            <div class="restricted-container">
+                <div class="glass-panel restricted-card-premium">
+                    <div class="restricted-header">
+                        <div class="status-pulse"></div>
+                        <div class="lock-icon">🔒</div>
+                    </div>
+                    <h2 class="neon-text-blue">Acceso en Revisión</h2>
+                    <div id="restrictedUserAddress" class="badge-address-restricted">0x...</div>
+                    <p class="restricted-description">Tu cuenta ha sido registrada con éxito en el sistema.</p>
+
+                    <div class="info-box-premium">
+                        <p>Para comenzar a operar, por favor contacta al <strong>Administrador</strong> para habilitar
+                            tus permisos de usuario.</p>
+                    </div>
+
+                    <button id="btnRestrictedLogout" class="btn btn-secondary btn-glow">
+                        <span>⬅️</span> Cerrar Sesión
+                    </button>
+
+                    <div class="restricted-footer">
+                        <span>Esperando aprobación de red...</span>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- CONTENT AREA -->
+        <div class="content-wrapper">
+            <header class="mobile-header">
+                <img src="assets/logo_dappsfactory.png" alt="Logo" class="logo-img-sm">
+                <button id="mobileMenuToggle" class="btn-icon">☰</button>
+            </header>
+
+            <!-- MAIN CONTAINER -->
+            <main class="glass-panel">
+
+                <!-- SECCIÓN LOTES (DEFAULT) -->
+                <div id="batchSection">
+
+                    <!-- VISTA: LISTA DE LOTES -->
+                    <div id="batchListView">
+                        <div class="top-bar">
+                            <h2>📦 Mis Lotes de Envío</h2>
+                            <button id="btnOpenBatchModal" class="btn btn-primary">➕ Nuevo Lote</button>
+                        </div>
+                        <div class="table-container">
+                            <table id="batchesListTable">
+                                <thead>
+                                    <tr>
+                                        <th style="width: 60px;">#</th>
+                                        <th>Ref. Lote</th>
+                                        <th>Detalle</th>
+                                        <th>Descripción</th>
+                                        <th>Fecha</th>
+                                        <th>Estado</th>
+                                        <th>Total USDC</th>
+                                        <th>Gas Total</th>
+                                        <th>Progreso</th>
+                                        <th>Acción</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="batchesListBody">
+                                    <tr>
+                                        <td colspan="10" style="text-align:center;">Cargando lote...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <!-- Pagination Controls -->
+                        <div
+                            style="display: flex; justify-content: flex-end; align-items: center; margin-top: 1rem; gap: 0.5rem; color: #94a3b8; font-size: 0.9rem;">
+                            <button id="firstPage" class="btn-icon" title="Primera Página">⏪</button>
+                            <button id="prevPage" class="btn-icon" title="Anterior">◀</button>
+                            <span id="pageIndicator">Página 1 de 1</span>
+                            <button id="nextPage" class="btn-icon" title="Siguiente">▶</button>
+                            <button id="lastPage" class="btn-icon" title="Última Página">⏩</button>
+                        </div>
+                    </div>
+
+                    <!-- VISTA: DETALLE DE LOTE -->
+                    <div id="batchDetailView" class="hidden">
+                        <button class="btn-glass mb-3" onclick="showBatchList()">⬅️ Volver a Lista</button>
+
+                        <h2 id="detailBatchTitle">Lote #...</h2>
+                        <div
+                            style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                            <p id="detailBatchDesc" style="opacity: 0.8; margin: 0;">...</p>
+                            <p id="detailBatchIdDisplay"
+                                style="opacity: 0.6; font-size: 0.85rem; margin: 0; background: rgba(255,255,255,0.05); padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1);">
+                                ID: ...</p>
+                        </div>
+
+                        <!-- Balance Warning Alert (Hidden by default) -->
+                        <div id="balanceWarningAlert" class="balance-alert-card hidden">
+                            <div class="balance-alert-icon">⚠️</div>
+                            <div class="balance-alert-content">
+                                <h4>BALANCE INSUFICIENTE EN FUNDER</h4>
+                                <p id="balanceWarningMessage">El balance actual ($0.00 USDC) es menor al monto total del
+                                    lote ($0.00 USDC). Por favor, fondee la wallet para continuar.</p>
+                            </div>
+                        </div>
+
+                        <!-- Trading Terminal Dashboard (ECharts) - HIDDEN -->
+                        <div id="tradingTerminalZone" class="hidden"
+                            style="display: none !important; margin: 0 auto 2.5rem auto; width: 100%; max-width: 1000px; background: rgba(8, 12, 24, 0.6); border: 1px solid rgba(0, 255, 136, 0.15); border-radius: 12px; padding: 1.5rem; box-shadow: 0 0 40px rgba(0,0,0,0.6); backdrop-filter: blur(10px);">
+
+                            <div style="display: grid; grid-template-columns: 1.2fr 1fr; gap: 2rem; min-height: 400px;">
+                                <!-- Left Column: Execution Progress -->
+                                <div style="display: flex; flex-direction: column; gap: 1rem;">
+                                    <div id="echartsGauge" style="width: 100%; height: 280px;"></div>
+                                    <div id="echartsActivity" style="width: 100%; height: 120px;"></div>
+                                </div>
+
+                                <!-- Right Column: State Distribution -->
+                                <div style="display: flex; flex-direction: column;">
+                                    <h4
+                                        style="font-size: 0.7rem; color: #64748b; text-transform: uppercase; letter-spacing: 2px; text-align: center; margin-bottom: -10px; opacity: 0.8;">
+                                        Status Distribution</h4>
+                                    <div id="echartsStatusDist" style="width: 100%; height: 350px;"></div>
+                                </div>
+                            </div>
+
+                            <div
+                                style="display: flex; justify-content: space-between; align-items: center; margin-top: 1rem; padding: 0.75rem 1.5rem; background: rgba(0, 255, 136, 0.05); border-radius: 6px; border-top: 1px solid rgba(0, 255, 136, 0.1);">
+                                <div style="display: flex; gap: 2rem;">
+                                    <div style="display: flex; flex-direction: column;">
+                                        <span
+                                            style="font-size: 0.65rem; color: #64748b; text-transform: uppercase; font-weight: 800; letter-spacing: 1px;">Status</span>
+                                        <span id="terminalStatus"
+                                            style="font-family: 'Outfit', sans-serif; font-weight: 900; color: #00ff88; font-size: 0.9rem;">STANDBY</span>
+                                    </div>
+                                    <div style="display: flex; flex-direction: column;">
+                                        <span
+                                            style="font-size: 0.65rem; color: #64748b; text-transform: uppercase; font-weight: 800; letter-spacing: 1px;">Success
+                                            Rate</span>
+                                        <span id="terminalSuccessRate"
+                                            style="font-family: 'Outfit', sans-serif; font-weight: 900; color: #fff; font-size: 0.9rem;">0.00%</span>
+                                    </div>
+                                    <div style="display: flex; flex-direction: column;">
+                                        <span
+                                            style="font-size: 0.65rem; color: #64748b; text-transform: uppercase; font-weight: 800; letter-spacing: 1px;">Processed</span>
+                                        <span id="terminalProcessed"
+                                            style="font-family: 'Outfit', sans-serif; font-weight: 900; color: #fff; font-size: 0.9rem;">0
+                                            / 0</span>
+                                    </div>
+                                </div>
+                                <div style="font-family: monospace; font-size: 0.75rem; color: #00ff88; opacity: 0.6;">
+                                    NETWORK: POLYGON_MAINNET // SIWE_AUTH: ACTIVE
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Legacy Gauge Container (Hidden) -->
+                        <div id="batchProgressGauge" class="hidden"></div>
+
+
+                        <!-- Stats Grid removido a pedido del usuario -->
+                        <!-- Stats Grid -->
+                        <div id="batchStatsContainer" class="transfer-board mb-3 hidden"
+                            style="display: flex; justify-content: space-around; padding: 1.5rem; border-color: rgba(244, 114, 182, 0.3);">
+                            <div style="text-align: center;">
+                                <label style="font-size: 0.8rem; opacity: 0.7; color: #f472b6;">Monto USDC</label>
+                                <p id="detailTotalAmount"
+                                    style="font-size: 2rem; font-weight: bold; color: #f472b6; margin: 0;">$0.00</p>
+                            </div>
+                            <div
+                                style="text-align: center; border-left: 1px solid rgba(255,255,255,0.1); padding-left: 1.5rem;">
+                                <label style="font-size: 0.8rem; opacity: 0.7; color: #fbbf24;">Gas Gastado</label>
+                                <p id="detailGasSpent"
+                                    style="font-size: 1.8rem; font-weight: bold; color: #fbbf24; margin: 0;">-</p>
+                            </div>
+                            <div
+                                style="text-align: center; border-left: 1px solid rgba(255,255,255,0.1); padding-left: 1.5rem;">
+                                <label style="font-size: 0.8rem; opacity: 0.7; color: #f472b6;">Transacciones</label>
+                                <p id="detailTotalTx"
+                                    style="font-size: 2rem; font-weight: bold; color: #f472b6; margin: 0;">0</p>
+                            </div>
+                        </div>
+
+                        <!-- Carga Archivo (Solo si PREPARING) -->
+                        <div id="detailUploadContainer" class="transfer-board mb-3 hidden">
+                            <h3>📂 Cargar Excel (Detalle)</h3>
+                            <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
+                                <div class="file-upload-wrapper">
+                                    <label for="batchFile" class="btn btn-glass file-upload-label">
+                                        <span>📁</span> Seleccionar Archivo
+                                    </label>
+                                    <input type="file" id="batchFile" accept=".xlsx, .xls" style="display: none;"
+                                        onchange="updateFilenameDisplay(this)">
+                                    <span id="fileNameDisplay" class="file-name-text">Ningún archivo seleccionado</span>
+                                </div>
+                                <button id="btnUploadBatch" class="btn btn-primary">Subir y Calcular 📤</button>
+                                <div style="display: flex; align-items: center; gap: 0.5rem; margin-left: auto;">
+                                    <span style="opacity: 0.5; font-size: 0.8rem;">o también:</span>
+                                    <button id="btnOpenCloneModal" class="btn btn-glass btn-sm"
+                                        onclick="openCloneModal()"
+                                        style="border-color: #60a5fa; color: #60a5fa; padding: 0.5rem 1rem;">📋 Clonar
+                                        Lote</button>
+                                </div>
+                            </div>
+                            <p id="uploadStatus" class="status-text"></p>
+                        </div>
+
+                        <!-- Merkle Tree Section (Ready/Sent) -->
+                        <div id="merkleContainer" class="transfer-board mb-3 hidden"
+                            style="border-color: rgba(139, 92, 246, 0.3);">
+                            <h3>🌳 Merkle Tree Verification</h3>
+
+                            <div id="merkleInputZone">
+                                <label>Funder Wallet (Origen de Fondos)</label>
+                                <div class="funder-display-card"
+                                    style="margin-top: 0.75rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; background: var(--bg-card-hover); padding: 1rem; border-radius: var(--radius-md); border: 1px dashed var(--border-color);">
+                                    <div style="display: flex; align-items: center; gap: 0.75rem;">
+                                        <div class="avatar-circle"
+                                            style="width: 32px; height: 32px; border-radius: 50%; background: var(--accent-gradient); display: flex; align-items: center; justify-content: center; font-size: 1rem;">
+                                            🛡️</div>
+                                        <div>
+                                            <span id="displayFunderAddress"
+                                                style="font-family: monospace; color: #fff; font-size: 0.9rem; font-weight: 500;">0x...</span>
+                                        </div>
+                                        <div style="font-size: 0.8rem; color: var(--text-secondary);">Balance: <span
+                                                id="displayFunderBalance"
+                                                style="color: var(--success); font-weight: 700;">0.00 USDC</span>
+                                        </div>
+                                    </div>
+                                    <button id="btnGenerateMerkle" class="btn btn-primary"
+                                        style="white-space: nowrap; height: 42px;">Generar Merkle Tree ⚡</button>
+                                </div>
+                            </div>
+
+                            <div id="merkleResultZone" class="hidden" style="margin-top: 1rem;">
+                                <label>Resumen de Funder y Lote:</label>
+                                <div
+                                    style="background: rgba(0,0,0,0.3); padding: 1rem; border-radius: 8px; border: 1px solid rgba(139, 92, 246, 0.3); font-size: 0.9rem;">
+                                    <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                                        <span style="color: #94a3b8;">Funder Wallet:</span>
+                                        <span id="merkleResultFunder"
+                                            style="color: #cbd5e1; font-family: monospace;">---</span>
+                                    </div>
+                                    <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                                        <span style="color: #94a3b8;">Balance Disponible:</span>
+                                        <span id="merkleResultBalance" style="color: #4ade80; font-weight: bold;">$0.00
+                                            USDC</span>
+                                    </div>
+                                    <div style="display: flex; justify-content: space-between;">
+                                        <span style="color: #94a3b8;">Allowance (Aprobado):</span>
+                                        <span id="merkleResultAllowance"
+                                            style="color: #fbbf24; font-weight: bold;">$0.00
+                                            USDC</span>
+                                    </div>
+                                </div>
+                                <div id="paymentTriggerZone" class="hidden"
+                                    style="margin-top: 1rem; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 1rem;">
+                                    <button id="btnExecuteBatch" class="btn btn-primary"
+                                        style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); width: 100%; font-size: 0.9rem; padding: 0.6rem;">
+                                        Disparar Pagos 🚀
+                                    </button>
+                                    <p id="signStatusHint"
+                                        style="font-size: 0.75rem; color: #94a3b8; margin-top: 0.4rem; text-align: center;">
+                                        Requiere firma EIP-712 del Funder
+                                    </p>
+
+                                    <!-- Progress Tracking UI -->
+                                    <div id="batchProgressZone" class="hidden" style="margin-top: 1rem;">
+                                        <div class="progress-container">
+                                            <div id="batchProgressBar" class="progress-bar"></div>
+                                        </div>
+                                        <div class="progress-stats">
+                                            <span id="batchProgressText">Procesando: 0 / 0</span>
+                                            <span id="batchProgressPercent">0%</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div style="margin-top: 1rem;">
+                                <label style="font-size: 0.8rem; opacity: 0.7;">Merkle Root:</label>
+                                <div
+                                    style="background: rgba(0,0,0,0.2); padding: 0.5rem; border-radius: 4px; font-family: monospace; font-size: 0.8rem; word-break: break-all; color: #a78bfa; border: 1px dashed rgba(167, 139, 250, 0.3);">
+                                    <span id="displayMerkleRoot">Not Generated</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Merkle Verification Tool -->
+                        <div id="merkleVerifyZone" class="hidden"
+                            style="margin-top: 1rem; padding: 1rem; border: 1px dashed rgba(167, 139, 250, 0.3); border-radius: 8px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <label id="merkleVerifyLabel" style="font-size: 0.9rem; color: #a78bfa;">🔬 Verificación
+                                    On-Chain (Muestreo
+                                    ---)</label>
+                                <button id="btnTestMerkle" class="btn-glass"
+                                    style="font-size: 0.8rem; border: 1px solid #a78bfa; color: #a78bfa;">
+                                    Ejecutar Test
+                                </button>
+                            </div>
+                            <p id="merkleTestStatus"
+                                style="font-size: 0.8rem; margin-top: 0.5rem; color: #94a3b8; min-height: 1.2em;"></p>
+                        </div>
+
+                        <!-- Relayer Controls (Execution Zone) - Hidden until Merkle is ready -->
+                        <div id="executionZone" class="hidden"
+                            style="margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid rgba(255,255,255,0.1);">
+                            <label style="color: #fcd34d;">🚀 Ejecución (Relayer System)</label>
+                            <div style="display: flex; gap: 1rem; align-items: flex-end; margin-top: 0.5rem;">
+                                <div>
+                                    <span style="font-size: 0.8rem; color: #94a3b8;">Potencia (Relayers):</span>
+                                    <select id="relayerCount" class="input-glass" style="width: 100px;">
+                                        <option value="1">1 (Safe)</option>
+                                        <option value="5" selected>5 (Default)</option>
+                                        <option value="10">10 (Fast)</option>
+                                        <option value="20">20 (Turbo)</option>
+                                        <option value="50">50 (High)</option>
+                                        <option value="100">100 (Máximo Absoluto)</option>
+                                    </select>
+                                </div>
+                                <button id="btnSetupRelayers" class="btn btn-primary"
+                                    style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);">
+                                    1. Preparar Relayers 🏗️
+                                </button>
+                                <div style="flex-grow: 1;"></div>
+                                <button onclick="openFaucetModal()" class="btn-glass"
+                                    style="border: 1px solid rgba(255,255,255,0.1); white-space: nowrap;">⚙️
+                                    Faucet</button>
+                            </div>
+                            <!-- Faucet Info Summary (Visible on Main Page) -->
+                            <div id="mainFaucetInfo" class="glass"
+                                style="margin-top: 0.75rem; padding: 0.5rem 1rem; border-radius: 8px; font-size: 0.85rem; display: flex; justify-content: space-between; align-items: center; border: 1px solid rgba(255,255,255,0.05);">
+                                <div style="display: flex; gap: 0.75rem; align-items: center;">
+                                    <span style="color: #94a3b8;">Faucet:</span>
+                                    <a id="mainFaucetLink" href="#" target="_blank" class="hash-link"
+                                        style="color: #60a5fa; font-family: monospace;">Cargando...</a>
+                                    <button onclick="copyFaucetAddress()" class="btn-icon"
+                                        title="Copiar Dirección">📋</button>
+                                </div>
+                                <div style="display: flex; gap: 0.75rem;">
+                                    <span style="color: #94a3b8;">Balance:</span>
+                                    <span id="mainFaucetBalance" style="color: #4ade80; font-weight: bold;">---</span>
+                                </div>
+                            </div>
+                            <div
+                                style="display: flex; align-items: center; justify-content: space-between; margin-top: 0.5rem;">
+                                <p id="processStatus" style="font-size: 0.85rem; color: #cbd5e1; margin: 0;"></p>
+                                <span id="processTimer"
+                                    style="font-family: monospace; font-size: 0.9rem; color: #f59e0b; font-weight: bold; background: rgba(0,0,0,0.2); padding: 2px 6px; border-radius: 4px; display: none;">00:00:00</span>
+                            </div>
+                        </div>
+                    </div>
+                    <p id="merkleStatus" class="status-text"></p>
+                </div>
+                <!-- Grilla Detalle -->
+                <!-- Grilla Detalle (HIDDEN as per request) -->
+                <div id="txDetailSection" class="top-bar hidden" style="margin-top: 2rem; flex-wrap: wrap; gap: 1rem;">
+                    <h3>📋 Detalle de Transacciones</h3>
+                    <div style="display: flex; gap: 0.5rem; flex-grow: 1; justify-content: flex-end;">
+                        <input type="text" id="filterWallet" placeholder="Filtrar por Wallet..." class="input-glass"
+                            style="font-size: 0.8rem; padding: 0.4rem; width: 150px;">
+                        <input type="number" id="filterAmount" placeholder="Monto USDC..." class="input-glass"
+                            style="font-size: 0.8rem; padding: 0.4rem; width: 100px;">
+                        <select id="filterStatus" class="input-glass" style="font-size: 0.8rem; padding: 0.4rem;">
+                            <option value="">Todos los Estados</option>
+                            <option value="PENDING">PENDING</option>
+                            <option value="ENVIANDO">ENVIANDO</option>
+                            <option value="COMPLETED">COMPLETED</option>
+                            <option value="FAILED">FAILED</option>
+                            <option value="WAITING_CONFIRMATION">WAITING_CONFIRMATION</option>
+                        </select>
+                        <button onclick="applyFilters()" class="btn-primary"
+                            style="font-size: 0.8rem; padding: 0.4rem 0.8rem;">🔍 Filtrar</button>
+                        <button onclick="clearTransactionFilters()" class="btn-glass"
+                            style="font-size: 0.8rem; padding: 0.4rem 0.8rem;">✖️</button>
+                        <button onclick="exportToExcel(currentBatchId)" class="btn-primary"
+                            style="font-size: 0.8rem; padding: 0.4rem 0.8rem; background: linear-gradient(135deg, #10b981 0%, #059669 100%);">📊
+                            Exportar a Excel</button>
+                        <span id="filterResultCount"
+                            style="margin-left: 10px; align-self: center; font-size: 0.9rem; color: #a78bfa;"></span>
+                    </div>
+                </div>
+                <div id="txTableContainer" class="table-container hidden">
+                    <table id="batchTable">
+                        <thead>
+                            <tr>
+                                <th>ID Ref</th>
+                                <th>Wallet</th>
+                                <th>USDC (Plan)</th>
+                                <th>Enviado</th>
+                                <th>Hash (Ref)</th>
+                                <th>Estado</th>
+                            </tr>
+                        </thead>
+                        <tbody id="batchTableBody">
+                            <tr>
+                                <td colspan="5" style="text-align: center;">Carga un Excel para ver el detalle</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Relayer Balances Table (Integrated) -->
+                <div id="relayerGridSection" class="hidden"
+                    style="margin-top: 2.5rem; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 1.5rem;">
+                    <div class="top-bar" style="display: flex; justify-content: space-between; align-items: center;">
+                        <h3>⚡ Balances de Relayers</h3>
+                        <button onclick="refreshRelayerBalances()" class="btn-glass"
+                            style="font-size: 0.75rem; padding: 0.4rem 1rem; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
+                            🔄 Refrescar Grilla
+                        </button>
+                    </div>
+                    <div id="relayerGridInfo" style="margin-bottom: 0.5rem;"></div>
+                    <table id="relayerBalancesTable" class="glass-panel"
+                        style="width:100%; border-collapse: collapse; background: rgba(0,0,0,0.2);">
+                        <thead>
+                            <tr style="border-bottom: 1px solid rgba(255,255,255,0.1);">
+                                <th style="text-align:left; padding:0.75rem; width: 50px;">ID</th>
+                                <th style="text-align:left; padding:0.75rem;">Dirección Relayer</th>
+                                <th style="text-align:left; padding:0.75rem;">Balance MATIC</th>
+                                <th style="text-align:left; padding:0.75rem;">Última Actividad</th>
+                                <th style="text-align:center; padding:0.75rem;">Cant. Txs</th>
+                                <th style="text-align:center; padding:0.75rem;">Acción</th>
+                            </tr>
+                        </thead>
+                        <tbody id="relayerBalancesTableBody">
+                            <tr>
+                                <td colspan="6" style="text-align:center; padding:1.5rem; opacity: 0.6;">Cargando
+                                    balances...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+        </div> <!-- Fin de batchDetailView -->
+    </div>
+
+    </main>
+
+    <!-- MODAL CREAR LOTE -->
+    <div id="batchModal" class="modal">
+        <div class="modal-content">
+            <span class="close-modal" onclick="closeBatchModal()">&times;</span>
+            <h2>📦 Nuevo Lote</h2>
+            <div class="grid-form" style="display: block;"> <!-- Override grid for simple stack -->
+                <div class="form-group" style="margin-bottom: 1rem;">
+                    <label>Número de Lote *</label>
+                    <input type="text" id="newBatchNumber" class="input-glass" placeholder="Ej: LOTE-2024-001">
+                </div>
+                <div class="form-group" style="margin-bottom: 1rem;">
+                    <label>Detalle Corto *</label>
+                    <input type="text" id="newBatchDetail" class="input-glass" placeholder="Ej: Pago Nómina Enero">
+                </div>
+                <div class="form-group" style="margin-bottom: 1.5rem;">
+                    <label>Descripción</label>
+                    <textarea id="newBatchDesc" class="input-glass" rows="3" placeholder="Notas internas..."></textarea>
+                </div>
+                <button id="btnSaveBatch" class="btn btn-primary" style="width: 100%;">Crear Lote</button>
+            </div>
+        </div>
+    </div>
+
+    </main>
+
+    <footer style="text-align: center; padding: 1rem; opacity: 0.6; font-size: 0.8rem; color: #fff;">
+        Spectral Celestial Wallet - v3.5.0 (PROD RELEASE)
+    </footer>
+    <!-- Faucet Management Modal -->
+    <div id="faucetModal" class="modal hidden">
+        <div class="modal-content glass">
+            <span class="close" onclick="closeFaucetModal()">&times;</span>
+            <h2>Gestión de Faucet para Lote</h2>
+            <div style="background: rgba(255,255,255,0.05); padding: 0.75rem; border-radius: 8px; margin-bottom: 1rem;">
+                <p
+                    style="font-size: 0.8rem; color: #94a3b8; margin: 0; display: flex; align-items: center; gap: 0.5rem;">
+                    Address: <a id="faucetModalLink" href="#" target="_blank" class="hash-link"
+                        style="color: #60a5fa; font-family: monospace; word-break: break-all;">---</a>
+                    <button onclick="copyFaucetAddress()" class="btn-icon" style="font-size: 0.7rem;">📋</button>
+                </p>
+                <p
+                    style="font-size: 0.8rem; color: #94a3b8; margin: 0.25rem 0 0 0; display: flex; align-items: center; gap: 0.5rem;">
+                    Private Key: <span id="faucetKey"
+                        style="color: #ef4444; font-family: monospace; word-break: break-all;">---</span>
+                    <button onclick="copyFaucetKey()" class="btn-icon" style="font-size: 0.7rem;">📋</button>
+                </p>
+                <p style="font-size: 0.8rem; color: #94a3b8; margin: 0.25rem 0 0 0;">Balance: <span id="faucetBalance"
+                        style="color: #4ade80; font-weight: bold;">---</span></p>
+            </div>
+            <div class="form-group" style="margin-bottom: 1rem;">
+                <button onclick="generateFaucet()" class="btn-glass"
+                    style="width: 100%; border: 1px dashed rgba(255,255,255,0.2); color: #fbbf24;">✨ Generar Nueva
+                    Faucet</button>
+            </div>
+            <div class="form-group">
+                <label for="bufferPercent">Porcentaje de Buffer de Gas (%)</label>
+                <input type="number" id="bufferPercent" value="50" min="0" max="200" class="input-glass" />
+            </div>
+            <div class="form-group">
+                <label for="relayerCountInput">Cantidad de Relayers</label>
+                <input type="number" id="relayerCountInput" value="5" min="1" max="100" class="input-glass" />
+            </div>
+            <div class="form-group">
+                <button class="btn-glass" id="btnDistributeGas" onclick="triggerGasDistribution()">Distribuir
+                    Gas</button>
+                <button class="btn-glass" id="btnRefreshBalances" onclick="refreshRelayerBalances()">Actualizar
+                    Balances</button>
+            </div>
+            <p id="modalFaucetStatus"></p>
+        </div>
+    </div>
+    </main>
+    </div> <!-- content-wrapper -->
+    </div> <!-- app-layout -->
+
+    <!-- SEND POL MODAL -->
+    <div id="sendPolModal" class="modal">
+        <div class="modal-content glass">
+            <span class="close" onclick="closeSendPolModal()">&times;</span>
+            <h2>💸 Enviar POL desde Faucet</h2>
+
+            <div style="background: rgba(255,255,255,0.05); padding: 0.75rem; border-radius: 8px; margin-bottom: 1rem;">
+                <p
+                    style="font-size: 0.85rem; color: #94a3b8; margin: 0 0 0.5rem 0; display: flex; justify-content: space-between;">
+                    <span>Origen:</span>
+                    <span id="polSourceAddress" style="color: #60a5fa; font-family: monospace;">---</span>
+                </p>
+                <p style="font-size: 0.85rem; color: #94a3b8; margin: 0;">
+                    Balance disponible: <span id="polAvailableBalance"
+                        style="color: #10b981; font-weight: 600;">0.00</span> POL
+                </p>
+                <p style="font-size: 0.75rem; color: #ef4444; margin: 0.5rem 0 0 0;">
+                    ⚠️ Se reservará gas automáticamente para la transacción
+                </p>
+            </div>
+
+            <div class="form-group" style="margin-bottom: 1rem;">
+                <label>Dirección Destino (EOA) *</label>
+                <input type="text" id="polRecipientAddress" class="input-glass" placeholder="0x..."
+                    style="font-family: monospace;">
+                <span id="addressValidation" style="font-size: 0.75rem; margin-top: 0.25rem; display: block;"></span>
+            </div>
+
+            <div class="form-group" style="margin-bottom: 1.5rem;">
+                <label>Cantidad (POL) *</label>
+                <div style="position: relative;">
+                    <input type="text" id="polAmount" class="input-glass" placeholder="0.0" inputmode="decimal">
+                    <button id="btnMaxPol" class="btn btn-glass" onclick="setMaxPol()"
+                        style="position: absolute; right: 0.5rem; top: 50%; transform: translateY(-50%); padding: 0.25rem 0.75rem; font-size: 0.75rem;">
+                        MAX
+                    </button>
+                </div>
+            </div>
+
+            <button id="btnConfirmSendPol" class="btn btn-primary" style="width: 100%;" onclick="confirmSendPol()">
+                Enviar POL
+            </button>
+
+            <div id="sendPolStatus" style="margin-top: 1rem; display: none;"></div>
+        </div>
+    </div>
+
+    <!-- BATCH COMPLETION SUMMARY MODAL -->
+    <div id="batchSummaryModal" class="summary-modal">
+        <div class="summary-content">
+            <div style="text-align: center; margin-bottom: 2rem;">
+                <div style="font-size: 4rem; margin-bottom: 1rem;">✅</div>
+                <h2 style="color: #10b981; margin: 0; font-size: 2rem;">¡Batch Completado!</h2>
+            </div>
+
+            <div class="summary-grid"
+                style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 2rem;">
+                <div class="summary-item">
+                    <div style="color: rgba(255,255,255,0.6); font-size: 0.9rem; margin-bottom: 0.5rem;">Batch ID</div>
+                    <div id="summaryBatchId" style="color: #fff; font-size: 1.3rem; font-weight: 600;">-</div>
+                </div>
+                <div class="summary-item">
+                    <div style="color: rgba(255,255,255,0.6); font-size: 0.9rem; margin-bottom: 0.5rem;">Nombre del Lote
+                    </div>
+                    <div id="summaryBatchName" style="color: #fff; font-size: 1.3rem; font-weight: 600;">-</div>
+                </div>
+                <div class="summary-item">
+                    <div style="color: rgba(255,255,255,0.6); font-size: 0.9rem; margin-bottom: 0.5rem;">Hora de Inicio
+                    </div>
+                    <div id="summaryStartTime" style="color: #fff; font-size: 1.1rem;">-</div>
+                </div>
+                <div class="summary-item">
+                    <div style="color: rgba(255,255,255,0.6); font-size: 0.9rem; margin-bottom: 0.5rem;">Hora de Fin
+                    </div>
+                    <div id="summaryEndTime" style="color: #fff; font-size: 1.1rem;">-</div>
+                </div>
+                <div class="summary-item">
+                    <div style="color: rgba(255,255,255,0.6); font-size: 0.9rem; margin-bottom: 0.5rem;">Tiempo de Envío
+                    </div>
+                    <div id="summaryDuration" style="color: #10b981; font-size: 1.3rem; font-weight: 600;">-</div>
+                </div>
+                <div class="summary-item">
+                    <div style="color: rgba(255,255,255,0.6); font-size: 0.9rem; margin-bottom: 0.5rem;">Gas Usado</div>
+                    <div id="summaryGasUsed" style="color: #f59e0b; font-size: 1.3rem; font-weight: 600;">-</div>
+                </div>
+                <div class="summary-item">
+                    <div style="color: rgba(255,255,255,0.6); font-size: 0.9rem; margin-bottom: 0.5rem;">Transacciones
+                        Realizadas</div>
+                    <div id="summaryTxCount" style="color: #10b981; font-size: 1.3rem; font-weight: 600;">-</div>
+                </div>
+                <div class="summary-item">
+                    <div style="color: rgba(255,255,255,0.6); font-size: 0.9rem; margin-bottom: 0.5rem;">USDC Enviados
+                    </div>
+                    <div id="summaryUsdcSent" style="color: #3b82f6; font-size: 1.3rem; font-weight: 600;">-</div>
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 1rem; justify-content: center;">
+                <button class="btn-glass" onclick="downloadBatchReceipt()" style="flex: 1; max-width: 200px;">
+                    📥 Descargar Recibo
+                </button>
+                <button class="btn-glass" onclick="closeBatchSummary()"
+                    style="flex: 1; max-width: 200px; background: rgba(239, 68, 68, 0.2);">
+                    ✖ Cerrar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL CLONAR LOTE -->
+    <div id="cloneModal" class="modal">
+        <div class="modal-content glass" style="max-width: 600px;">
+            <span class="close-modal" onclick="closeCloneModal()">&times;</span>
+            <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem;">
+                <div style="font-size: 2rem;">📋</div>
+                <div>
+                    <h2 style="margin: 0;">Clonar Transacciones</h2>
+                    <p style="font-size: 0.85rem; opacity: 0.7; margin: 0;">Copia destinatarios y montos de un lote
+                        anterior.</p>
+                </div>
+            </div>
+
+            <div class="filter-group mb-3">
+                <input type="text" id="cloneSearchInput" class="input-glass"
+                    placeholder="🔍 Buscar por Núm Lote, Detalle..." onkeyup="debounceCloneSearch()"
+                    style="width: 100%;">
+            </div>
+
+            <div class="table-container"
+                style="max-height: 400px; overflow-y: auto; background: rgba(0,0,0,0.2); border-radius: 8px;">
+                <table class="table-glass" style="width: 100%; border-collapse: collapse;">
+                    <thead style="position: sticky; top: 0; background: #1a1e2e; z-index: 1;">
+                        <tr>
+                            <th style="padding: 0.75rem; text-align: left;">#</th>
+                            <th style="padding: 0.75rem; text-align: left;">Detalle</th>
+                            <th style="padding: 0.75rem; text-align: center;">Txs</th>
+                            <th style="padding: 0.75rem; text-align: right;">Monto</th>
+                            <th style="padding: 0.75rem; text-align: center;">Acción</th>
+                        </tr>
+                    </thead>
+                    <tbody id="cloneBatchesListBody">
+                        <tr>
+                            <td colspan="5" style="text-align:center; padding: 2rem; opacity: 0.6;">Cargando lotes...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <div style="margin-top: 1.5rem; text-align: right;">
+                <button class="btn btn-glass" onclick="closeCloneModal()">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="excel-export.js?v=20260116_v350"></script>
+    <script src="app.js?v=20260116_v350"></script>
+</body>
+
+</html>

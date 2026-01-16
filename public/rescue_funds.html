@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rescate de Fondos | Spectral Celestial</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/ethers@6.7.0/dist/ethers.umd.min.js"></script>
+</head>
+
+<body>
+    <div class="background-orbs">
+        <div class="orb orb-1"></div>
+        <div class="orb orb-2"></div>
+        <div class="orb orb-3"></div>
+    </div>
+
+    <div class="app-layout">
+        <!-- SIDEBAR -->
+        <aside class="sidebar">
+            <div class="sidebar-top">
+                <div class="logo-container">
+                    <img src="assets/logo_dappsfactory.png" alt="DappsFactory" class="logo-img">
+                </div>
+                <nav class="side-nav">
+                    <a href="index.html" class="nav-link">
+                        <span class="nav-icon">📊</span> Dashboard
+                    </a>
+                    <a href="rescue_funds.html" class="nav-link active">
+                        <span class="nav-icon">💰</span> Rescatar Fondos
+                    </a>
+                    <a href="admin_db.html" class="nav-link">
+                        <span class="nav-icon">⚡</span> Admin Portal
+                    </a>
+                </nav>
+            </div>
+
+            <div class="sidebar-bottom">
+                <div id="walletInfo" class="wallet-info">
+                    <div class="wallet-label">Admin Address</div>
+                    <div class="address-container-sidebar">
+                        <span id="userAddressShort" class="badge-address-link">0x...</span>
+                    </div>
+                </div>
+                <button id="btnLogout" class="btn btn-glass btn-logout">
+                    <span class="nav-icon">🚪</span> Cerrar Sesión
+                </button>
+            </div>
+        </aside>
+
+        <!-- CONTENT -->
+        <div class="content-wrapper">
+            <main class="glass-panel">
+                <div class="top-bar">
+                    <h2>💰 Rescate de Fondos de Relayers</h2>
+                </div>
+
+                <!-- Summary Stats -->
+                <div id="summaryStats" class="stats-grid"
+                    style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 1rem; margin-bottom: 2rem;">
+                    <div class="glass-panel" style="padding: 1.5rem; text-align: center;">
+                        <h3 style="margin: 0 0 0.5rem 0; font-size: 0.9rem; opacity: 0.8;">Total Relayers</h3>
+                        <p id="statTotal" style="font-size: 2rem; font-weight: bold; color: #60a5fa; margin: 0;">0</p>
+                    </div>
+                    <div class="glass-panel" style="padding: 1.5rem; text-align: center;">
+                        <h3 style="margin: 0 0 0.5rem 0; font-size: 0.9rem; opacity: 0.8;">Pendientes</h3>
+                        <p id="statPending" style="font-size: 2rem; font-weight: bold; color: #fbbf24; margin: 0;">0</p>
+                    </div>
+                    <div class="glass-panel" style="padding: 1.5rem; text-align: center;">
+                        <h3 style="margin: 0 0 0.5rem 0; font-size: 0.9rem; opacity: 0.8;">Procesando</h3>
+                        <p id="statProcessing" style="font-size: 2rem; font-weight: bold; color: #3b82f6; margin: 0;">0
+                        </p>
+                    </div>
+                    <div class="glass-panel" style="padding: 1.5rem; text-align: center;">
+                        <h3 style="margin: 0 0 0.5rem 0; font-size: 0.9rem; opacity: 0.8;">Completados</h3>
+                        <p id="statCompleted" style="font-size: 2rem; font-weight: bold; color: #4ade80; margin: 0;">0
+                        </p>
+                    </div>
+                    <div class="glass-panel" style="padding: 1.5rem; text-align: center;">
+                        <h3 style="margin: 0 0 0.5rem 0; font-size: 0.9rem; opacity: 0.8;">Total Balance</h3>
+                        <p id="statBalance" style="font-size: 2rem; font-weight: bold; color: #a78bfa; margin: 0;">0
+                            MATIC</p>
+                    </div>
+                </div>
+
+                <!-- Control Panel -->
+                <div style="display: flex; gap: 1rem; align-items: center; margin-bottom: 2rem;">
+                    <input type="number" id="batchIdFilter" class="input-glass" placeholder="Batch ID (opcional)"
+                        style="width: 200px;">
+                    <button id="btnRefresh" class="btn btn-glass">🔄 Actualizar</button>
+                    <button id="btnStartRescue" class="btn btn-primary">🚀 Iniciar Rescate</button>
+                    <span id="rescueStatus" style="margin-left: auto; font-size: 0.9rem; color: #94a3b8;"></span>
+                </div>
+
+                <!-- Relayers Table -->
+                <div class="table-container">
+                    <table id="relayersTable">
+                        <thead>
+                            <tr>
+                                <th>Relayer Address</th>
+                                <th>Balance</th>
+                                <th>Faucet Destino</th>
+                                <th>Batch ID</th>
+                                <th>Estado</th>
+                                <th>TX Hash</th>
+                            </tr>
+                        </thead>
+                        <tbody id="relayersTableBody">
+                            <tr>
+                                <td colspan="6" style="text-align:center; padding:2rem;">Cargando...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script>
+        let authToken = localStorage.getItem('auth_token');
+        let pollInterval = null;
+        let isRescuing = false;
+
+        // Check auth
+        if (!authToken) {
+            window.location.href = 'index.html';
+        }
+
+        // Decode JWT to get user info
+        function parseJwt(token) {
+            try {
+                const base64Url = token.split('.')[1];
+                const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+                const jsonPayload = decodeURIComponent(atob(base64).split('').map(c => {
+                    return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+                }).join(''));
+                return JSON.parse(jsonPayload);
+            } catch (e) {
+                return null;
+            }
+        }
+
+        const userData = parseJwt(authToken);
+        if (userData) {
+            document.getElementById('userAddressShort').textContent = `${userData.address.substring(0, 6)}...${userData.address.substring(38)}`;
+        }
+
+        // Logout
+        document.getElementById('btnLogout').addEventListener('click', () => {
+            localStorage.removeItem('auth_token');
+            window.location.href = 'index.html';
+        });
+
+        // Fetch rescue status
+        async function fetchRescueStatus() {
+            const batchId = document.getElementById('batchIdFilter').value;
+            const url = `/api/admin/rescue-status${batchId ? `?batchId=${batchId}` : ''}`;
+
+            try {
+                const res = await fetch(url, {
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`
+                    }
+                });
+
+                if (!res.ok) {
+                    throw new Error('Failed to fetch rescue status');
+                }
+
+                const data = await res.json();
+                updateUI(data);
+            } catch (err) {
+                console.error('Error fetching rescue status:', err);
+                document.getElementById('rescueStatus').textContent = '❌ Error al cargar datos';
+            }
+        }
+
+        // Update UI with data
+        function updateUI(data) {
+            const { relayers, summary } = data;
+
+            // Update stats
+            document.getElementById('statTotal').textContent = summary.total;
+            document.getElementById('statPending').textContent = summary.pending;
+            document.getElementById('statProcessing').textContent = summary.processing;
+            document.getElementById('statCompleted').textContent = summary.completed;
+            document.getElementById('statBalance').textContent = summary.totalBalance;
+
+            // Update table
+            const tbody = document.getElementById('relayersTableBody');
+            if (relayers.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:2rem;">No hay relayers para rescatar</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = relayers.map(r => {
+                const shortAddr = `${r.address.substring(0, 6)}...${r.address.substring(38)}`;
+                const shortFaucet = r.faucetAddress !== 'Unknown' ? `${r.faucetAddress.substring(0, 6)}...${r.faucetAddress.substring(38)}` : 'Unknown';
+
+                let statusBadge = '';
+                switch (r.status) {
+                    case 'pending':
+                        statusBadge = '<span class="badge badge-warning">🟡 Pendiente</span>';
+                        break;
+                    case 'processing':
+                        statusBadge = '<span class="badge badge-info">🔵 Procesando</span>';
+                        break;
+                    case 'completed':
+                        statusBadge = '<span class="badge badge-success">✅ Completado</span>';
+                        break;
+                    case 'error':
+                        statusBadge = '<span class="badge badge-danger">❌ Error</span>';
+                        break;
+                }
+
+                return `
+                    <tr>
+                        <td style="font-family: monospace;">
+                            <a href="https://polygonscan.com/address/${r.address}" target="_blank" class="hash-link">${shortAddr} ↗️</a>
+                        </td>
+                        <td style="color: ${parseFloat(r.balance) > 0.01 ? '#fbbf24' : '#94a3b8'}; font-weight: bold;">
+                            ${parseFloat(r.balance).toFixed(4)} MATIC
+                        </td>
+                        <td style="font-family: monospace; font-size: 0.85rem;">
+                            ${r.faucetAddress !== 'Unknown' ? `<a href="https://polygonscan.com/address/${r.faucetAddress}" target="_blank" class="hash-link">${shortFaucet} ↗️</a>` : 'Unknown'}
+                        </td>
+                        <td style="text-align: center;">${r.batchId || '-'}</td>
+                        <td>${statusBadge}</td>
+                        <td style="font-family: monospace; font-size: 0.8rem;">
+                            ${r.txHash ? `<a href="https://polygonscan.com/tx/${r.txHash}" target="_blank" class="hash-link">${r.txHash.substring(0, 10)}... ↗️</a>` : '-'}
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        // Start rescue
+        async function startRescue() {
+            if (isRescuing) {
+                alert('Ya hay un rescate en proceso');
+                return;
+            }
+
+            if (!confirm('¿Estás seguro de iniciar el rescate de fondos? Esto enviará todos los fondos de los relayers a sus faucets correspondientes.')) {
+                return;
+            }
+
+            const batchId = document.getElementById('batchIdFilter').value;
+            const btnRescue = document.getElementById('btnStartRescue');
+            const statusEl = document.getElementById('rescueStatus');
+
+            isRescuing = true;
+            btnRescue.disabled = true;
+            btnRescue.textContent = '⏳ Rescatando...';
+            statusEl.textContent = '🔄 Procesando rescate...';
+            statusEl.style.color = '#3b82f6';
+
+            try {
+                const res = await fetch('/api/admin/rescue-execute', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${authToken}`
+                    },
+                    body: JSON.stringify({ batchId: batchId ? parseInt(batchId) : null })
+                });
+
+                const data = await res.json();
+
+                if (!res.ok) {
+                    throw new Error(data.error || 'Error al ejecutar rescate');
+                }
+
+                statusEl.textContent = `✅ ${data.message} | Total: ${data.totalAmount}`;
+                statusEl.style.color = '#4ade80';
+
+                // Refresh data
+                await fetchRescueStatus();
+
+            } catch (err) {
+                console.error('Rescue error:', err);
+                statusEl.textContent = `❌ Error: ${err.message}`;
+                statusEl.style.color = '#ef4444';
+            } finally {
+                isRescuing = false;
+                btnRescue.disabled = false;
+                btnRescue.textContent = '🚀 Iniciar Rescate';
+            }
+        }
+
+        // Event listeners
+        document.getElementById('btnRefresh').addEventListener('click', fetchRescueStatus);
+        document.getElementById('btnStartRescue').addEventListener('click', startRescue);
+
+        // Initial load
+        fetchRescueStatus();
+
+        // Auto-refresh every 5 seconds
+        setInterval(fetchRescueStatus, 5000);
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,76 @@
+// Add this after line 1733 in server.js
+
+// ============================================
+// AUTOMATIC BATCH RECOVERY
+// ============================================
+async function recoverStalledBatches() {
+    try {
+        // Find batches with PENDING transactions but no active workers (ENVIANDO = 0)
+        const stalledBatches = await pool.query(`
+            SELECT DISTINCT b.id, b.funder_address, b.total_transactions,
+                   (SELECT COUNT(*) FROM batch_transactions WHERE batch_id = b.id AND status = 'PENDING') as pending_count,
+                   (SELECT COUNT(*) FROM batch_transactions WHERE batch_id = b.id AND status = 'ENVIANDO') as active_count
+            FROM batches b
+            WHERE b.status IN ('PROCESSING', 'ACTIVE')
+            AND EXISTS (SELECT 1 FROM batch_transactions WHERE batch_id = b.id AND status = 'PENDING')
+            AND NOT EXISTS (SELECT 1 FROM batch_transactions WHERE batch_id = b.id AND status = 'ENVIANDO')
+            LIMIT 3
+        `);
+
+        if (stalledBatches.rows.length === 0) return;
+
+        console.log(`[Recovery] Found ${stalledBatches.rows.length} stalled batches`);
+
+        for (const batch of stalledBatches.rows) {
+            console.log(`[Recovery] Restarting Batch ${batch.id} (${batch.pending_count} pending txs)`);
+
+            try {
+                // Get faucet for this batch's funder
+                const faucetRes = await pool.query(
+                    `SELECT private_key FROM faucets WHERE LOWER(funder_address) = LOWER($1) LIMIT 1`,
+                    [batch.funder_address]
+                );
+
+                if (faucetRes.rows.length === 0) {
+                    console.log(`[Recovery] ⚠️  No faucet for Batch ${batch.id}`);
+                    continue;
+                }
+
+                // Get relayers
+                const relayersRes = await pool.query(
+                    `SELECT address, private_key FROM relayers WHERE batch_id = $1 ORDER BY id`,
+                    [batch.id]
+                );
+
+                if (relayersRes.rows.length === 0) {
+                    console.log(`[Recovery] ⚠️  No relayers for Batch ${batch.id}`);
+                    continue;
+                }
+
+                // Initialize engine and restart
+                const faucetPrivateKey = faucetRes.rows[0].private_key;
+                const engine = new RelayerEngine(pool, rpcManager, faucetPrivateKey);
+
+                const relayerWallets = relayersRes.rows.map(r => 
+                    new ethers.Wallet(r.private_key, rpcManager.getProvider())
+                );
+
+                console.log(`[Recovery] ✅ Restarting Batch ${batch.id} with ${relayerWallets.length} relayers`);
+
+                // Start in background (non-blocking)
+                engine.backgroundProcess(batch.id, relayerWallets, true, null, null)
+                    .catch(err => console.error(`[Recovery] Batch ${batch.id} error:`, err.message));
+
+            } catch (err) {
+                console.error(`[Recovery] Failed to restart Batch ${batch.id}:`, err.message);
+            }
+        }
+
+    } catch (error) {
+        console.error("[Recovery] ❌ Error:", error.message);
+    }
+}
+
+// Start batch recovery loop (every 5 minutes)
+setInterval(recoverStalledBatches, 300000); // Every 5 minutes
+console.log("🔄 Batch Recovery: Enabled (checks every 5min)");

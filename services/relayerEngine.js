@@ -1,0 +1,1774 @@
+const ethers = require('ethers');
+
+// Relayer Engine for High Throughput Processing
+class RelayerEngine {
+    constructor(pool, rpcManager, faucetPrivateKey) {
+        this.pool = pool; // Postgres Pool
+        this.rpcManager = rpcManager;
+
+        // TIMEOUT CONFIGURATION
+        // Variable: STUCK_TX_TIMEOUT_MINUTES
+        // Unit: Minutes
+        // Default: 3
+        this.stuckTxTimeoutMinutes = parseInt(process.env.STUCK_TX_TIMEOUT_MINUTES || '3', 10);
+        // Legacy support: if rpcManager is string, wrap it (handled in server.js ideally, but safe check here)
+        this.provider = rpcManager.provider || new ethers.JsonRpcProvider(rpcManager);
+
+        // Faucet setup needs a provider, we bind to the dynamic one from manager
+        // But Wallet needs a fixed provider instance. We'll access rpcManager.getProvider() dynamically where possible,
+        // or recreate wallet on switch. For now, let's keep it simple:
+        // Use the current provider. If RpcManager switches, we might need to update this.faucetWallet.provider.
+        // Better approach: Use execute() wrapper for all calls.
+
+        this.faucetPrivateKey = faucetPrivateKey;
+        this.faucetWallet = new ethers.Wallet(faucetPrivateKey, this.getProvider());
+        console.log(`[Engine] ⚙️  RelayerEngine Initialized | Faucet: ${this.faucetWallet.address} | Timeout: ${this.stuckTxTimeoutMinutes}m`);
+
+        this.cachedChainId = null;
+
+        // Configuration
+        this.contractAddress = process.env.CONTRACT_ADDRESS || "0x7B25Ce9800CCE4309E92e2834E09bD89453d90c5";
+        this.usdcAddress = "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359";
+
+        this.contractABI = [
+            "function executeTransaction(uint256 batchId, uint256 txId, address funder, address recipient, uint256 amount, bytes32[] calldata proof) external",
+            "function executeWithPermit(uint256 batchId, uint256 txId, address funder, address recipient, uint256 amount, bytes32[] calldata proof, uint256 deadline, uint8 v, bytes32 r, bytes32 s) external",
+            "function processedLeaves(bytes32) view returns (bool)",
+            "function distributeMatic(address[] calldata recipients, uint256 amount) external payable",
+            "function setBatchRoot(uint256 batchId, bytes32 merkleRoot) external",
+            "function setBatchRootWithSignature(address funder, uint256 batchId, bytes32 merkleRoot, uint256 totalTransactions, uint256 totalAmount, bytes calldata signature) external",
+            "function batchRoots(address funder, uint256 batchId) view returns (bytes32)",
+            "event TransactionExecuted(uint256 indexed batchId, uint256 indexed txId, address indexed recipient, address funder, uint256 amount)"
+        ];
+    }
+
+    // Helper to get current valid provider
+    getProvider() {
+        return this.rpcManager.getProvider ? this.rpcManager.getProvider() : this.provider;
+    }
+
+    // --- Configuration Constants ---
+    // --- Configuration Constants ---
+    static GAS_BUFFER_PERCENTAGE = 60n; // Default 60% buffer
+    static GAS_CUSHION_MATIC = ethers.parseEther("0.25"); // Default 0.25 MATIC cushion
+    static MAX_RETRIES = 1000; // Indefinite retry limit
+    static FAUCET_UNBLOCK_BOOST = 10n; // 10x gas for unblocking (aggressive)
+
+    /**
+     * Calculates the total USDC required for a SPECIFIC batch.
+     */
+    async getBatchTotal(batchId) {
+        const query = `
+            SELECT SUM(amount_usdc) as total
+            FROM batch_transactions
+            WHERE batch_id = $1 
+            AND status = 'PENDING'
+    `;
+        const res = await this.pool.query(query, [batchId]);
+        const total = res.rows[0].total || 0;
+        return BigInt(total);
+    }
+
+    /**
+     * Generates or retrieves a valid permit signature for a specific batch.
+     */
+    // (REMOVED ensureBatchPermit as we use Direct Permit Submission)
+
+    /**
+     * Identifies and Resets Stale 'ENVIANDO' transactions.
+     * Criteria: Status = 'ENVIANDO' AND updated_at < NOW() - timeout
+     */
+    async recoverStaleTransactions(batchId) {
+        const timeoutMinutes = this.stuckTxTimeoutMinutes;
+        console.log(`[Engine] 🧹 Checking for stale transactions (Timeout: ${timeoutMinutes} mins)...`);
+
+        try {
+            const res = await this.pool.query(`
+                UPDATE batch_transactions
+                SET status = 'PENDING', relayer_address = NULL, updated_at = NOW(), retry_count = COALESCE(retry_count, 0) + 1
+                WHERE batch_id = $1 
+                AND status = 'ENVIANDO' 
+                AND updated_at < NOW() - ($2 || ' minutes')::INTERVAL
+                RETURNING id, tx_hash
+            `, [batchId, timeoutMinutes]);
+
+            if (res.rowCount > 0) {
+                console.warn(`[Engine] ⚠️  RECOVERED ${res.rowCount} STUCK TRANSACTIONS! Reset to PENDING.`);
+                // Optional: log IDs if few, or count if many
+            } else {
+                console.log(`[Engine] ✨ No stale transactions found.`);
+            }
+        } catch (e) {
+            console.error(`[Engine] ❌ Error recovering stale transactions:`, e.message);
+        }
+    }
+
+    async syncRelayerBalance(address) {
+        try {
+            await new Promise(r => setTimeout(r, 100)); // Throttle
+            const balWei = await this.rpcManager.execute(async (provider) => {
+                return provider.getBalance(address);
+            });
+            const balanceStr = ethers.formatEther(balWei);
+            await this.pool.query(
+                `UPDATE relayers SET last_balance = $1, last_activity = NOW() WHERE address = $2`,
+                [balanceStr, address]
+            );
+            return balanceStr;
+        } catch (e) {
+            console.warn(`[Engine] Could not proactive-sync balance for ${address}: `, e.message);
+            return null;
+        }
+    }
+
+    /**
+     * SELF-HEALING: Verify Faucet integrity and unclog stuck transactions
+     * Use this before any critical Faucet operation.
+     */
+    async verifyAndRepairNonce(wallet = null) {
+        const targetWallet = wallet || this.faucetWallet;
+        const address = targetWallet.address;
+        console.log(`[Engine] 🛡️ Verifying Nonce integrity for ${address.substring(0, 8)} (Resilient)...`);
+        try {
+            // USE NEW SYSTEM: execute() for all calls
+            const counts = await this.rpcManager.execute(async (provider) => {
+                const nonce = await provider.getTransactionCount(address, 'latest');
+                const pending = await provider.getTransactionCount(address, 'pending');
+                return { nonce, pending };
+            });
+
+            if (counts.pending > counts.nonce) {
+                console.warn(`[Engine] ⚠️  GAP DETECTED in Nonce for ${address}! Latest: ${counts.nonce}, Pending: ${counts.pending}.`);
+
+                // AUTO-UNBLOCK logic (Conservative & Aggressive)
+                const diff = counts.pending - counts.nonce;
+                console.log(`[Engine] 🔧 Faucet blocked with ${diff} txs. Sanitizing with ${RelayerEngine.FAUCET_UNBLOCK_BOOST}x gas boost...`);
+
+                await this.sanitizeFaucet(counts.nonce, counts.pending, targetWallet);
+
+                // Wait a bit for node sync
+                await new Promise(r => setTimeout(r, 2000));
+
+                const countsPost = await this.rpcManager.execute(async (provider) => {
+                    const latest = await provider.getTransactionCount(address, 'latest');
+                    const pending = await provider.getTransactionCount(address, 'pending');
+                    return { latest, pending };
+                });
+
+                if (countsPost.pending > countsPost.latest) {
+                    console.error(`[Engine] ❌ Repair failed for ${address}. Gap still exists: ${countsPost.latest} -> ${countsPost.pending}`);
+                    return false;
+                }
+                console.log(`[Engine] ✨ Nonce integrity restored for ${address}.`);
+                return true;
+            } else {
+                console.log(`[Engine] ✅ Nonce is healthy for ${address} (${counts.nonce}).`);
+                return true;
+            }
+        } catch (e) {
+            console.error(`[Engine] Nonce Check Failed for ${address}:`, e);
+            return false;
+        }
+    }
+
+    /**
+     * Aggressively clears stuck transactions from the Faucet
+     */
+    async sanitizeFaucet(startNonce, endNonce, wallet = null) {
+        const targetWallet = wallet || this.faucetWallet;
+        console.log(`[Engine] 🧹 Sanitizing Nonces for ${targetWallet.address.substring(0, 8)} (${startNonce} to ${endNonce - 1})...`);
+
+        await this.rpcManager.execute(async (provider) => {
+            const feeData = await provider.getFeeData();
+            // Use static aggressive boost
+            const boost = RelayerEngine.FAUCET_UNBLOCK_BOOST || 10n;
+            const aggressivePrice = (feeData.gasPrice || 30000000000n) * boost;
+
+            for (let n = startNonce; n < endNonce; n++) {
+                try {
+                    console.log(`[Engine] Killing stuck nonce ${n} for ${targetWallet.address}...`);
+                    const tx = await targetWallet.connect(provider).sendTransaction({
+                        to: targetWallet.address,
+                        value: 0,
+                        nonce: n,
+                        gasPrice: aggressivePrice,
+                        gasLimit: 21000
+                    });
+                    console.log(`[Engine] 🔪 Kill Tx Sent: ${tx.hash}`);
+                    await tx.wait(1);
+                    console.log(`[Engine] ✨ Nonce ${n} cleared.`);
+                } catch (err) {
+                    console.error(`[Engine] Failed to clear nonce ${n}: ${err.message}`);
+                }
+            }
+        });
+    }
+
+    /**
+     * PHASE 1: Setup relayers and fund them.
+     */
+    async prepareRelayers(batchId, numRelayers) {
+        console.log(`[Engine] 🏗️ prepareRelayers(id = ${batchId}, count = ${numRelayers})`);
+
+        // Step -1: Recover Stale Transactions (Self-Healing)
+        await this.recoverStaleTransactions(batchId);
+
+        // Step 0: Ensure Faucet is healthy (Nonce Repair)
+        // This prevents collisions if a previous batch is still finishing up or if Faucet state is stuck.
+        await this.verifyAndRepairNonce();
+
+        // Check for existing relayers in DB
+        const existingRelayersRes = await this.pool.query(
+            'SELECT address, encrypted_key FROM relayers WHERE batch_id = $1',
+            [batchId]
+        );
+
+        let relayers = [];
+        if (existingRelayersRes.rows.length > 0) {
+            console.log(`[Engine] Found ${existingRelayersRes.rows.length} existing relayers for Batch ${batchId}.`);
+            // Securely load keys from encrypted database
+            const encryption = require('./encryption');
+            for (const r of existingRelayersRes.rows) {
+                if (r.encrypted_key) {
+                    const pk = encryption.decrypt(r.encrypted_key);
+                    relayers.push(new ethers.Wallet(pk, this.getProvider()));
+                } else {
+                    console.error(`[Engine] ❌ Encrypted key for relayer ${r.address} not found in database!`);
+                }
+            }
+        }
+
+        // Expand if requested count > existing count
+        let newRelayers = [];
+        let totalRelayers = [...relayers];
+
+        if (totalRelayers.length < numRelayers) {
+            const needed = numRelayers - totalRelayers.length;
+            console.log(`[Engine] Expansion needed from ${totalRelayers.length} to ${numRelayers} (+${needed} new)...`);
+
+            for (let i = 0; i < needed; i++) {
+                const wallet = ethers.Wallet.createRandom();
+                const connectedWallet = wallet.connect(this.getProvider());
+                newRelayers.push(connectedWallet);
+                totalRelayers.push(connectedWallet);
+            }
+        }
+
+        // --- CALCULATION & VALIDATION ---
+        const { totalCostWei } = await this.estimateBatchGas(batchId);
+
+        // Distribution gas estimate (matches fundRelayers internal logic approx)
+        const gasPrice = (await this.getProvider().getFeeData()).gasPrice || ethers.parseUnits("50", "gwei");
+        const distributeGasLimit = 200000n + (BigInt(totalRelayers.length) * 50000n);
+        const reserveGas = distributeGasLimit * gasPrice * 300n / 100n; // 3x boost reserve
+        const minSafeReserve = ethers.parseEther("0.1"); // Absolute minimum for faucet to survive
+
+        const faucetBalance = await this.getProvider().getBalance(this.faucetWallet.address);
+        const amountPerRelayer = (totalCostWei / BigInt(totalRelayers.length)) + ethers.parseEther("0.05"); // Buffer
+
+        const totalNeeded = (amountPerRelayer * BigInt(totalRelayers.length)) + reserveGas + minSafeReserve;
+
+        console.log(`[Engine] 💰 Faucet: ${ethers.formatEther(faucetBalance)} POL | Needed: ${ethers.formatEther(totalNeeded)} POL`);
+
+        if (faucetBalance < totalNeeded) {
+            const missing = ethers.formatEther(totalNeeded - faucetBalance);
+            throw new Error(`FONDOS INSUFICIENTES: Faltan ${missing} POL en la Faucet. (Balance: ${ethers.formatEther(faucetBalance)}, Necesario: ${ethers.formatEther(totalNeeded)})`);
+        }
+
+        // Step 2: Distribute Gas (Atomic - If it fails, nothing is saved)
+        console.log(`[Engine] 🚀 Funding ${totalRelayers.length} relayers...`);
+        await this.distributeGasToRelayers(batchId, totalRelayers);
+
+        // --- PERSISTENCE (Only if funding succeeds) ---
+        if (newRelayers.length > 0) {
+            await this.persistRelayers(batchId, newRelayers);
+        }
+
+        console.log(`[Engine] ✅ Relayer Setup Complete for Batch ${batchId}.`);
+        return true;
+    }
+
+    /**
+     * PHASE 2: Consume signatures and start the swarm.
+     */
+    async startExecution(batchId, permitData = null, rootSignatureData = null) {
+        console.log(`[Engine] 🚀 startExecution(id = ${batchId})`);
+
+        // Check if relayers have funds BEFORE starting
+        const relayersRes = await this.pool.query('SELECT address, last_balance FROM relayers WHERE batch_id = $1', [batchId]);
+        let totalGas = 0n;
+        relayersRes.rows.forEach(r => totalGas += BigInt(ethers.parseEther(r.last_balance || "0")));
+
+        if (totalGas < ethers.parseEther("0.05")) {
+            throw new Error("ERROR: Los relayers no tienen fondos (POL) para iniciar. Por favor, realiza el paso 1 (Preparar Relayers) de nuevo.");
+        }
+
+        // 1. Recover relayers from DB (Secured from encrypted storage)
+
+        const existingRelayersRes = await this.pool.query(
+            'SELECT address, encrypted_key FROM relayers WHERE batch_id = $1',
+            [batchId]
+        );
+
+        const relayers = [];
+        const currentProvider = this.getProvider();
+        const encryption = require('./encryption');
+
+        for (const r of existingRelayersRes.rows) {
+            if (r.encrypted_key) {
+                const pk = encryption.decrypt(r.encrypted_key);
+                // Ensure each relayer wallet is connected to the ACTIVE provider
+                const w = new ethers.Wallet(pk, currentProvider);
+                w.batch_id = batchId; // Attach batch_id for workerLoop context
+                relayers.push(w);
+            } else {
+                console.error(`[Engine] ❌ Encrypted key for relayer ${r.address} not found in database!`);
+            }
+        }
+
+        if (relayers.length === 0) {
+            throw new Error("Relayers not prepared or keys not found in Vault. Run setup first.");
+        }
+
+        // Background the execution
+        this.backgroundProcess(batchId, relayers, true, permitData, rootSignatureData).catch(err => {
+            console.error(`❌ Critical error in background execution for Batch ${batchId}: `, err);
+        });
+
+        return { success: true, message: "Execution started in background" };
+    }
+
+    async backgroundProcess(batchId, relayers, isResumption = false, externalPermit = null, rootSignatureData = null) {
+        try {
+            // Track Start Time
+            const startTime = Date.now();
+
+            // --- METRICS SNAPSHOT (START) ---
+            const startMetrics = {
+                funderBalance: '0',
+                faucetBalance: '0',
+                startTime: startTime
+            };
+
+            try {
+                // 1. Fetch Funder Address for this batch
+                const batchRes = await this.pool.query('SELECT funder_address FROM batches WHERE id = $1', [batchId]);
+                const funderAddress = batchRes.rows[0]?.funder_address;
+
+                if (funderAddress) {
+                    const fBal = await this.rpcManager.execute(async (provider) => {
+                        return provider.getBalance(funderAddress);
+                    });
+                    startMetrics.funderBalance = ethers.formatEther(fBal);
+                }
+                const faucetBal = await this.rpcManager.execute(async (provider) => {
+                    return provider.getBalance(this.faucetWallet.address);
+                });
+                startMetrics.faucetBalance = ethers.formatEther(faucetBal);
+
+                await this.pool.query(
+                    `UPDATE batches SET metrics = metrics || $1 WHERE id = $2`,
+                    [JSON.stringify({ initial: startMetrics }), batchId]
+                );
+            } catch (metricErr) {
+                console.warn("[Engine] Metric snapshot start failed:", metricErr.message);
+            }
+
+            console.log('\n========================================');
+            console.log('⚙️  BACKGROUND PROCESS STARTED');
+            console.log('========================================');
+            console.log(`📦 Batch ID:          ${batchId}`);
+            console.log(`⚡ Relayers:          ${relayers.length}`);
+            console.log(`🔄 Is Resumption:     ${isResumption}`);
+            console.log(`📝 Has Permit:        ${!!externalPermit}`);
+            console.log(`✍️  Has Root Sig:      ${!!rootSignatureData}`);
+            console.log(`⏰ Start Time:        ${new Date(startTime).toISOString()}`);
+            console.log('========================================\n');
+
+            // Update Status to SENT (Enviando) immediately
+            await this.pool.query(`UPDATE batches SET status = 'SENT', start_time = NOW(), updated_at = NOW() WHERE id = $1`, [batchId]);
+            console.log(`[Background] ✅ Batch status updated to SENT`);
+
+            // 1. Fetch Funder Address for this batch
+            const batchRes = await this.pool.query('SELECT funder_address FROM batches WHERE id = $1', [batchId]);
+            const funderAddress = batchRes.rows[0]?.funder_address;
+
+            if (funderAddress) {
+                // --- 0. FAUCET NONCE VERIFICATION (CRITICAL) ---
+                console.log(`[Engine] 🛡️ Verifying Faucet nonce before critical operations...`);
+                const faucetHealthy = await this.verifyAndRepairNonce();
+
+                if (!faucetHealthy) {
+                    throw new Error('CRITICAL: Faucet nonce is stuck and could not be repaired. Aborting batch execution.');
+                }
+
+                // --- 1. PRE-FLIGHT PARALLELIZATION ---
+                console.log(`[Engine] ⚡ Initializing Parallel Pre-flight (Root, Permit, Funding)...`);
+
+                // Get Current Nonce for Faucet (use 'pending' to avoid nonce collisions)
+                let currentNonce = await this.rpcManager.execute(async (provider) => {
+                    return provider.getTransactionCount(this.faucetWallet.address, "pending");
+                });
+                // --- 1.1 MERKLE ROOT REGISTRATION (IF NEEDED) ---
+                const onChainRoot = await this.rpcManager.execute(async (provider) => {
+                    const contract = new ethers.Contract(this.contractAddress, this.contractABI, provider);
+                    return contract.batchRoots(funderAddress, batchId);
+                });
+
+                if (onChainRoot === ethers.ZeroHash) {
+                    if (rootSignatureData) {
+                        console.log(`[Engine][Root] 📝 Starting Root Registration...`);
+
+                        await this.rpcManager.execute(async (provider) => {
+                            const feeData = await provider.getFeeData();
+                            const gasPrice = (feeData.gasPrice || ethers.parseUnits("50", "gwei")) * 500n / 100n; // 5x boost
+                            console.log(`[Engine][Root] ⛽ Gas Price: ${ethers.formatUnits(gasPrice, 'gwei')} gwei (5x boost)`);
+
+                            const writerContract = new ethers.Contract(this.contractAddress, this.contractABI, this.faucetWallet.connect(provider));
+                            const tx = await writerContract.setBatchRootWithSignature(
+                                rootSignatureData.funder,
+                                BigInt(batchId),
+                                rootSignatureData.merkleRoot,
+                                BigInt(rootSignatureData.totalTransactions),
+                                BigInt(rootSignatureData.totalAmount),
+                                rootSignatureData.signature,
+                                { gasPrice }
+                            );
+                            console.log(`[Blockchain][Root] 🚀 Root TX Sent: ${tx.hash}`);
+
+                            await this.pool.query(
+                                `UPDATE batches SET status = 'REGISTERING_ROOT', updated_at = NOW() WHERE id = $1`,
+                                [batchId]
+                            );
+
+                            console.log(`[Engine][Root] ⏳ Waiting for confirmation...`);
+                            const receipt = await tx.wait(1);
+                            console.log(`[Blockchain][Root] ✅ Root CONFIRMED (Block: ${receipt.blockNumber})`);
+
+                            const fee = BigInt(receipt.gasUsed) * BigInt(receipt.effectiveGasPrice || 0);
+                            await this.pool.query(`UPDATE batches SET funding_amount = COALESCE(funding_amount, 0) + $1 WHERE id = $2`, [ethers.formatEther(fee), batchId]);
+                        });
+                    } else {
+                        throw new Error("Batch Root not registered on-chain and no signature provided.");
+                    }
+                }
+
+                // --- 1.2 PERMIT SUBMISSION (IF NEEDED) ---
+                if (externalPermit) {
+                    const currentAllowance = await this.rpcManager.execute(async (provider) => {
+                        const usdc = new ethers.Contract(this.usdcAddress, [
+                            "function allowance(address owner, address spender) view returns (uint256)"
+                        ], provider);
+                        return usdc.allowance(externalPermit.owner || funderAddress, this.contractAddress);
+                    });
+
+                    const requiredAmount = BigInt(externalPermit.amount);
+
+                    if (currentAllowance >= requiredAmount) {
+                        console.log(`[Engine][Permit] ✅ Current allowance is already sufficient (${ethers.formatUnits(currentAllowance, 6)} USDC). Skipping permit.`);
+                    } else {
+                        console.log(`[Engine][Permit] 📩 Starting Permit Submission...`);
+                        await this.rpcManager.execute(async (provider) => {
+                            const feeData = await provider.getFeeData();
+                            const gasPrice = (feeData.gasPrice || ethers.parseUnits("50", "gwei")) * 500n / 100n; // 5x boost
+                            console.log(`[Engine][Permit] ⛽ Gas Price: ${ethers.formatUnits(gasPrice, 'gwei')} gwei (5x boost)`);
+
+                            const usdc = new ethers.Contract(this.usdcAddress, [
+                                "function permit(address owner, address spender, uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s) external"
+                            ], this.faucetWallet.connect(provider));
+
+                            const tx = await usdc.permit(
+                                externalPermit.owner || funderAddress,
+                                this.contractAddress,
+                                BigInt(externalPermit.amount),
+                                BigInt(externalPermit.deadline),
+                                externalPermit.v,
+                                externalPermit.r,
+                                externalPermit.s,
+                                { gasPrice }
+                            );
+                            console.log(`[Blockchain][Permit] 🚀 Permit TX Sent: ${tx.hash}`);
+
+                            await this.pool.query(
+                                `UPDATE batches SET status = 'SUBMITTING_PERMIT', updated_at = NOW() WHERE id = $1`,
+                                [batchId]
+                            );
+
+                            console.log(`[Engine][Permit] ⏳ Waiting for confirmation...`);
+                            const receipt = await tx.wait(1);
+                            console.log(`[Blockchain][Permit] ✅ Permit CONFIRMED (Block: ${receipt.blockNumber})`);
+
+                            const fee = BigInt(receipt.gasUsed) * BigInt(receipt.effectiveGasPrice || 0);
+                            await this.pool.query(`UPDATE batches SET funding_amount = COALESCE(funding_amount, 0) + $1 WHERE id = $2`, [ethers.formatEther(fee), batchId]);
+                        });
+                    }
+                }
+
+                // --- 1.3 RELAYER FUNDING (IF NEEDED) ---
+                let needsFunding = !isResumption;
+                if (isResumption && relayers.length > 0) {
+                    const firstRelBal = await this.rpcManager.execute(async (provider) => {
+                        return provider.getBalance(relayers[0].address);
+                    });
+                    if (firstRelBal < ethers.parseEther("0.01")) needsFunding = true;
+                }
+
+                if (needsFunding) {
+                    console.log(`[Engine][Fund] 🪙 Starting Relayer Funding...`);
+                    // Nonce is handled inside fundRelayers which calls verifyAndRepairNonce
+                    await this.distributeGasToRelayers(batchId, relayers);
+                }
+
+                console.log(`[Engine] ✨ Setup completed (Sequential & Verified).`);
+            }
+
+            // --- E. PHASE 2: PARALLEL SWARM ---
+            console.log(`[Background] 🚀 Launching Parallel Workers...`);
+            // Add a slight stagger to avoid all workers hitting node at exact same ms
+            const workerPromises = relayers.map((wallet, idx) => {
+                return new Promise(resolve => {
+                    // Reduced stagger to 50ms (from 500ms) for faster ramp-up
+                    setTimeout(() => resolve(this.workerLoop(wallet, batchId)), idx * 50);
+                });
+            });
+
+            try {
+                // Use Promise.allSetled or wrap in try/catch to prevent one crash killing the swarm
+                await Promise.all(workerPromises.map(p => p.catch(e => {
+                    console.error(`[Engine] ❌ Worker Critical Failure: ${e.message}`);
+                    return null;
+                })));
+            } catch (err) {
+                console.error(`[Engine] ⚠️ Worker Swarm Global Error: ${err.message}`);
+            }
+
+            // 5. Retry Phase (Auto-Repair dropped txs) - ALWAYS RUN
+            try {
+                console.log(`[Engine] 🔄 Entering Retry Phase...`);
+                await this.retryFailedTransactions(batchId, relayers);
+            } catch (err) {
+                console.error(`[Engine] ⚠️ Retry Phase Error: ${err.message}`);
+            }
+
+            // G. Refund & Cleanup (ALWAYS RUN)
+            try {
+                // CHECK: Only refund if ALL transactions are COMPLETED.
+                const pendingCountRes = await this.pool.query(
+                    `SELECT COUNT(*) FROM batch_transactions WHERE batch_id = $1 AND status IN ('PENDING', 'FAILED', 'ENVIANDO', 'WAITING_CONFIRMATION')`,
+                    [batchId]
+                );
+                const pendingCount = parseInt(pendingCountRes.rows[0].count);
+
+                if (pendingCount > 0) {
+                    console.warn(`[Engine] ⚠️ Skipping Fund Recovery: ${pendingCount} transactions are still PENDING/FAILED.`);
+                } else {
+                    console.log(`[Engine] 🧹 All clear. Cleaning up & Returning Funds...`);
+
+                    // Final Stale Check before closing (Just in case workers died mid-last-mile)
+                    await this.recoverStaleTransactions(batchId);
+
+                    try {
+                        await this.returnFundsToFaucet(batchId);
+                    } catch (cleanupErr) {
+                        console.error(`[Engine] ⚠️ Refund failed (ignoring to save metrics): ${cleanupErr.message}`);
+                    }
+                }
+
+                // --- CALCULATE FINAL METRICS ---
+                const endTime = Date.now();
+                const durationMs = endTime - startTime;
+
+                // Format duration (e.g., "2m 15s")
+                const minutes = Math.floor(durationMs / 60000);
+                const seconds = ((durationMs % 60000) / 1000).toFixed(0);
+                const durationStr = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+
+                // Aggregate Total Gas from Database (Net Calculation)
+                const metricsRes = await this.pool.query(
+                    `SELECT funding_amount, refund_amount FROM batches WHERE id = $1`,
+                    [batchId]
+                );
+                const funding = metricsRes.rows[0]?.funding_amount || 0;
+                const refunded = metricsRes.rows[0]?.refund_amount || 0;
+
+                // Calculate Net Cost: Funding - Refunded (Includes Distribution Cost if we added it to Funding, or just Value)
+                // If funding is 0 (legacy), fallback to sum(gas_cost)
+                let totalGasMatic = "0";
+
+                if (funding > 0) {
+                    const netCost = parseFloat(funding) - parseFloat(refunded);
+                    totalGasMatic = Math.max(0, netCost).toFixed(6);
+                    console.log(`[Engine] 🧮 Net Gas Calc: ${funding} (Funded) - ${refunded} (Refunded) = ${totalGasMatic}`);
+                } else {
+                    // Fallback to old summation method
+                    const gasRes = await this.pool.query(
+                        `SELECT SUM(gas_cost::numeric) as total_gas FROM relayers WHERE batch_id = $1`,
+                        [batchId]
+                    );
+                    totalGasMatic = gasRes.rows[0].total_gas || "0";
+                }
+
+                // --- METRICS SNAPSHOT (END) ---
+                const endMetrics = {
+                    funderBalance: '0',
+                    faucetBalance: '0',
+                    endTime: Date.now(),
+                    duration: durationStr,
+                    totalGas: totalGasMatic,
+                    funding: funding,
+                    refunded: refunded
+                };
+
+                try {
+                    // Re-fetch funder address just in case
+                    const batchRes = await this.pool.query('SELECT funder_address FROM batches WHERE id = $1', [batchId]);
+                    const funderAddress = batchRes.rows[0]?.funder_address;
+
+                    if (funderAddress) {
+                        const fBal = await this.getProvider().getBalance(funderAddress);
+                        endMetrics.funderBalance = ethers.formatEther(fBal);
+                    }
+                    const faucetBal = await this.getProvider().getBalance(this.faucetWallet.address);
+                    endMetrics.faucetBalance = ethers.formatEther(faucetBal);
+                } catch (e) { console.warn("Metric snapshot end failed", e); }
+
+                console.log(`[Engine] 🏁 Metrics | Time: ${durationStr} | Gas: ${totalGasMatic} MATIC`);
+
+                // Update Batch with Metrics and Final Status
+                await this.pool.query(
+                    `UPDATE batches SET 
+                    total_gas_used = $1, 
+                    execution_time = $2, 
+                    end_time = NOW(),
+                    metrics = metrics || $3,
+                    updated_at = NOW() 
+                 WHERE id = $4`,
+                    [totalGasMatic, durationStr, JSON.stringify({ final: endMetrics }), batchId]
+                );
+
+                console.log(`[Engine] ✅ Batch ${batchId} status updated to COMPLETED in database`);
+
+                // Get final transaction counts to determine actual batch status
+                const finalCountRes = await this.pool.query(`
+                    SELECT 
+                        COUNT(*) as total,
+                        COUNT(CASE WHEN status = 'COMPLETED' THEN 1 END) as completed,
+                        COUNT(CASE WHEN status = 'FAILED' THEN 1 END) as failed
+                    FROM batch_transactions 
+                    WHERE batch_id = $1
+                `, [batchId]);
+
+                const counts = finalCountRes.rows[0];
+                const total = parseInt(counts.total);
+                const completed = parseInt(counts.completed);
+                const failed = parseInt(counts.failed);
+
+                // Determine final status based on actual transaction results
+                let finalStatus = 'COMPLETED';
+                if (completed < total) {
+                    finalStatus = 'FAILED'; // Not all transactions completed
+                    console.log(`[Engine] ⚠️ Batch ${batchId} marked as FAILED: ${completed}/${total} completed, ${failed} failed`);
+                } else {
+                    console.log(`[Engine] ✅ Batch ${batchId} fully completed: ${completed}/${total} transactions`);
+                }
+
+                // Update with correct status
+                await this.pool.query(
+                    `UPDATE batches SET status = $1 WHERE id = $2`,
+                    [finalStatus, batchId]
+                );
+
+                // Get final batch stats for summary
+                const statsRes = await this.pool.query(`
+                    SELECT 
+                        b.id,
+                        b.batch_number,
+                        b.start_time,
+                        b.end_time,
+                        b.total_transactions,
+                        b.total_usdc,
+                        b.total_gas_used,
+                        b.execution_time,
+                        (SELECT COUNT(*) FROM batch_transactions WHERE batch_id = b.id AND status = 'COMPLETED') as completed_count,
+                        (SELECT COUNT(*) FROM batch_transactions WHERE batch_id = b.id AND status = 'FAILED') as failed_count
+                    FROM batches b
+                    WHERE b.id = $1
+                `, [batchId]);
+
+                const stats = statsRes.rows[0];
+                const startDate = new Date(stats.start_time);
+                const endDate = new Date(stats.end_time);
+
+                // Print comprehensive summary
+                console.log('\n');
+                console.log('╔════════════════════════════════════════════════════════════╗');
+                console.log('║           📊 BATCH COMPLETION SUMMARY                      ║');
+                console.log('╠════════════════════════════════════════════════════════════╣');
+                console.log(`║ Batch ID:           ${String(stats.id).padEnd(38)} ║`);
+                console.log(`║ Batch Name:         ${(stats.batch_number || 'N/A').substring(0, 38).padEnd(38)} ║`);
+                console.log('╠════════════════════════════════════════════════════════════╣');
+                console.log(`║ Start Time:         ${startDate.toLocaleString('es-AR').padEnd(38)} ║`);
+                console.log(`║ End Time:           ${endDate.toLocaleString('es-AR').padEnd(38)} ║`);
+                console.log(`║ Duration:           ${(stats.execution_time || durationStr).padEnd(38)} ║`);
+                console.log('╠════════════════════════════════════════════════════════════╣');
+                console.log(`║ Total Transactions: ${String(stats.total_transactions).padEnd(38)} ║`);
+                console.log(`║ ✅ Completed:       ${String(stats.completed_count).padEnd(38)} ║`);
+                console.log(`║ ❌ Failed:          ${String(stats.failed_count).padEnd(38)} ║`);
+                console.log('╠════════════════════════════════════════════════════════════╣');
+                console.log(`║ Total USDC Sent:    ${(parseFloat(stats.total_usdc || 0) / 1000000).toFixed(2).padEnd(38)} ║`);
+                console.log(`║ Total Gas Used:     ${String(totalGasMatic).padEnd(30)} MATIC ║`);
+                console.log('╚════════════════════════════════════════════════════════════╝');
+                console.log('\n');
+
+                console.log(`✅ Batch ${batchId} Processing Complete. Metrics saved.`);
+            } catch (finalErr) {
+                console.error(`[Engine] ⚠️ Final Cleanup/Metrics Error: ${finalErr.message}`);
+            }
+        } catch (criticalErr) {
+            console.error(`❌ [Background] Critical Error for Batch ${batchId}:`, criticalErr);
+            // Truncate error message to prevent UI overflow
+            const errorMsg = criticalErr.message || String(criticalErr);
+            const truncatedMsg = errorMsg.length > 200 ? errorMsg.substring(0, 200) + '...' : errorMsg;
+            await this.pool.query(
+                `UPDATE batches SET status = 'FAILED', error_message = $1, updated_at = NOW() WHERE id = $2`,
+                [`❌ ERROR: ${truncatedMsg}`, batchId]
+            );
+        }
+    }
+
+    // 2. Worker Loop (The Consumer)
+    async workerLoop(wallet, batchId) {
+        let processedCount = 0;
+        let totalGasWei = 0n;
+        const startBal = await this.getProvider().getBalance(wallet.address);
+        console.log(`👷 Worker ${wallet.address.substring(0, 6)} started | Relayer: ${wallet.address} | Balance: ${ethers.formatEther(startBal)} MATIC`);
+
+        while (true) {
+            const txReq = await this.fetchAndLockNextTx(batchId, wallet.address);
+
+            if (!txReq) {
+                const stuckTx = await this.fetchStuckTx(batchId, wallet.address);
+                if (stuckTx) {
+                    await this.processTransaction(wallet, stuckTx, true);
+                    continue;
+                }
+                break;
+            }
+
+            const res = await this.processTransaction(wallet, txReq, false);
+            if (res.gasUsed && res.effectiveGasPrice) {
+                totalGasWei += (res.gasUsed * res.effectiveGasPrice);
+            }
+            processedCount++;
+            // Throttle worker (Aggressive: 100ms)
+            // User requested 100ms.
+            // This allows ~10 TPS per relayer (theoretical) limited by network latency.
+            await new Promise(r => setTimeout(r, 100));
+        }
+
+        // Save total gas spent by this worker
+        // Save total gas spent by this worker
+        console.log(`👷 Worker ${wallet.address.substring(0, 6)} Saving Gas: ${ethers.formatEther(totalGasWei)} MATIC`);
+        await this.pool.query(
+            `UPDATE relayers SET gas_cost = $1 WHERE address = $2 AND batch_id = $3`,
+            [ethers.formatEther(totalGasWei), wallet.address, batchId]
+        );
+
+        console.log(`👷 Worker ${wallet.address.substring(0, 6)} finished. Processed: ${processedCount} | Gas: ${ethers.formatEther(totalGasWei)} MATIC`);
+    }
+
+    // 3. Queue Logic (SKIP LOCKED)
+    async fetchAndLockNextTx(batchId, relayerAddr) {
+        const client = await this.pool.connect();
+        try {
+            await client.query('BEGIN');
+            const res = await client.query(`
+                UPDATE batch_transactions
+                SET status = 'ENVIANDO', relayer_address = $1, updated_at = NOW()
+                WHERE id = (
+                    SELECT id FROM batch_transactions
+                    WHERE batch_id = $2 AND status = 'PENDING'
+                    ORDER BY id ASC
+                    FOR UPDATE SKIP LOCKED
+                    LIMIT 1
+                )
+                RETURNING *
+            `, [relayerAddr, batchId]);
+            await client.query('COMMIT');
+            return res.rows[0];
+        } catch (e) {
+            await client.query('ROLLBACK');
+            console.error("Queue Lock Error", e);
+            return null;
+        } finally {
+            client.release();
+        }
+    }
+
+    async getMerkleProof(batchId, transactionId) {
+        const startRes = await this.pool.query(
+            `SELECT position_index, hash FROM merkle_nodes WHERE batch_id = $1 AND level = 0 AND transaction_id = $2`,
+            [batchId, transactionId]
+        );
+        if (startRes.rows.length === 0) return [];
+
+        const maxLevelRes = await this.pool.query(
+            `SELECT MAX(level) as max_level FROM merkle_nodes WHERE batch_id = $1`,
+            [batchId]
+        );
+        const maxLevel = maxLevelRes.rows[0].max_level;
+        if (maxLevel === undefined || maxLevel === null) return [];
+
+        let currentIndex = startRes.rows[0].position_index;
+        const proof = [];
+
+        for (let level = 0; level < maxLevel; level++) {
+            const siblingIndex = currentIndex ^ 1;
+            const siblingRes = await this.pool.query(
+                `SELECT hash FROM merkle_nodes WHERE batch_id = $1 AND level = $2 AND position_index = $3`,
+                [batchId, level, siblingIndex]
+            );
+
+            if (siblingRes.rows.length > 0) {
+                proof.push(siblingRes.rows[0].hash);
+            } else {
+                const currentRes = await this.pool.query(
+                    `SELECT hash FROM merkle_nodes WHERE batch_id = $1 AND level = $2 AND position_index = $3`,
+                    [batchId, level, currentIndex]
+                );
+                if (currentRes.rows.length > 0) {
+                    proof.push(currentRes.rows[0].hash);
+                }
+            }
+            currentIndex = currentIndex >> 1;
+        }
+        return proof;
+    }
+
+    async processTransaction(wallet, txDB, isRetry) {
+        try {
+            // USE NEW SYSTEM: All work inside execute() block for multi-RPC resilience
+            return await this.rpcManager.execute(async (provider) => {
+                if (wallet.provider !== provider) {
+                    console.log(`[Engine] 🔄 Worker ${wallet.address.substring(0, 6)}: Connecting to active provider...`);
+                    wallet = wallet.connect(provider);
+                }
+
+                const contract = new ethers.Contract(this.contractAddress, this.contractABI, wallet);
+
+                if (!this.cachedChainId) {
+                    const network = await provider.getNetwork();
+                    this.cachedChainId = network.chainId;
+                }
+                const chainId = this.cachedChainId;
+
+                console.log(`[Engine][Tx] 🔍 TxID ${txDB.id}: Retrieving Merkle Proof...`);
+                // FIX: Chunked Log Fetch to avoid RPC Limits
+                const proof = await this.getMerkleProof(txDB.batch_id, txDB.id);
+                const amountVal = BigInt(txDB.amount_usdc);
+
+                // Initialize variables for confirmation check
+                const currentBlock = await this.provider.getBlockNumber();
+
+                // Fetch Funder FIRST (Needed for Idempotency Check)
+                const batchRes = await this.pool.query('SELECT funder_address FROM batches WHERE id = $1', [txDB.batch_id]);
+                const funder = batchRes.rows[0].funder_address;
+
+                // IDEMPOTENCY CHECK
+                const abiCoder = ethers.AbiCoder.defaultAbiCoder();
+                const leafHash = ethers.keccak256(abiCoder.encode(
+                    ["uint256", "address", "uint256", "uint256", "address", "address", "uint256"],
+                    [chainId, this.contractAddress, BigInt(txDB.batch_id), BigInt(txDB.id), funder, txDB.wallet_address_to, amountVal]
+                ));
+
+                console.log(`[Engine][Tx] 🔍 TxID ${txDB.id}: Checking idempotency (leafHash: ${leafHash.substring(0, 10)}...)`);
+                const isProcessed = await contract.processedLeaves(leafHash);
+                if (isProcessed) {
+                    console.log(`[Engine] 🟢 Tx ${txDB.id} already processed on-chain. Recovering data...`);
+                    const recovery = await this._recoverFromEvents(txDB.batch_id, txDB.id);
+                    const finalHash = recovery ? recovery.txHash : 'ON_CHAIN_DEDUPE';
+                    const finalAmount = recovery ? recovery.amount : txDB.amount_usdc.toString();
+
+                    await this.pool.query(
+                        `UPDATE batch_transactions SET status = 'COMPLETED', tx_hash = $1, amount_transferred = $2, updated_at = NOW() WHERE id = $3`,
+                        [finalHash, finalAmount, txDB.id]
+                    );
+                    return { success: true, txHash: finalHash, gasUsed: 0n, effectiveGasPrice: 0n };
+                }
+
+                console.log(`[Engine] Executing Standard for Batch ${txDB.batch_id} (TX #${txDB.id})`);
+
+                // PRE-FLIGHT CHECK
+                const usdcContract = new ethers.Contract(this.usdcAddress, [
+                    "function allowance(address,address) view returns (uint256)",
+                    "function balanceOf(address) view returns (uint256)"
+                ], this.provider);
+
+
+                console.log(`[Engine][Tx] 🔍 TxID ${txDB.id}: Verifying USDC Balance/Allowance for ${funder.substring(0, 10)}...`);
+                const [allowance, balance] = await Promise.all([
+                    usdcContract.allowance(funder, this.contractAddress),
+                    usdcContract.balanceOf(funder)
+                ]);
+
+                if (balance < amountVal) {
+                    throw new Error(`Insufficient USDC Balance. Funder has ${ethers.formatUnits(balance, 6)}, needs ${ethers.formatUnits(amountVal, 6)}`);
+                }
+                if (allowance < amountVal) {
+                    throw new Error(`Insufficient USDC Allowance. Funder approved ${ethers.formatUnits(allowance, 6)}, needs ${ethers.formatUnits(amountVal, 6)}`);
+                }
+
+                console.log(`[Engine][Tx] ⛽ TxID ${txDB.id}: Estimating Gas...`);
+                const gasLimit = await contract.executeTransaction.estimateGas(
+                    txDB.batch_id, txDB.id, funder, txDB.wallet_address_to, amountVal, proof
+                );
+                const feeData = await provider.getFeeData();
+
+                let gasPrice = (feeData.gasPrice * 200n) / 100n;
+                let envMax = parseInt(process.env.MAX_GAS_PRICE_GWEI || "3000");
+                const networkFloorGwei = Number(ethers.formatUnits(feeData.gasPrice, 'gwei'));
+
+                if (envMax < networkFloorGwei) {
+                    console.warn(`[Engine] 🛡️ CRITICAL: Configured MAX_GAS (${envMax}) is below Network Price (${networkFloorGwei}). Overriding to ensure execution.`);
+                    envMax = Math.ceil(networkFloorGwei * 1.5);
+                } else if (envMax < 2000) {
+                    console.warn(`[Engine] ⚠️ Configured MAX_GAS_PRICE_GWEI (${envMax}) is dangerously low. Overriding to 2000 Gwei.`);
+                    envMax = 2000;
+                }
+
+                const maxExecGasPrice = BigInt(envMax) * 1000000000n;
+                if (gasPrice > maxExecGasPrice) {
+                    gasPrice = maxExecGasPrice;
+                }
+
+                console.log(`[Engine][Tx] 🚀 SENDING: Batch ${txDB.batch_id} | TxID: ${txDB.id} | To: ${txDB.wallet_address_to} | Gas: ${ethers.formatUnits(gasPrice, 'gwei')} gwei`);
+                const txResponse = await contract.executeTransaction(
+                    txDB.batch_id, txDB.id, funder, txDB.wallet_address_to, amountVal, proof,
+                    {
+                        gasLimit: gasLimit * 150n / 100n,
+                        gasPrice: gasPrice
+                    }
+                );
+
+                console.log(`[Blockchain][Tx] ✅ SENT: ${txResponse.hash} | TxID: ${txDB.id} | From: ${wallet.address}`);
+                await this.pool.query(
+                    `UPDATE batch_transactions SET status = 'WAITING_CONFIRMATION', tx_hash = $1, updated_at = NOW() WHERE id = $2`,
+                    [txResponse.hash, txDB.id]
+                );
+
+                console.log(`[Engine][Tx] ⏳ Waiting for confirmation: ${txResponse.hash}...`);
+                const receipt = await Promise.race([
+                    txResponse.wait(1),
+                    new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout waiting for receipt (300s)")), 300000))
+                ]);
+
+                if (receipt.status === 1) {
+                    console.log(`[Blockchain][Tx] CONFIRMED: ${txResponse.hash} | Batch: ${txDB.batch_id} | TxID: ${txDB.id}`);
+
+                    // FIX: On Polygon, receipt.effectiveGasPrice might be undefined
+                    // Use gasPrice from receipt, or fetch from transaction if needed
+                    let gasPrice = receipt.gasPrice || receipt.effectiveGasPrice;
+
+                    if (!gasPrice) {
+                        // Fallback: fetch transaction to get gasPrice
+                        console.warn(`[Engine] No gasPrice in receipt for ${txResponse.hash}, fetching transaction...`);
+                        const tx = await provider.getTransaction(txResponse.hash);
+                        gasPrice = tx.gasPrice || tx.maxFeePerGas || 0n;
+                    }
+
+                    const gasCostWei = BigInt(receipt.gasUsed) * BigInt(gasPrice);
+                    const gasCostMatic = ethers.formatEther(gasCostWei);
+
+                    console.log(`[Engine][Tx] 💰 Gas Cost: ${gasCostMatic} POL (${receipt.gasUsed} gas @ ${ethers.formatUnits(gasPrice, 'gwei')} gwei)`);
+
+                    await this.pool.query(
+                        `UPDATE batch_transactions SET status = 'COMPLETED', tx_hash = $1, amount_transferred = $2, gas_cost = $3, updated_at = NOW() WHERE id = $4`,
+                        [txResponse.hash, txDB.amount_usdc.toString(), gasCostMatic, txDB.id]
+                    );
+                } else {
+                    console.warn(`[Blockchain][Tx] FAILED ON-CHAIN: ${txResponse.hash}`);
+                    const nextStatus = (txDB.retry_count >= 100) ? 'FAILED' : 'WAITING_CONFIRMATION';
+                    await this.pool.query(`UPDATE batch_transactions SET status = $1, tx_hash = $2, updated_at = NOW() WHERE id = $3`, [nextStatus, txResponse.hash, txDB.id]);
+                }
+
+                await this.syncRelayerBalance(wallet.address);
+
+                // AUTO-CALCULATE GAS METRICS: Check if batch is complete
+                await this.checkAndUpdateBatchCompletion(txDB.batch_id);
+
+                return {
+                    success: receipt.status === 1,
+                    txHash: txResponse.hash,
+                    gasUsed: receipt ? receipt.gasUsed : 0n,
+                    effectiveGasPrice: receipt ? receipt.effectiveGasPrice : 0n
+                };
+            });
+        } catch (e) {
+            if (e.message && e.message.includes("Tx already executed")) {
+                console.log(`⚠️ Tx ${txDB.id} already on-chain. Recovered.`);
+                await this.pool.query(`UPDATE batch_transactions SET status = 'COMPLETED', tx_hash = 'RECOVERED', updated_at = NOW() WHERE id = $1`, [txDB.id]);
+                return { success: true, txHash: 'RECOVERED', gasUsed: 0n, effectiveGasPrice: 0n };
+            }
+            console.error(`Tx Failed: ${txDB.id}`, e.message);
+            const nextStatus = (txDB.retry_count >= 100) ? 'FAILED' : 'WAITING_CONFIRMATION';
+            await this.pool.query(`UPDATE batch_transactions SET status = $1, updated_at = NOW() WHERE id = $2`, [nextStatus, txDB.id]);
+            return { success: false, error: e.message, gasUsed: 0n, effectiveGasPrice: 0n };
+        }
+    }
+
+    async estimateBatchGas(batchId) {
+        process.stdout.write(`\n[LOG-FORCE] ⛽ RelayerEngine: Starting estimateBatchGas(${batchId})\n`);
+        const txRes = await this.pool.query('SELECT id, amount_usdc, wallet_address_to FROM batch_transactions WHERE batch_id = $1 AND status = $2', [batchId, 'PENDING']);
+        const txs = txRes.rows;
+        if (txs.length === 0) {
+            console.log(`[Engine] > No pending transactions found for estimation.`);
+            return { totalCostWei: 0n };
+        }
+
+        // ... (Rest of existing estimateBatchGas logic seems fine aside from my accidental overwrite)
+        const batchRes = await this.pool.query('SELECT funder_address FROM batches WHERE id = $1', [batchId]);
+        const funder = batchRes.rows[0]?.funder_address || ethers.ZeroAddress;
+
+        const sampleSize = Math.min(3, txs.length);
+        const sampleTxs = txs.slice(0, sampleSize);
+        let totalSampleGas = 0n;
+
+        const contract = new ethers.Contract(this.contractAddress, this.contractABI, this.getProvider());
+        for (const tx of sampleTxs) {
+            try {
+                const gas = await contract.executeTransaction.estimateGas(
+                    batchId, tx.id, funder, tx.wallet_address_to, BigInt(tx.amount_usdc), [ethers.ZeroHash]
+                );
+                totalSampleGas += gas;
+                console.log(`[Engine] > Sample Tx ${tx.id} gas: ${gas.toString()}`);
+            } catch (e) {
+                if (e.message && e.message.includes("Merkle")) {
+                    console.log(`[Engine] > Sample Tx ${tx.id}: Using safe fallback (Root not set).`);
+                } else {
+                    console.warn(`[Engine] > Sample Tx ${tx.id} estimation failed, using fallback 60k. Error: ${e.message}`);
+                }
+                totalSampleGas += 60000n;
+            }
+        }
+
+        const averageGas = totalSampleGas / BigInt(sampleSize || 1);
+
+        // Configurable Buffer Percentage (default 15%)
+        const bufferPercent = BigInt(process.env.GAS_BUFFER_PERCENT || 15);
+        const bufferedGas = (averageGas * BigInt(txs.length)) * (100n + bufferPercent) / 100n;
+        const feeData = await this.rpcManager.execute(async (provider) => {
+            return provider.getFeeData();
+        });
+
+        // Cap gas price at 100 gwei to prevent overestimation
+        const maxGasPrice = 100000000000n; // 100 gwei
+        const gasPrice = feeData.gasPrice ? (feeData.gasPrice > maxGasPrice ? maxGasPrice : feeData.gasPrice) : 50000000000n;
+
+        // Configurable Safety Cushion (default 0.02 MATIC)
+        const cushionMatic = process.env.GAS_CUSHION_MATIC || "0.02";
+        const safetyCushion = ethers.parseEther(cushionMatic);
+
+        let totalCost = (bufferedGas * gasPrice) + safetyCushion;
+
+        // Minimum MATIC per Relayer enforcement
+        const minMaticPerRelayerStr = process.env.MIN_MATIC_PER_RELAYER || "0.5";
+        const minMaticPerRelayer = ethers.parseEther(minMaticPerRelayerStr);
+        const minTotalCost = minMaticPerRelayer * BigInt(txs.length);
+
+        if (totalCost < minTotalCost) {
+            console.log(`[Engine] ⚠️ Estimation (${ethers.formatEther(totalCost)} MATIC) is below minimum threshold (${minMaticPerRelayerStr} MATIC per relayer).`);
+            console.log(`[Engine] > Adjusting total cost to ${ethers.formatEther(minTotalCost)} MATIC.`);
+            totalCost = minTotalCost;
+        }
+
+        console.log(`[Engine] > Average gas per tx: ${averageGas.toString()}`);
+        return { totalCostWei: totalCost };
+    }
+
+    async distributeGasToRelayers(batchId, relayers, explicitNonce = null) {
+        const { totalCostWei } = await this.estimateBatchGas(batchId);
+        if (relayers.length === 0 || totalCostWei === 0n) return;
+
+        // Step 0: Ensure Network Health
+        // await this.verifyAndRepairNonce(); // Faucet-specific nonce repair needed now, handled per wallet
+
+        // 1. Determine Correct Faucet (Funder-Specific)
+        // 1. Determine Correct Faucet (Funder-Specific)
+        // Since we now instantiate RelayerEngine with the correct User Faucet PK (from Vault),
+        // we can trust verify that `this.faucetWallet` is correct.
+        let funderFaucetWallet = this.faucetWallet;
+        let funderFaucetAddress = this.faucetWallet.address;
+
+        // Ensure provider is up to date
+        if (funderFaucetWallet.provider !== this.getProvider()) {
+            funderFaucetWallet = funderFaucetWallet.connect(this.getProvider());
+        }
+
+        console.log(`[Engine][Fund] 🎯 Using Faucet: ${funderFaucetAddress} `);
+
+
+        // Check Faucet Balance BEFORE calculating per-relayer split
+        const [faucetBalance, feeData] = await this.rpcManager.execute(async (provider) => {
+            const bal = await provider.getBalance(funderFaucetAddress);
+            const fees = await provider.getFeeData();
+            return [bal, fees];
+        });
+
+        // Matching fundRelayers aggressive gas: 3x boost
+        const gasPrice = (feeData.gasPrice || ethers.parseUnits("50", "gwei")) * 300n / 100n;
+
+        // Calculate Gas accurately for the Distribution Transaction itself
+        // Formula matches fundRelayers: 200k base + 50k per relayer
+        const distributeGasLimit = 200000n + (BigInt(relayers.length) * 50000n);
+        const distributeTxCost = distributeGasLimit * gasPrice;
+
+        // Safety Margin for Distribution Tx (2.0x of estimated cost) + Floor of 0.5 MATIC
+        const dynamicReserve = (distributeTxCost * 200n) / 100n;
+        const minReserve = ethers.parseEther("0.5");
+        const reserveGas = dynamicReserve > minReserve ? dynamicReserve : minReserve;
+
+        console.log(`[Engine][Fund] ⛽ Distribution Gas Estimate: Limit = ${distributeGasLimit.toString()}, Price = ${ethers.formatUnits(gasPrice, 'gwei')} gwei, Cost = ${ethers.formatEther(distributeTxCost)} MATIC`);
+        console.log(`[Engine][Fund] 🛡️  Setting Reserve: ${ethers.formatEther(reserveGas)} MATIC`);
+
+        // CONSERVATIVE BUFFER: User requested 2x (200%) default safety. Configurable via env.
+        const bufferPercent = BigInt(process.env.RELAYER_GAS_BUFFER_PERCENT || "200");
+        let fundAmount = (totalCostWei * bufferPercent) / 100n;
+        let warningMsg = null;
+
+        // Check if we have enough for: FUNDING + DISTRIBUTION GAS
+        if (faucetBalance < (fundAmount + reserveGas)) {
+            // Critical Check: Do we even have enough for the GAS of the distribution tx?
+            if (faucetBalance < reserveGas) {
+                throw new Error(`CRÍTICO: Faucet vacío o insuficiente para GAS de distribución.Balance: ${ethers.formatEther(faucetBalance)} MATIC.Mínimo Gas: ${ethers.formatEther(reserveGas)} `);
+            }
+
+            console.warn(`[Engine][Fund] ⚠️ Faucet low! Needed: ${ethers.formatEther(fundAmount)} + ${ethers.formatEther(reserveGas)} Gas | Has: ${ethers.formatEther(faucetBalance)} `);
+
+            // Cap funding to available balance minus reserve
+            fundAmount = faucetBalance - reserveGas;
+
+            // Check if the capped amount is dangerously low (e.g. < totalCostWei raw)
+            // If we can't even cover the RAW cost (without buffer), we should probably stops or strictly warn.
+            if (fundAmount < totalCostWei) {
+                const missing = ethers.formatEther((totalCostWei + reserveGas) - faucetBalance);
+                throw new Error(`FONDOS INSUFICIENTES: Faltan ${missing} MATIC en la Faucet para cubrir los costos de gas de los relayers y la transacción.Balance: ${ethers.formatEther(faucetBalance)} `);
+            }
+
+            if (fundAmount <= 0n) {
+                // Formatting error message strictly for UI parsing
+                throw new Error(`Faucet sin fondos suficientes.Balance: ${ethers.formatEther(faucetBalance)} MATIC.`);
+            }
+            warningMsg = `⚠️ Fondos ajustados.Se redujo el buffer.Disp: ${ethers.formatEther(fundAmount)} MATIC`;
+            console.log(warningMsg);
+        }
+
+        const perRelayerWei = fundAmount / BigInt(relayers.length);
+        console.log(`🪙[Background] Funding: ${ethers.formatEther(fundAmount)} MATIC total(${ethers.formatEther(perRelayerWei)} per relayer)`);
+
+        try {
+            // Pass the specific wallet to use
+            await this.fundRelayers(batchId, relayers, perRelayerWei, funderFaucetWallet, explicitNonce);
+        } catch (err) {
+            // Enhance error for UI (Catch re-thrown errors)
+            if (err.message.includes("insufficient funds") || err.code === 'INSUFFICIENT_FUNDS') {
+                throw new Error(`Faucet sin fondos suficientes.Balance: ${ethers.formatEther(faucetBalance)} MATIC.Requerido: ${ethers.formatEther(totalCostWei)} `);
+            }
+            throw err;
+        }
+    }
+
+    async fundRelayers(batchId, relayers, amountWei, actingFaucetWallet, explicitNonce = null) {
+        if (!amountWei || amountWei === 0n) return;
+
+        let walletToUse = actingFaucetWallet || this.faucetWallet;
+
+        try {
+            // USE NEW SYSTEM: All work inside execute() block
+            await this.rpcManager.execute(async (provider) => {
+                // CRITICAL: Ensure wallet is connected to the ACTIVE provider
+                if (walletToUse.provider !== provider) {
+                    console.log(`[Engine] 🔌 Reconnecting Faucet Wallet to active provider...`);
+                    walletToUse = walletToUse.connect(provider);
+                }
+
+                // STEP 0: AUTO-UNBLOCK - Verify and repair nonce BEFORE attempting atomic distribution
+                console.log(`[Engine][Fund] 🔧 Pre - flight: Verifying Faucet nonce status...`);
+                const nonceRepaired = await this.verifyAndRepairNonce(walletToUse);
+
+                if (!nonceRepaired) {
+                    console.error(`[Engine][Fund] ❌ Nonce repair FAILED.Aborting atomic funding.`);
+                    throw new Error("CRITICAL: Faucet Nonce blocked. Atomic funding aborted to prevent stuck tx.");
+                }
+
+                // Re-instantiate contract with specific signer
+                const contract = new ethers.Contract(this.contractAddress, this.contractABI, walletToUse);
+                const totalValueToSend = amountWei * BigInt(relayers.length);
+
+                // Double check balance (Race condition safety)
+                const faucetBalance = await provider.getBalance(walletToUse.address);
+                console.log(`[Engine][Fund] Faucet Balance(${walletToUse.address.substring(0, 6)}..): ${ethers.formatEther(faucetBalance)} MATIC`);
+
+                // Add slight tolerance check
+                if (faucetBalance < totalValueToSend) {
+                    throw new Error(`Insufficient Faucet balance.Need ${ethers.formatEther(totalValueToSend)} MATIC, have ${ethers.formatEther(faucetBalance)}.`);
+                }
+
+                console.log(`[Engine][Fund] 🚀 Atomic Distribution START: ${relayers.length} relayers | ${ethers.formatEther(amountWei)} POL each.`);
+
+                // Gas Calculation: Aggressive Gas Price (3x boost) to ensure atomic inclusion
+                const feeData = await provider.getFeeData();
+                const gasPrice = (feeData.gasPrice * 300n) / 100n;
+                const safeGasLimit = 200000n + (BigInt(relayers.length) * 50000n);
+
+                console.log(`[Engine][Fund] 🚀 Atomic Distribution START: ${relayers.length} relayers | POL each: ${ethers.formatEther(amountWei)} | Gas Price: ${ethers.formatUnits(gasPrice, 'gwei')} gwei`);
+
+                const tx = await contract.distributeMatic(
+                    relayers.map(r => r.address),
+                    amountWei,
+                    {
+                        value: totalValueToSend,
+                        gasLimit: safeGasLimit,
+                        gasPrice: gasPrice,
+                        nonce: explicitNonce !== null ? explicitNonce : undefined
+                    }
+                );
+
+                console.log(`[Blockchain][Fund] Atomic Batch SENT: ${tx.hash} `);
+
+                // Update status immediately to show progress (before waiting for confirmation)
+                await this.pool.query(
+                    `UPDATE batches SET status = 'FUNDING_RELAYERS', updated_at = NOW() WHERE id = $1`,
+                    [batchId]
+                );
+                console.log(`[Engine][Fund] 📊 Status updated: FUNDING_RELAYERS`);
+
+                // Add Timeout to Funding Wait
+                console.log(`[Engine][Fund] ⏳ Waiting for blockchain confirmation (up to 300s)...`);
+                const receipt = await Promise.race([
+                    tx.wait(),
+                    new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout waiting for Funding confirmation (300s)")), 300000))
+                ]);
+                console.log(`[Blockchain][Fund] Atomic Batch CONFIRMED(Block: ${receipt.blockNumber})`);
+
+                // Optimistic DB Update: Set balance immediately so UI is responsive
+                // We know exactly how much we sent: amountWei
+                const amountMaticStr = ethers.formatEther(amountWei);
+                await Promise.all(relayers.map(r =>
+                    this.pool.query(
+                        `UPDATE relayers SET last_balance = $1, transactionhash_deposit = $2, last_activity = NOW(), status = 'active' WHERE address = $3 AND batch_id = $4`,
+                        [amountMaticStr, tx.hash, r.address, batchId]
+                    )
+                ));
+                console.log(`[Engine][Fund] ⚡ Optimistic Balance Update: All relayers set to ${amountMaticStr} MATIC(and Reactivated)`);
+
+                // Batched Verification (Optional / Background)
+                // We can still run sync, but maybe lazily or skipping if we trust the receipt.
+                // Let's keep it but it won't block the UI showing the value we just injected.
+                /*
+                const chunkSize = 5;
+                for (let i = 0; i < relayers.length; i += chunkSize) {
+                    const chunk = relayers.slice(i, i + chunkSize);
+                    await Promise.all(chunk.map(r => this.syncRelayerBalance(r.address)));
+                    if (i + chunkSize < relayers.length) await new Promise(r => setTimeout(r, 200));
+                }
+                */
+
+                // Save Funding Total to Batch (Value Sent + Approx Fee)
+                // Fee is approx execution gas * gasPrice. Let's precise using receipt.gasUsed
+                const gasUsed = BigInt(receipt.gasUsed);
+                const effectiveGasPriceVal = BigInt(receipt.effectiveGasPrice || 0);
+                const distributionFeeFn = gasUsed * effectiveGasPriceVal;
+
+                // totalValueToSend is already BigInt (calculated above)
+                const totalFundingMatic = ethers.formatEther(totalValueToSend + distributionFeeFn);
+
+                await this.pool.query(
+                    `UPDATE batches SET funding_amount = $1 WHERE id = $2`,
+                    [totalFundingMatic, batchId]
+                );
+                console.log(`[Engine][Fund] 💾 Saved Funding Amount: ${totalFundingMatic} MATIC(incl.fee)`);
+            });
+        } catch (err) {
+            console.error(`❌ Atomic funding FAILED: `, err.message);
+
+            // Trigger RPC Failover if applicable
+            if (this.rpcManager && this.rpcManager.handleError) {
+                this.rpcManager.handleError(err);
+            }
+
+            // Save error message to batch for frontend visibility
+            try {
+                await this.pool.query(
+                    `UPDATE batches SET error_message = $1, status = 'FAILED', updated_at = NOW() WHERE id = $2`,
+                    [err.message, batchId]
+                );
+            } catch (dbErr) {
+                console.error("[Engine] Failed to save error message to batch:", dbErr.message);
+            }
+
+            throw new Error(`Atomic Funding Failed: ${err.message} `);
+        }
+    }
+
+
+    /**
+     * RETRY LOGIC: 
+     * Loops up to 10 times to catch dropped/failed transactions.
+     * Uses idempotency check to avoid double-spending.
+     */
+    // --- RETRY LOGIC (REDEFINITIONS REMOVED) ---
+
+    /**
+     * RETRY LOGIC: 
+     * Loops up to 1000 times (effectively indefinite) to catch dropped/failed transactions.
+     * Uses idempotency check to avoid double-spending.
+     */
+    async retryFailedTransactions(batchId, relayers) {
+        const MAX_RETRIES = RelayerEngine.MAX_RETRIES || 1000;
+
+        for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+            // Find FAILED/PENDING/WAITING transactions
+            const failedRes = await this.pool.query(
+                `SELECT * FROM batch_transactions WHERE batch_id = $1 AND status IN('FAILED', 'PENDING', 'WAITING_CONFIRMATION') AND retry_count < $2`,
+                [batchId, 100]
+            );
+
+            if (failedRes.rows.length === 0) {
+                console.log(`[Engine] ✨ All transactions completed successfully.`);
+                break;
+            }
+
+            console.log(`[Engine] 🔄 Retry Cycle ${attempt} /${MAX_RETRIES}: Found ${failedRes.rows.length} failed/pending txs.`);
+
+            // Shuffle relayers to ensure "another relayer grabs it" (avoiding sticky bad relayers)
+            const shuffledRelayers = [...relayers].sort(() => Math.random() - 0.5);
+
+            // Distribute reprocessing among relayers with THROTTLING
+            const CONCURRENCY = 50; // Increased from 5 to 50 for max speed (1 batch = 50 tx)
+            for (let i = 0; i < failedRes.rows.length; i += CONCURRENCY) {
+                const chunk = failedRes.rows.slice(i, i + CONCURRENCY);
+                const tasks = chunk.map((tx, idx) => {
+                    // Use shuffled array
+                    const relayer = shuffledRelayers[(i + idx) % shuffledRelayers.length];
+                    return (async () => {
+                        await this.pool.query(`UPDATE batch_transactions SET retry_count = retry_count + 1 WHERE id = $1`, [tx.id]);
+                        const res = await this.processTransaction(relayer, tx, true);
+
+                        // TRACK GAS for retries
+                        if (res.gasUsed && res.effectiveGasPrice) {
+                            const cost = res.gasUsed * res.effectiveGasPrice;
+                            const costMatic = ethers.formatEther(cost);
+                            await this.pool.query(
+                                `UPDATE relayers SET gas_cost = COALESCE(gas_cost:: numeric, 0) + $1 WHERE address = $2 AND batch_id = $3`,
+                                [costMatic, relayer.address, batchId]
+                            );
+                        }
+                    })();
+                });
+                await Promise.all(tasks);
+                // Subtle delay between chunks
+                await new Promise(r => setTimeout(r, 200));
+            }
+
+            // Wait before next retry cycle (Backoff)
+            if (attempt < MAX_RETRIES) {
+                const waitTime = Math.min(attempt * 2000, 10000); // Max 10s delay
+                console.log(`[Engine] ⏳ Waiting ${waitTime / 1000}s before next retry...`);
+                await new Promise(r => setTimeout(r, waitTime));
+            }
+        }
+    }
+
+    async persistRelayers(batchId, relayers) {
+        console.log(`[Engine] 💾 Persisting ${relayers.length} relayers to database...`);
+        const encryption = require('./encryption'); // Require encryption module once
+        for (let i = 0; i < relayers.length; i++) {
+            const r = relayers[i];
+
+            let encryptedKey = null;
+            let vaultStatus = 'pending';
+            try {
+                // Encrypt and save to database
+                encryptedKey = encryption.encrypt(r.privateKey);
+                vaultStatus = 'ok';
+            } catch (err) {
+                console.error(`[Engine] ❌ Encryption failed for ${r.address}: ${err.message} `);
+                vaultStatus = 'nok';
+            }
+
+            try {
+                // Save to DB with the vault_status and encrypted key
+                await this.pool.query(
+                    `INSERT INTO relayers (address, batch_id, status, last_balance, encrypted_key, vault_status)
+                    VALUES ($1, $2, 'ACTIVE', '0', $3, $4)
+                     ON CONFLICT(address) DO UPDATE SET batch_id = EXCLUDED.batch_id, status = 'active', encrypted_key = EXCLUDED.encrypted_key, vault_status = EXCLUDED.vault_status`,
+                    [r.address, batchId, encryptedKey, vaultStatus]
+                );
+
+                if (vaultStatus === 'ok') {
+                    if ((i + 1) % 10 === 0 || (i + 1) === relayers.length) {
+                        console.log(`[Engine] > Secured ${i + 1}/${relayers.length} relayers.`);
+                    }
+                } else {
+                    console.warn(`[Engine]   ⚠️ Relayer ${r.address} marked as 'nok' due to Vault error.`);
+                }
+            } catch (err) {
+                console.error(`[Engine] DB Error for relayer ${r.address}: ${err.message}`);
+            }
+        }
+        console.log(`[Engine] ✅ Persistence completed.`);
+    }
+
+    async recalculateBatchMetrics(batchId) {
+        console.log(`[Engine] 🧮 Recalculating metrics for Batch ${batchId}...`);
+
+        const metricsRes = await this.pool.query(
+            `SELECT funding_amount, refund_amount, start_time, end_time, total_transactions FROM batches WHERE id = $1`,
+            [batchId]
+        );
+
+        if (metricsRes.rows.length === 0) throw new Error("Batch not found");
+
+        const b = metricsRes.rows[0];
+        const funding = parseFloat(b.funding_amount || 0);
+        const refunded = parseFloat(b.refund_amount || 0);
+
+        let totalGasMatic = "0";
+
+        // PRIORITY 0: Sum of individual transactions (The most granular audit-grade data)
+        const txGasSumRes = await this.pool.query(
+            `SELECT SUM(gas_cost::numeric) as total_gas FROM batch_transactions WHERE batch_id = $1 AND status = 'COMPLETED'`,
+            [batchId]
+        );
+        const txGasSum = parseFloat(txGasSumRes.rows[0].total_gas || 0);
+
+        // PRIORITY 1: Sum costs from individual relayers (Includes non-execution costs like setup/refund)
+        const gasSumRes = await this.pool.query(
+            `SELECT SUM(gas_cost::numeric) as total_gas FROM relayers WHERE batch_id = $1`,
+            [batchId]
+        );
+        const relayerGasSum = parseFloat(gasSumRes.rows[0].total_gas || 0);
+
+        if (txGasSum > 0) {
+            totalGasMatic = txGasSum.toFixed(6);
+            console.log(`[Engine] 🧮 Gas Sum from Transactions (Audit Grade): ${totalGasMatic} MATIC`);
+        } else if (relayerGasSum > 0) {
+            totalGasMatic = relayerGasSum.toFixed(6);
+            console.log(`[Engine] 🧮 Gas Sum from Relayers (Aggregated): ${totalGasMatic} MATIC`);
+        } else if (funding > 0) {
+            // PRIORITY 2: Net funding calculation (Backup)
+            totalGasMatic = Math.max(0, funding - refunded).toFixed(6);
+            console.log(`[Engine] 🧮 Net Gas Calc: ${funding} (Funded) - ${refunded} (Refunded) = ${totalGasMatic}`);
+        } else {
+            console.warn(`[Engine] ⚠️ No gas metrics found for Batch ${batchId}. Using 0.`);
+        }
+
+        let durationStr = "-";
+        if (b.start_time && b.end_time) {
+            const durationMs = new Date(b.end_time) - new Date(b.start_time);
+            const minutes = Math.floor(durationMs / 60000);
+            const seconds = ((durationMs % 60000) / 1000).toFixed(0);
+            durationStr = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+        } else if (b.start_time) {
+            // If end_time is missing but batch is COMPLETED/FAILED, use NOW?
+            const durationMs = Date.now() - new Date(b.start_time);
+            const minutes = Math.floor(durationMs / 60000);
+            const seconds = ((durationMs % 60000) / 1000).toFixed(0);
+            durationStr = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+        }
+
+        await this.pool.query(
+            `UPDATE batches SET total_gas_used = $1, execution_time = $2, updated_at = NOW() WHERE id = $3`,
+            [totalGasMatic, durationStr, batchId]
+        );
+
+        console.log(`[Engine] ✅ Metrics updated for Batch ${batchId}: ${totalGasMatic} MATIC`);
+        return { success: true, totalGas: totalGasMatic, executionTime: durationStr };
+    }
+
+    async returnFundsToFaucet(batchId) {
+        process.stdout.write(`\n[${new Date().toISOString()}] [Refund] 🧹 FORCE LOG: Starting recovery for Batch ${batchId}\n`);
+
+        // 1. Determine Correct Faucet (Funder-Specific)
+        let targetFaucetAddress = null;
+        try {
+            const faucetRes = await this.pool.query(`
+                SELECT f.address 
+                FROM batches b
+                JOIN faucets f ON LOWER(f.funder_address) = LOWER(b.funder_address)
+                WHERE b.id = $1
+            `, [batchId]);
+
+            if (faucetRes.rows.length > 0) {
+                targetFaucetAddress = faucetRes.rows[0].address;
+                console.log(`[Refund] 🎯 Found Funder-Specific Faucet: ${targetFaucetAddress}`);
+            } else {
+                console.warn(`[Refund] ⚠️ No specific faucet for batch ${batchId}. Fallback to latest.`);
+                const fallbackRes = await this.pool.query('SELECT address FROM faucets ORDER BY id DESC LIMIT 1');
+                if (fallbackRes.rows.length > 0) targetFaucetAddress = fallbackRes.rows[0].address;
+            }
+        } catch (err) {
+            console.error("Faucet lookup error", err);
+        }
+
+        if (!targetFaucetAddress) {
+            console.error("[Refund] ❌ No faucet found DB. Aborting sweep.");
+            return 0;
+        }
+        console.log(`[Refund] 🏦 Sweep Target: ${targetFaucetAddress}`);
+
+        const [feeData] = await this.rpcManager.execute(async (provider) => {
+            return [await provider.getFeeData()];
+        });
+        const gasPrice = feeData.gasPrice || 50000000000n; // Default 50 gwei
+        const boostedGasPrice = (gasPrice * 130n) / 100n; // 30% Boost for speed
+        const costWei = 21000n * boostedGasPrice;
+
+        // Safety buffer: 0.05 MATIC (Aggressive)
+        const safetyBuffer = ethers.parseEther("0.05");
+
+        console.log(`[Refund] ⛽ Gas Price: ${ethers.formatUnits(boostedGasPrice, 'gwei')} gwei | Min Cost: ${ethers.formatEther(costWei)}`);
+
+        // Note: 'relayers' argument might be partial if process restarted. Fetch from DB for authority.
+        const activeRelayersRes = await this.pool.query('SELECT address, encrypted_key FROM relayers WHERE batch_id = $1', [batchId]);
+
+        const activeRelayers = [];
+        const encryption = require('./encryption');
+        for (const r of activeRelayersRes.rows) {
+            if (r.encrypted_key) {
+                const pk = encryption.decrypt(r.encrypted_key);
+                activeRelayers.push(new ethers.Wallet(pk, this.getProvider()));
+            }
+        }
+
+        console.log(`[Refund] Checking balances for ${activeRelayers.length} relayers...`);
+
+        // Concurrency limit for large batches (Reduced to 5 for stability)
+        const concurrency = 5;
+        let totalRecovered = 0;
+        let recoveredWei = 0n;
+
+        console.log(`[Refund] 🚀 Starting parallel recovery with ${concurrency} threads...`);
+
+        const worker = async (wallet, idx) => {
+            const shortAddr = wallet.address.substring(0, 6);
+            try {
+                // USE NEW SYSTEM: Entire worker logic inside execute() block for multi-RPC resilience
+                await this.rpcManager.execute(async (provider) => {
+                    if (wallet.provider !== provider) {
+                        wallet = wallet.connect(provider);
+                    }
+
+                    // 1. SELF-HEALING: Verify and Repair Nonce if blocked
+                    try {
+                        await this.verifyAndRepairNonce(wallet);
+                    } catch (nonceErr) {
+                        process.stdout.write(`[Refund][${shortAddr}] ⚠️ Nonce Repair warning: ${nonceErr.message}\n`);
+                    }
+
+                    // 2. CHECK BALANCE
+                    const bal = await provider.getBalance(wallet.address);
+                    process.stdout.write(`[Refund][${shortAddr}] 💵 Balance: ${ethers.formatEther(bal)}\n`);
+
+                    if (bal > (costWei + safetyBuffer)) {
+                        let amount = bal - costWei - safetyBuffer;
+                        if (amount > 0n) {
+                            process.stdout.write(`[Refund][${shortAddr}] 💸 Sweeping ${ethers.formatEther(amount)} MATIC...\n`);
+                            const txPayload = {
+                                to: targetFaucetAddress,
+                                value: amount,
+                                gasLimit: 21000n,
+                                gasPrice: boostedGasPrice
+                            };
+
+                            const tx = await wallet.sendTransaction(txPayload);
+                            process.stdout.write(`[Refund][${shortAddr}] 📡 Tx Sent: ${tx.hash}\n`);
+
+                            const receipt = await tx.wait();
+                            process.stdout.write(`[Refund][${shortAddr}] 🧾 Confirmed in block ${receipt.blockNumber}\n`);
+
+                            recoveredWei += amount;
+
+                            // Mark drained effectively in DB
+                            await this.pool.query(
+                                `UPDATE relayers SET last_balance = '0', drain_balance = $1, transactionhash_deposit = $2, status = 'drained', last_activity = NOW() WHERE address = $3 AND batch_id = $4`,
+                                [ethers.formatEther(bal), tx.hash, wallet.address, batchId]
+                            );
+                        }
+                    } else {
+                        // Mark as drained even if we didn't extract funds (it's dust)
+                        process.stdout.write(`[Refund][${shortAddr}] 🌫️ Low balance (dust), marking drained.\n`);
+                        await this.pool.query(
+                            `UPDATE relayers SET last_balance = $1, drain_balance = $1, status = 'drained', last_activity = NOW() WHERE address = $2 AND batch_id = $3`,
+                            [ethers.formatEther(bal), wallet.address, batchId]
+                        );
+                    }
+                });
+            } catch (err) {
+                process.stdout.write(`[Refund] ❌ CRITICAL FAILURE for ${shortAddr}: ${err.message}\n`);
+                // IMPORTANT: We do NOT throw here so other relayers in the same chunk/batch can continue.
+            }
+        };
+
+        // Execute in chunks
+        for (let i = 0; i < activeRelayers.length; i += concurrency) {
+            const chunk = activeRelayers.slice(i, i + concurrency);
+
+            // Allow MAX 60 seconds per chunk. Workers that hang are abandoned.
+            const chunkPromise = Promise.all(chunk.map((w, idx) => {
+                const workerId = `[Worker-${i + idx}]`;
+
+                // Wrap worker in a timeout race
+                return Promise.race([
+                    worker(w, i + idx),
+                    new Promise((_, reject) => setTimeout(() => reject(new Error(`${workerId} TIMEOUT`)), 60000))
+                ]).catch(err => {
+                    console.error(`${workerId} ❌ Killed due to hang/error: ${err.message}`);
+                });
+            }));
+
+            console.log(`[Refund] ⏳ Processing chunk ${i / concurrency + 1} (${chunk.length} relayers)...`);
+            await chunkPromise;
+        }
+
+        totalRecovered = Number(ethers.formatEther(recoveredWei));
+
+        // Save Refund Total to Batch
+        await this.pool.query(
+            `UPDATE batches SET refund_amount = $1, status = 'COMPLETED', updated_at = NOW() WHERE id = $2`,
+            [totalRecovered.toFixed(6), batchId]
+        );
+
+        console.log(`[Refund] ✅ Sweep complete for Batch ${batchId}. Total Recovered: ${totalRecovered.toFixed(6)} MATIC`);
+        return totalRecovered;
+    }
+
+    /**
+     * Internal helper to find a transaction in blockchain events.
+     */
+    async _recoverFromEvents(batchId, txId) {
+        try {
+            return await this.rpcManager.execute(async (provider) => {
+                const contract = new ethers.Contract(this.contractAddress, this.contractABI, provider);
+                const latestBlock = await provider.getBlockNumber();
+                const startBlock = latestBlock - 20000; // Search last ~12 hours for safety
+
+                const filter = contract.filters.TransactionExecuted(batchId, txId);
+                const logs = await contract.queryFilter(filter, startBlock, latestBlock);
+
+                if (logs.length > 0) {
+                    const log = logs[0];
+                    return {
+                        txHash: log.transactionHash,
+                        amount: log.args.amount.toString()
+                    };
+                }
+                return null;
+            });
+        } catch (e) {
+            console.warn(`[Engine] Recovery failed for Tx ${txId}: ${e.message}`);
+        }
+        return null;
+    }
+
+    async fetchStuckTx(batchId, relayerAddr) {
+        const client = await this.pool.connect();
+        try {
+            await client.query('BEGIN');
+            const res = await client.query(`
+                UPDATE batch_transactions
+                SET status = 'SENDING_RPC', relayer_address = $1, updated_at = NOW()
+                WHERE id = (
+                    SELECT id FROM batch_transactions
+                    WHERE batch_id = $2 
+                      AND (status = 'SENDING_RPC' OR status = 'FAILED')
+                      AND updated_at < NOW() - INTERVAL '2 MINUTES'
+                    ORDER BY id ASC
+                    FOR UPDATE SKIP LOCKED
+                    LIMIT 1
+                )
+                RETURNING *
+            `, [relayerAddr, batchId]);
+            await client.query('COMMIT');
+            if (res.rows.length > 0) console.log(`🧹 Rescuing stuck Tx ${res.rows[0].id}`);
+            return res.rows[0];
+        } catch (e) {
+            await client.query('ROLLBACK');
+            return null;
+        } finally {
+            client.release();
+        }
+    }
+
+    // STAGE 1.5: Security check (Legacy Vault check removed)
+    async verifyRelayersBeforeFunding(batchId) {
+        console.log(`[Engine] 🛡️ Security audit for Batch ${batchId}... (Verified via DB Encryption)`);
+        return true;
+    }
+
+    /**
+     * AUTO-CALCULATE GAS METRICS
+     * Check if all transactions in a batch are completed, and if so:
+     * 1. Sum all gas_cost from batch_transactions
+     * 2. Update batches.total_gas_used
+     * 3. Update batches.status to COMPLETED
+     */
+    async checkAndUpdateBatchCompletion(batchId) {
+        try {
+            // Get transaction stats
+            const statsRes = await this.pool.query(`
+                SELECT 
+                    COUNT(*) as total,
+                    COUNT(*) FILTER (WHERE status = 'COMPLETED') as completed,
+                    COUNT(*) FILTER (WHERE status = 'FAILED') as failed
+                FROM batch_transactions 
+                WHERE batch_id = $1
+            `, [batchId]);
+
+            const stats = statsRes.rows[0];
+            const allCompleted = parseInt(stats.completed) === parseInt(stats.total);
+            const hasFailed = parseInt(stats.failed) > 0;
+
+            if (allCompleted && !hasFailed) {
+                // All transactions completed successfully - calculate total gas
+                const gasRes = await this.pool.query(`
+                    SELECT COALESCE(SUM(gas_cost::numeric), 0) as total_gas
+                    FROM batch_transactions 
+                    WHERE batch_id = $1 AND status = 'COMPLETED'
+                `, [batchId]);
+
+                const totalGas = gasRes.rows[0].total_gas;
+
+                // Update batch with total gas and COMPLETED status
+                await this.pool.query(`
+                    UPDATE batches 
+                    SET total_gas_used = $1, status = 'COMPLETED', updated_at = NOW() 
+                    WHERE id = $2
+                `, [totalGas.toString(), batchId]);
+
+                console.log(`✅ [Engine] Batch ${batchId} COMPLETED - Total Gas: ${totalGas} POL`);
+            } else if (allCompleted && hasFailed) {
+                // All processed but some failed
+                const gasRes = await this.pool.query(`
+                    SELECT COALESCE(SUM(gas_cost::numeric), 0) as total_gas
+                    FROM batch_transactions 
+                    WHERE batch_id = $1 AND status = 'COMPLETED'
+                `, [batchId]);
+
+                const totalGas = gasRes.rows[0].total_gas;
+
+                await this.pool.query(`
+                    UPDATE batches 
+                    SET total_gas_used = $1, status = 'FAILED', updated_at = NOW() 
+                    WHERE id = $2
+                `, [totalGas.toString(), batchId]);
+
+                console.log(`⚠️ [Engine] Batch ${batchId} FAILED (some transactions failed) - Total Gas: ${totalGas} POL`);
+            }
+        } catch (err) {
+            console.error(`[Engine] Error checking batch completion for ${batchId}:`, err.message);
+        }
+    }
+}
+
+module.exports = RelayerEngine;

@@ -1,0 +1,134 @@
+<!-- Progress Gauge Component -->
+<div id="batchProgressGauge" class="hidden" style="margin: 2rem auto; max-width: 400px;">
+    <div style="text-align: center; margin-bottom: 1rem;">
+        <h3 style="color: #cbd5e1; font-size: 1.1rem; margin: 0;">Progreso de Transferencias</h3>
+    </div>
+
+    <!-- SVG Gauge -->
+    <svg viewBox="0 0 200 120" style="width: 100%; max-width: 400px; margin: 0 auto; display: block;">
+        <!-- Background Arc -->
+        <path id="gaugeBackground" d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="rgba(255,255,255,0.1)"
+            stroke-width="20" stroke-linecap="round" />
+
+        <!-- Progress Arc (will be updated dynamically) -->
+        <path id="gaugeProgress" d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="url(#gaugeGradient)"
+            stroke-width="20" stroke-linecap="round" stroke-dasharray="251.2" stroke-dashoffset="251.2"
+            style="transition: stroke-dashoffset 0.5s ease;" />
+
+        <!-- Gradient Definition -->
+        <defs>
+            <linearGradient id="gaugeGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" style="stop-color:#10b981;stop-opacity:1" />
+                <stop offset="33%" style="stop-color:#fbbf24;stop-opacity:1" />
+                <stop offset="66%" style="stop-color:#f97316;stop-opacity:1" />
+                <stop offset="100%" style="stop-color:#ef4444;stop-opacity:1" />
+            </linearGradient>
+        </defs>
+
+        <!-- Center Circle -->
+        <circle cx="100" cy="100" r="8" fill="#1e293b" />
+
+        <!-- Needle (will rotate based on progress) -->
+        <line id="gaugeNeedle" x1="100" y1="100" x2="100" y2="35" stroke="#1e293b" stroke-width="3"
+            stroke-linecap="round"
+            style="transform-origin: 100px 100px; transform: rotate(-90deg); transition: transform 0.5s ease;" />
+
+        <!-- Needle Cap -->
+        <circle cx="100" cy="100" r="5" fill="#475569" />
+    </svg>
+
+    <!-- Stats Display -->
+    <div
+        style="display: flex; justify-content: space-around; margin-top: 1.5rem; padding: 1rem; background: rgba(255,255,255,0.03); border-radius: 8px;">
+        <div style="text-align: center;">
+            <div style="font-size: 2rem; font-weight: bold; color: #10b981;" id="gaugeCompleted">0</div>
+            <div style="font-size: 0.85rem; color: #94a3b8;">Completadas</div>
+        </div>
+        <div style="text-align: center;">
+            <div style="font-size: 2rem; font-weight: bold; color: #fbbf24;" id="gaugePending">0</div>
+            <div style="font-size: 0.85rem; color: #94a3b8;">Pendientes</div>
+        </div>
+        <div style="text-align: center;">
+            <div style="font-size: 2rem; font-weight: bold; color: #ef4444;" id="gaugeFailed">0</div>
+            <div style="font-size: 0.85rem; color: #94a3b8;">Fallidas</div>
+        </div>
+    </div>
+
+    <!-- Percentage Display -->
+    <div style="text-align: center; margin-top: 1rem;">
+        <div style="font-size: 3rem; font-weight: bold; color: #60a5fa;" id="gaugePercentage">0%</div>
+        <div style="font-size: 0.9rem; color: #cbd5e1;" id="gaugeStatus">Esperando inicio...</div>
+    </div>
+</div>
+
+<script>
+    // Update Gauge Function
+    function updateProgressGauge(completed, pending, failed, total) {
+        const gauge = document.getElementById('batchProgressGauge');
+        if (!gauge) return;
+
+        // Show gauge
+        gauge.classList.remove('hidden');
+
+        // Calculate percentage
+        const percentage = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+        // Update stats
+        document.getElementById('gaugeCompleted').textContent = completed;
+        document.getElementById('gaugePending').textContent = pending;
+        document.getElementById('gaugeFailed').textContent = failed;
+        document.getElementById('gaugePercentage').textContent = percentage + '%';
+
+        // Update status text
+        const statusEl = document.getElementById('gaugeStatus');
+        if (pending > 0) {
+            statusEl.textContent = `Procesando ${completed} de ${total} transacciones...`;
+            statusEl.style.color = '#fbbf24';
+        } else if (failed > 0) {
+            statusEl.textContent = `Completado con ${failed} error${failed > 1 ? 'es' : ''}`;
+            statusEl.style.color = '#ef4444';
+        } else if (completed === total && total > 0) {
+            statusEl.textContent = '¡Todas las transacciones completadas!';
+            statusEl.style.color = '#10b981';
+        }
+
+        // Update progress arc (circumference = 251.2)
+        const progressArc = document.getElementById('gaugeProgress');
+        const circumference = 251.2;
+        const offset = circumference - (percentage / 100) * circumference;
+        progressArc.style.strokeDashoffset = offset;
+
+        // Update needle rotation (-90deg = 0%, 90deg = 100%)
+        const needle = document.getElementById('gaugeNeedle');
+        const rotation = -90 + (percentage / 100) * 180;
+        needle.style.transform = `rotate(${rotation}deg)`;
+    }
+
+    // Hide gauge function
+    function hideProgressGauge() {
+        const gauge = document.getElementById('batchProgressGauge');
+        if (gauge) gauge.classList.add('hidden');
+    }
+</script>
+
+<style>
+    #batchProgressGauge {
+        animation: fadeIn 0.3s ease-in;
+    }
+
+    @keyframes fadeIn {
+        from {
+            opacity: 0;
+            transform: translateY(-10px);
+        }
+
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    .hidden {
+        display: none !important;
+    }
+</style>

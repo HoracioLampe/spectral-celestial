@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Execute JS</title>
+</head>
+
+<body>
+    <script>
+        // Your JavaScript code
+        var myHeaders = new Headers();
+        myHeaders.append("Content-Type", "application/json");
+
+        var raw = JSON.stringify({
+            "method": "eth_blockNumber",
+            "params": [],
+            "id": 1,
+            "jsonrpc": "2.0"
+        });
+
+        var requestOptions = {
+            method: 'POST',
+            headers: myHeaders,
+            body: raw,
+            redirect: 'follow'
+        };
+
+        fetch("https://dawn-palpable-telescope.matic.quiknode.pro/e7d140234fbac5b00d93bfedf2e1c555fa2fdb65/", requestOptions)
+            .then(response => response.text())
+            .then(result => {
+                console.log("RPC_RESULT:", result);
+                document.body.innerHTML = `<h1>Result:</h1><pre>${result}</pre>`;
+            })
+            .catch(error => {
+                console.log('error', error);
+                document.body.innerHTML = `<h1>Error:</h1><pre>${error}</pre>`;
+            });
+    </script>
+</body>
+
+</html>
