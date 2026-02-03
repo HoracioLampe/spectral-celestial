@@ -100,9 +100,17 @@ body {
 }
 
 .logo-hero {
-    height: 60px;
+    height: 180px;
     margin-bottom: 4rem;
     filter: drop-shadow(0 0 10px rgba(59, 130, 246, 0.5));
+}
+
+/* Sidebar logo - 3x larger */
+.logo-img {
+    height: 120px;
+    width: auto;
+    display: block;
+    margin: 0 auto;
 }
 
 .hero-section {
@@ -273,7 +281,7 @@ body {
 }
 
 .visual-img {
-    height: 120px;
+    height: 180px;
     filter: drop-shadow(0 0 30px rgba(59, 130, 246, 0.5));
 }
 

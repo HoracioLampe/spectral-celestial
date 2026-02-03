@@ -1,4 +1,17 @@
-require('dotenv').config();
+{
+  "message": "2026-01-13 01:57:38.626 UTC [66450] STATEMENT:  SELECT address, funder_address, status FROM faucets",
+  "attributes": {
+    "level": "error"
+  },
+  "tags": {
+    "project": "bc3c2546-4259-4cbc-9d39-132466398ba3",
+    "environment": "b63b6725-ba29-4b2f-86a7-ff43aec718d2",
+    "service": "688240da-0da1-472b-8958-43db5ffa6cc7",
+    "deployment": "e4d06f60-b771-4f3d-945f-b6825ccd3d7b",
+    "replica": "9f7896f2-f060-4031-a77c-267a405baba3"
+  },
+  "timestamp": "2026-01-13T01:57:38.842134374Z"
+}require('dotenv').config();
 const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args)).catch(() => global.fetch(...args));
 
 async function listVault() {

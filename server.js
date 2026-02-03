@@ -86,57 +86,7 @@ const initSessionTable = async (maxRetries = 5, delayMs = 2000) => {
     return false;
 };
 
-// --- AUTO-UNSEAL LOGIC (Non-blocking with timeout) ---
-const autoUnseal = async () => {
-    const VAULT_ADDR = process.env.VAULT_ADDR || "http://vault-railway-template.railway.internal:8200";
-    const VAULT_API_V = 'v1';
-    const TIMEOUT_MS = 5000; // 5 second timeout
-
-    // Security: Read keys from environment variable (comma separated)
-    const envKeys = process.env.VAULT_UNSEAL_KEYS;
-    if (!envKeys) {
-        console.log("[Vault] ⚠️ No UNSEAL keys found in environment. Skipping auto-unseal.");
-        return;
-    }
-    const keys = envKeys.split(',').map(k => k.trim());
-
-    try {
-        console.log(`[Vault] 🛡️ Checking seal status at ${VAULT_ADDR}... (timeout: ${TIMEOUT_MS}ms)`);
-
-        // Add timeout to prevent blocking
-        const healthRes = await Promise.race([
-            fetch(`${VAULT_ADDR}/${VAULT_API_V}/sys/health`),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('Vault health check timeout')), TIMEOUT_MS))
-        ]);
-
-        const health = await healthRes.json();
-
-        if (health.sealed) {
-            console.log("[Vault] 🔒 Vault is sealed! Attempting auto-unseal...");
-            for (const key of keys) {
-                const res = await Promise.race([
-                    fetch(`${VAULT_ADDR}/${VAULT_API_V}/sys/unseal`, {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ key })
-                    }),
-                    new Promise((_, reject) => setTimeout(() => reject(new Error('Unseal timeout')), TIMEOUT_MS))
-                ]);
-                const status = await res.json();
-                if (!status.sealed) {
-                    console.log("[Vault] 🎉 Auto-unseal successful!");
-                    return;
-                }
-            }
-        } else {
-            console.log("[Vault] ✅ Vault is already unsealed.");
-        }
-    } catch (e) {
-        console.warn(`[Vault] ⚠️ Auto-unseal check failed (non-critical): ${e.message}`);
-        console.log("[Vault] ℹ️ Server will continue startup. Vault operations may fail if sealed.");
-    }
-};
-// -------------------------
+// Vault integration removed - not in use
 
 // Warm up the connection (don't block server start)
 let dbReady = false;
@@ -144,12 +94,6 @@ initSessionTable().then(ready => {
     dbReady = ready;
     if (ready) {
         console.log("🔥 Database connection warmed up successfully");
-        autoUnseal(); // Initial check
-
-        // --- CONTINUOUS RESILIENCE ---
-        // Check every 5 minutes to see if Vault is sealed (e.g. after a Vault-only restart)
-        setInterval(autoUnseal, 5 * 60 * 1000);
-        console.log("🔒 Vault Auto-Unseal Monitor: Enabled (checks every 5m)");
     }
 });
 
@@ -218,109 +162,7 @@ const upload = multer({ dest: os.tmpdir() });
 
 // --- Authentication API ---
 
-// TEMPORARY: Internal Vault Setup Endpoint (Run Once) - PRIORITY ROUTE
-
-// --- DEBUG VAULT ENDPOINT (AUTO-REPAIR MODE) ---
-// MOVED TO INITIALIZATION SECTION
-app.get('/api/debug/vault', async (req, res) => {
-    try {
-        const testUuid = ethers.Wallet.createRandom().address;
-        const testKey = "test-key-content";
-        const VAULT_ADDR = process.env.VAULT_ADDR || "http://vault-railway-template.railway.internal:8200";
-        const VAULT_TOKEN = process.env.VAULT_TOKEN;
-
-        console.log(`[Debug] Testing Vault Direct connection to: ${VAULT_ADDR}`);
-
-        if (!VAULT_TOKEN) {
-            return res.status(500).json({ success: false, error: "VAULT_TOKEN missing in env" });
-        }
-
-        const headers = {
-            'X-Vault-Token': VAULT_TOKEN,
-            'Content-Type': 'application/json'
-        };
-
-        // 1. Check Mounts
-        let mounts = {};
-        let repairStatus = "Skipped";
-        try {
-            const mountsRes = await fetch(`${VAULT_ADDR}/v1/sys/mounts`, { headers });
-            if (mountsRes.ok) {
-                mounts = await mountsRes.json();
-
-                // AUTO-REPAIR: Mount 'secret' if missing
-                if (!mounts["secret/"]) {
-                    console.log("[Auto-Repair] 'secret/' mount missing. Attempting to mount KV v2...");
-                    const mountRes = await fetch(`${VAULT_ADDR}/v1/sys/mounts/secret`, {
-                        method: 'POST',
-                        headers,
-                        body: JSON.stringify({ type: "kv", options: { version: "2" } })
-                    });
-
-                    if (mountRes.ok) {
-                        repairStatus = "SUCCESS: 'secret/' engine mounted.";
-                        // Refresh mounts
-                        const m2 = await fetch(`${VAULT_ADDR}/v1/sys/mounts`, { headers });
-                        if (m2.ok) mounts = await m2.json();
-                    } else {
-                        repairStatus = `FAILED: ${mountRes.status} ${await mountRes.text()}`;
-                    }
-                } else {
-                    repairStatus = "OK: 'secret/' already exists.";
-                }
-
-            } else {
-                mounts = { error: await mountsRes.text(), status: mountsRes.status };
-            }
-        } catch (e) {
-            mounts = { error: e.message, type: "network_error" };
-        }
-
-        // 2. Try Raw Write (Post-Repair)
-        const path = `secret/data/faucets/${testUuid.toLowerCase()}`;
-        const payload = {
-            data: { private_key: testKey, debug: true }
-        };
-
-        let writeResult = {};
-        try {
-            const writeRes = await fetch(`${VAULT_ADDR}/v1/${path}`, {
-                method: 'POST',
-                headers,
-                body: JSON.stringify(payload)
-            });
-
-            if (writeRes.ok) {
-                writeResult = await writeRes.json();
-            } else {
-                writeResult = {
-                    success: false,
-                    status: writeRes.status,
-                    errorText: await writeRes.text()
-                };
-            }
-        } catch (e) {
-            writeResult = { error: e.message };
-        }
-
-        // 3. Try Service Wrapper (Control)
-        const wrapperSaved = await vault.saveFaucetKey(testUuid, testKey);
-
-        res.json({
-            success: wrapperSaved,
-            repair_attempt: repairStatus,
-            debug_info: {
-                vault_addr: VAULT_ADDR,
-                token_preview: VAULT_TOKEN ? `${VAULT_TOKEN.substring(0, 4)}...` : 'NONE',
-                mounts_check: mounts,
-                raw_write_attempt: writeResult,
-                wrapper_result: wrapperSaved
-            }
-        });
-    } catch (e) {
-        res.status(500).json({ success: false, error: e.message, stack: e.stack });
-    }
-});
+// Vault endpoints removed - not in use
 
 // --- SEND POL FROM FAUCET ---
 app.post('/api/faucet/send-pol', async (req, res) => {
@@ -465,62 +307,7 @@ app.post('/api/faucet/send-pol', async (req, res) => {
     }
 });
 
-app.get('/api/setup-vault-internal', async (req, res) => {
-    const INTERNAL_VAULT_URL = "http://vault-railway-template.railway.internal:8200";
-    const VAULT_APIV = 'v1';
 
-    try {
-        // 1. Check Status
-        let initStatusReq;
-        try {
-            initStatusReq = await fetch(`${INTERNAL_VAULT_URL}/${VAULT_APIV}/sys/init`);
-        } catch (e) {
-            return res.status(502).json({ error: "Could not reach Vault internal URL", details: e.message });
-        }
-
-        const initStatus = await initStatusReq.json();
-
-        if (initStatus.initialized) {
-            return res.json({
-                status: "ALREADY_INITIALIZED",
-                message: "Vault is already initialized. If you lost keys, redeploy Vault service."
-            });
-        }
-
-        // 2. Initialize
-        const initReq = await fetch(`${INTERNAL_VAULT_URL}/${VAULT_APIV}/sys/init`, {
-            method: 'PUT',
-            body: JSON.stringify({ secret_shares: 5, secret_threshold: 3 }),
-            headers: { 'Content-Type': 'application/json' }
-        });
-
-        const keys = await initReq.json();
-
-        // 3. Auto-Unseal
-        let unsealStatus = [];
-        for (let i = 0; i < 3; i++) {
-            await fetch(`${INTERNAL_VAULT_URL}/${VAULT_APIV}/sys/unseal`, {
-                method: 'PUT',
-                body: JSON.stringify({ key: keys.keys[i] }),
-                headers: { 'Content-Type': 'application/json' }
-            });
-            unsealStatus.push(`Key ${i + 1} applied`);
-        }
-
-        res.json({
-            status: "SUCCESS",
-            message: "Vault Initialized & Unsealed successfully!",
-            IMPORTANT_CREDENTIALS: {
-                root_token: keys.root_token,
-                unseal_keys: keys.keys
-            },
-            notes: "SAVE THESE CREDENTIALS NOW. They will not be shown again."
-        });
-
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
 
 app.get('/api/health', async (req, res) => {
     try {
@@ -544,20 +331,7 @@ app.get('/api/debug', async (req, res) => {
         dbError = e.message;
     }
 
-    // Check Vault Status for debug
-    let vaultStatus = { error: "Check failed" };
-    try {
-        const VAULT_ADDR = process.env.VAULT_ADDR || "http://vault-railway-template.railway.internal:8200";
-        const vRes = await fetch(`${VAULT_ADDR}/v1/sys/health`);
-        const vData = await vRes.json();
-        vaultStatus = {
-            initialized: vData.initialized,
-            sealed: vData.sealed,
-            version: vData.version
-        };
-    } catch (e) {
-        vaultStatus = { error: e.message };
-    }
+
 
     res.json({
         database: {
@@ -571,13 +345,10 @@ app.get('/api/debug', async (req, res) => {
         session: {
             storeType: sessionStore.constructor.name
         },
-        vault: vaultStatus, // Added vault status
         environment: {
             nodeEnv: process.env.NODE_ENV || 'not set',
             port: PORT,
-            version: VERSION,
-            vault_addr: process.env.VAULT_ADDR || "http://vault-railway-template.railway.internal:8200",
-            persistent_volume: fs.existsSync('/vault/file') ? 'MOUNTED' : 'MISSING'
+            version: VERSION
         }
     });
 });
@@ -648,7 +419,8 @@ app.get('/testConnection', async (req, res) => {
 app.get('/api/config', (req, res) => {
     res.json({
         CONTRACT_ADDRESS: process.env.CONTRACT_ADDRESS || "0x7B25Ce9800CCE4309E92e2834E09bD89453d90c5",
-        RPC_URL: rpcUrls[0] || ""
+        RPC_URL: rpcUrls[0] || "",
+        CHAIN_ID: CHAIN_ID
     });
 });
 
@@ -684,20 +456,15 @@ app.get('/api/auth/nonce', async (req, res) => {
 });
 
 // --- Faucet Self-Healing Helper ---
-// --- Faucet Self-Healing Helper ---
 async function ensureUserFaucet(userAddress) {
     if (!userAddress) return;
     try {
-        // --- REACTIVE UNSEAL ---
-        // Before doing anything with Vault/Faucets, make sure stay unsealed
-        await autoUnseal();
-
-        console.log(`[Self - Heal] Ensuring Faucet for ${userAddress}...`);
+        console.log(`[Self-Heal] Ensuring Faucet for ${userAddress}...`);
         await globalRpcManager.execute(async (provider) => {
             await faucetService.getFaucetWallet(pool, provider, userAddress);
         });
     } catch (e) {
-        console.error(`[Self - Heal] Failed for ${userAddress}: `, e.message);
+        console.error(`[Self-Heal] Failed for ${userAddress}: `, e.message);
     }
 }
 
@@ -887,6 +654,70 @@ COUNT(*) as total,
     }
 });
 
+// Get transactions for a batch with filters (for Excel export)
+app.get('/api/transactions', authenticateToken, async (req, res) => {
+    try {
+        const { batchId, wallet, amount, status } = req.query;
+
+        if (!batchId) {
+            return res.status(400).json({ error: 'batchId is required' });
+        }
+
+        // Build WHERE clause with filters
+        let whereClause = 'WHERE batch_id = $1';
+        let queryParams = [parseInt(batchId)];
+        let paramIndex = 2;
+
+        // Filter by wallet address (partial match)
+        if (wallet && wallet.trim() !== '') {
+            queryParams.push(`%${wallet.trim().toLowerCase()}%`);
+            whereClause += ` AND LOWER(wallet_address_to) LIKE $${paramIndex}`;
+            paramIndex++;
+        }
+
+        // Filter by amount (exact match or range)
+        if (amount && amount.trim() !== '') {
+            const amountValue = parseFloat(amount.trim());
+            if (!isNaN(amountValue)) {
+                queryParams.push(amountValue);
+                whereClause += ` AND amount_usdc = $${paramIndex}`;
+                paramIndex++;
+            }
+        }
+
+        // Filter by status
+        if (status && status.trim() !== '' && status !== 'ALL' && status !== 'Todos los Estados') {
+            queryParams.push(status.trim());
+            whereClause += ` AND status = $${paramIndex}`;
+            paramIndex++;
+        }
+
+        // Query transactions with filters
+        const query = `
+            SELECT 
+                id,
+                wallet_address_to as recipient_address,
+                amount_usdc as amount,
+                amount_usdc as amount_sent,
+                tx_hash,
+                updated_at as timestamp,
+                status
+            FROM batch_transactions
+            ${whereClause}
+            ORDER BY id ASC
+        `;
+
+        console.log(`[GET Transactions] Query: ${query}, Params:`, queryParams);
+
+        const result = await pool.query(query, queryParams);
+
+        res.json(result.rows);
+    } catch (err) {
+        console.error('[GET Transactions] Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // Create new batch (Capture funder from token)
 app.post('/api/batches', authenticateToken, async (req, res) => {
     try {
@@ -947,9 +778,9 @@ app.post('/api/admin/unblock-faucets', authenticateToken, async (req, res) => {
         // Check and repair each faucet
         for (const faucet of faucets) {
             try {
-                // Securely load from Vault using the faucet's address directly
-                const privateKey = await vault.getFaucetKey(faucet.address);
-                if (!privateKey) throw new Error("Key not found in Vault");
+                // Vault integration removed - keys are now stored in database only
+                // const privateKey = await vault.getFaucetKey(faucet.address);
+                // if (!privateKey) throw new Error("Key not found in Vault");
 
                 const [latestNonce, pendingNonce, balance, feeData] = await globalRpcManager.execute(async (provider) => {
                     const lNonce = await provider.getTransactionCount(address, "latest");
@@ -1572,14 +1403,15 @@ app.get('/api/faucet', authenticateToken, async (req, res) => {
                 return { maticBalance, usdcBalance, gasReserve, feeData };
             });
 
-            let privateKey = "NOT_FOUND_IN_VAULT";
-            try {
-                const k = await vault.getFaucetKey(row.address);
-                if (k) privateKey = k;
-            } catch (e) {
-                console.warn("Vault lookup failed:", e.message);
-                privateKey = "VAULT_ERROR";
-            }
+            let privateKey = "STORED_IN_DATABASE";
+            // Vault integration removed - keys are stored in encrypted database
+            // try {
+            //     const k = await vault.getFaucetKey(row.address);
+            //     if (k) privateKey = k;
+            // } catch (e) {
+            //     console.warn("Vault lookup failed:", e.message);
+            //     privateKey = "VAULT_ERROR";
+            // }
 
             res.json({
                 address: row.address,
@@ -2042,8 +1874,9 @@ app.get('/api/debug/vault', async (req, res) => {
             writeResult = { error: e.message };
         }
 
-        // 3. Try Service Wrapper (Control)
-        const wrapperSaved = await vault.saveFaucetKey(testUuid, testKey);
+        // Vault integration removed
+        // const wrapperSaved = await vault.saveFaucetKey(testUuid, testKey);
+        const wrapperSaved = false;
 
         res.json({
             success: wrapperSaved,
@@ -2487,9 +2320,10 @@ app.post('/api/relayer/:address/recover', authenticateToken, async (req, res) =>
 
         const provider = globalRpcManager.getProvider();
 
-        // Securely fetch key from Vault
-        const relayerPrivateKey = await vault.getRelayerKey(relayerAddress);
-        if (!relayerPrivateKey) throw new Error("Key not found in Vault");
+        // Vault integration removed - using database for key storage
+        throw new Error("This endpoint requires vault integration which has been removed. Keys are now stored in encrypted database.");
+        // const relayerPrivateKey = await vault.getRelayerKey(relayerAddress);
+        // if (!relayerPrivateKey) throw new Error("Key not found in Vault");
         const wallet = new ethers.Wallet(relayerPrivateKey, provider);
 
         // 2. Check Balance & Nonce Status

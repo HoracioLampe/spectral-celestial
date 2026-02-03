@@ -5,13 +5,81 @@ async function exportToExcel() {
         // Get current batch ID from global variable or currentBatchSummary
         let batchId = window.activeBatchId || window.currentBatchSummary?.id;
 
-        // If not found, try to get from visible batch info
+        // Try to get from URL hash (e.g., #batch-123)
+        if (!batchId && window.location.hash) {
+            const hashMatch = window.location.hash.match(/#batch-(\d+)/);
+            if (hashMatch) {
+                batchId = hashMatch[1];
+            }
+        }
+
+        // PRIORITY: Try to get from "ID de Lote: XXX" badge (most visible element)
+        if (!batchId) {
+            const allText = document.body.innerText;
+            const loteMatch = allText.match(/ID\s+de\s+Lote:\s*(\d+)/i);
+            if (loteMatch) {
+                batchId = loteMatch[1];
+                console.log(`✅ Batch ID detectado desde badge "ID de Lote": ${batchId}`);
+            }
+        }
+
+        // Try to get from the potencia/relayer dropdown or select element
+        if (!batchId) {
+            const potenciaSelect = document.querySelector('select[id*="potencia"], select[id*="relayer"]');
+            if (potenciaSelect && potenciaSelect.selectedOptions[0]) {
+                const selectedText = potenciaSelect.selectedOptions[0].textContent;
+                const selectMatch = selectedText.match(/^(\d+)/);
+                if (selectMatch) {
+                    batchId = selectMatch[1];
+                }
+            }
+        }
+
+        // Try to get from visible batch detail section title or header
+        if (!batchId) {
+            const batchTitleElement = document.querySelector('.batch-detail-title, .section-title, h2, h3, .card-header');
+            if (batchTitleElement) {
+                const titleText = batchTitleElement.textContent;
+                const titleMatch = titleText.match(/Batch[:\s#]*(\d+)/i) ||
+                    titleText.match(/Lote[:\s#]*(\d+)/i) ||
+                    titleText.match(/Ejecución.*?(\d+)/i) ||
+                    titleText.match(/#(\d+)/);
+                if (titleMatch) {
+                    batchId = titleMatch[1];
+                }
+            }
+        }
+
+        // Try to get from visible batch info elements
         if (!batchId) {
             const batchInfoElement = document.querySelector('[data-batch-id]') ||
-                document.getElementById('currentBatchId');
+                document.getElementById('currentBatchId') ||
+                document.querySelector('.batch-id, .batch-number');
             if (batchInfoElement) {
                 batchId = batchInfoElement.getAttribute('data-batch-id') ||
-                    batchInfoElement.textContent.trim();
+                    batchInfoElement.dataset.batchId ||
+                    batchInfoElement.textContent.trim().match(/\d+/)?.[0];
+            }
+        }
+
+        // Try to extract from transaction detail section specifically
+        if (!batchId) {
+            const detailSection = document.querySelector('.transaction-detail, .batch-detail, [class*="detail"]');
+            if (detailSection) {
+                const sectionText = detailSection.innerText;
+                const detailMatch = sectionText.match(/(?:Batch|Lote|Ejecución|#)\s*(\d+)/i);
+                if (detailMatch) {
+                    batchId = detailMatch[1];
+                }
+            }
+        }
+
+        // Try to extract from any visible text containing "Batch" or "Lote" followed by a number
+        if (!batchId) {
+            const allText = document.body.innerText;
+            const batchMatch = allText.match(/(?:Batch|Lote|#)\s*(\d+)/i);
+            if (batchMatch) {
+                batchId = batchMatch[1];
             }
         }
 

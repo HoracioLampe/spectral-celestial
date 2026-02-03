@@ -309,16 +309,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         AUTH_TOKEN = savedToken;
         userAddress = savedAddress.toLowerCase().trim();
 
-        // Restore Provider
+        // Restore Provider - Use backend RPC instead of MetaMask RPC
         if (window.ethereum) {
-            console.log("📡 Initializing Ethers v6 BrowserProvider (Session Restore)");
-            provider = new ethers.BrowserProvider(window.ethereum);
+            console.log("📡 Initializing JsonRpcProvider with backend RPC (Session Restore)");
+            const rpcUrl = APP_CONFIG.RPC_URL || 'https://polygon-rpc.com';
+            provider = new ethers.JsonRpcProvider(rpcUrl);
             try {
                 // Background network check
                 provider.getNetwork().then(network => {
                     console.log("🌐 Network detected (restore):", network.name, network.chainId.toString());
-                    if (network.chainId !== 137n) {
-                        console.warn("User on wrong network (restore)");
+                    const expectedChainId = BigInt(APP_CONFIG.CHAIN_ID || 137);
+                    if (network.chainId !== expectedChainId) {
+                        console.warn("RPC network mismatch (restore)");
                     }
                 });
             } catch (e) {
@@ -561,9 +563,14 @@ async function connectWallet() {
         console.log("👤 Account found:", accounts[0]);
         userAddress = accounts[0];
 
-        console.log("📡 Initializing BrowserProvider (Ethers v6)");
-        provider = new ethers.BrowserProvider(window.ethereum);
-        signer = await provider.getSigner();
+        console.log("📡 Initializing JsonRpcProvider with backend RPC (Ethers v6)");
+        // Use backend RPC for reading blockchain data (fixes Ledger chainId issues)
+        const rpcUrl = APP_CONFIG.RPC_URL || 'https://polygon-rpc.com';
+        provider = new ethers.JsonRpcProvider(rpcUrl);
+
+        // Use MetaMask ONLY for signing
+        const browserProvider = new ethers.BrowserProvider(window.ethereum);
+        signer = await browserProvider.getSigner();
         console.log("📍 Signer obtained:", await signer.getAddress());
 
         // --- SIWE LOGIN FLOW ---
@@ -1648,7 +1655,7 @@ async function signBatchPermit(batchId) {
     console.log(`[Permit] Deadline Fixed: 4 Hours (14400s). Active Txs: ${activeTxCount} + New: ${totalTx}`);
     const deadline = Math.floor(Date.now() / 1000) + duration;
 
-    const chainId = 137; // Hardcoded for Polygon Mainnet USDC compliance
+    const chainId = APP_CONFIG.CHAIN_ID || 137; // Use configured chain ID from server
     const domain = { name: 'USD Coin', version: '2', chainId: chainId, verifyingContract: USDC_ADDRESS };
     const types = {
         Permit: [
@@ -1666,6 +1673,25 @@ async function signBatchPermit(batchId) {
         nonce: nonce.toString(),
         deadline: deadline
     };
+
+    // Validate signer is available
+    if (!signer) {
+        throw new Error('No hay conexión con MetaMask. Por favor, conecta tu wallet primero.');
+    }
+
+    // Validate correct network
+    try {
+        const network = await provider.getNetwork();
+        const expectedChainId = BigInt(APP_CONFIG.CHAIN_ID || 137);
+        if (network.chainId !== expectedChainId) {
+            throw new Error(`⚠️ Red incorrecta detectada.\n\nEstás conectado a: ${network.name} (Chain ID: ${network.chainId})\nNecesitas: Chain ID ${expectedChainId}\n\n👉 Por favor, cambia la red en MetaMask`);
+        }
+    } catch (err) {
+        if (err.message.includes('Red incorrecta')) {
+            throw err; // Re-throw our custom error
+        }
+        console.warn('Could not verify network:', err);
+    }
 
     const signature = await signer.signTypedData(domain, types, message);
     const { v, r, s } = ethers.Signature.from(signature);
@@ -3051,6 +3077,25 @@ async function signBatchRoot(batchId) {
         totalAmount: totalAmountBase,
         nonce: nonce.toString()
     };
+
+    // Validate signer is available
+    if (!signer) {
+        throw new Error('No hay conexión con MetaMask. Por favor, conecta tu wallet primero.');
+    }
+
+    // Validate correct network
+    try {
+        const network = await provider.getNetwork();
+        const expectedChainId = BigInt(APP_CONFIG.CHAIN_ID || 137);
+        if (network.chainId !== expectedChainId) {
+            throw new Error(`⚠️ Red incorrecta detectada.\n\nEstás conectado a: ${network.name} (Chain ID: ${network.chainId})\nNecesitas: Chain ID ${expectedChainId}\n\n👉 Por favor, cambia la red en MetaMask`);
+        }
+    } catch (err) {
+        if (err.message.includes('Red incorrecta')) {
+            throw err; // Re-throw our custom error
+        }
+        console.warn('Could not verify network:', err);
+    }
 
     const signature = await signer.signTypedData(domain, types, message);
 
