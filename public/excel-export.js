@@ -159,8 +159,8 @@ async function exportToExcel() {
             data.push([
                 sequentialId,                                   // ID REF (preserves original numbering)
                 tx.recipient_address || '',                     // WALLET (complete address)
-                tx.amount || '',                                // USDC (PLAN) (full value)
-                tx.amount_sent || tx.amount || '',              // USDC ENVIADO (full value)
+                tx.amount ? parseFloat((parseFloat(tx.amount) / 1000000).toFixed(2)) : '',  // USDC (PLAN) - as number with 2 decimals
+                tx.amount_sent ? parseFloat((parseFloat(tx.amount_sent) / 1000000).toFixed(2)) : (tx.amount ? parseFloat((parseFloat(tx.amount) / 1000000).toFixed(2)) : ''),  // USDC ENVIADO - as number with 2 decimals
                 tx.tx_hash || '',                               // HASH (REF) (complete hash)
                 tx.timestamp ? new Date(tx.timestamp).toLocaleString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' }) : '', // TIMESTAMP
                 tx.status || ''                                 // ESTADO
