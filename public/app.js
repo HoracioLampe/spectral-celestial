@@ -2849,7 +2849,7 @@ window.confirmSendPol = async () => {
     statusEl.style.display = 'block';
 
     try {
-        const response = await fetch('/api/faucet/send-pol', {
+        const response = await authenticatedFetch('/api/faucet/send-pol', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({

@@ -1408,6 +1408,31 @@ app.get('/api/balances/:address', authenticateToken, async (req, res) => {
     }
 });
 
+// --- RPC PROXY (For Frontend 100% Backend-Only Interaction) ---
+app.post('/api/rpc', async (req, res) => {
+    try {
+        const result = await globalRpcManager.execute(async (provider) => {
+            return await provider.send(req.body.method, req.body.params || []);
+        });
+
+        res.json({
+            jsonrpc: "2.0",
+            id: req.body.id,
+            result: result
+        });
+    } catch (err) {
+        console.error("[RPC Proxy] Error:", err.message);
+        res.status(500).json({
+            jsonrpc: "2.0",
+            id: req.body.id,
+            error: {
+                code: -32603,
+                message: err.message
+            }
+        });
+    }
+});
+
 // NEW: Contract Nonce Endpoint (For Ledger Compatibility)
 app.get('/api/contract/nonce/:address', authenticateToken, async (req, res) => {
     try {
