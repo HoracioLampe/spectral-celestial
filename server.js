@@ -601,7 +601,7 @@ app.get('/api/transactions', authenticateToken, async (req, res) => {
                 id,
                 wallet_address_to as recipient_address,
                 amount_usdc as amount,
-                amount_usdc as amount_sent,
+                amount_transferred as amount_sent,
                 tx_hash,
                 updated_at as timestamp,
                 status

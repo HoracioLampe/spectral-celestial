@@ -156,11 +156,16 @@ async function exportToExcel() {
         transactions.forEach(tx => {
             const sequentialId = tx.id - offset; // Numbering starts from 1 based on first result
 
+            // Format amounts to strictly 6 decimal places (USDC raw precision)
+            const planFormatted = tx.amount ? (parseFloat(tx.amount) / 1000000).toFixed(6) : '0.000000';
+            const sentValue = tx.status === 'COMPLETED' ? (tx.amount_sent || tx.amount) : (tx.amount_sent || null);
+            const sentFormatted = sentValue ? (parseFloat(sentValue) / 1000000).toFixed(6) : '0.000000';
+
             data.push([
                 sequentialId,                                   // ID REF (preserves original numbering)
                 tx.recipient_address || '',                     // WALLET (complete address)
-                tx.amount ? parseFloat((parseFloat(tx.amount) / 1000000).toFixed(2)) : '',  // USDC (PLAN) - as number with 2 decimals
-                tx.amount_sent ? parseFloat((parseFloat(tx.amount_sent) / 1000000).toFixed(2)) : (tx.amount ? parseFloat((parseFloat(tx.amount) / 1000000).toFixed(2)) : ''),  // USDC ENVIADO - as number with 2 decimals
+                planFormatted,                                  // USDC (PLAN) - String with 6 decimals and DOT separator
+                sentFormatted,                                  // USDC ENVIADO - String with 6 decimals and DOT separator
                 tx.tx_hash || '',                               // HASH (REF) (complete hash)
                 tx.timestamp ? new Date(tx.timestamp).toLocaleString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' }) : '', // TIMESTAMP
                 tx.status || ''                                 // ESTADO
