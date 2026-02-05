@@ -276,8 +276,8 @@ class RelayerEngine {
         // Step 2: Distribute Gas
         await this.distributeGasToRelayers(batchId, relayers);
 
-        console.log(`[Engine] ✅ Relayer Setup Complete for Batch ${batchId}.`);
-        return true;
+        console.log(`[Engine] ✅ Relayer Setup Complete for Batch ${batchId}. (${relayers.length} relayers)`);
+        return { count: relayers.length };
     }
 
     /**

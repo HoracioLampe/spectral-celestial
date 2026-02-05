@@ -1,5 +1,4 @@
 const API_TRANSACTIONS = '/api/transactions'; // v3.1.0-deploy-force
-let APP_CONFIG = { RPC_URL: '', WS_RPC_URL: '' };
 const BATCCH_PAGE_SIZE = 10;
 const TIMEZONE_CONFIG = { timeZone: 'America/Argentina/Buenos_Aires' };
 let currentBatchPage = 1;
@@ -18,34 +17,53 @@ let AUTH_TOKEN = localStorage.getItem('jwt_token');
 
 
 
+let isRenewing = false;
+let renewalQueue = [];
+
 async function authenticatedFetch(url, options = {}) {
-    const token = AUTH_TOKEN || localStorage.getItem('jwt_token');
-    const headers = {
-        ...options.headers,
-        'Authorization': `Bearer ${token}`
+    let token = AUTH_TOKEN || localStorage.getItem('jwt_token');
+
+    const executeRequest = async (t) => {
+        const headers = {
+            ...options.headers,
+            'Authorization': `Bearer ${t}`
+        };
+        return fetch(url, { ...options, headers });
     };
 
-    const response = await fetch(url, { ...options, headers });
+    let response = await executeRequest(token);
 
     // If 401 Unauthorized, try to renew token silently
     if (response.status === 401) {
-        console.warn('[Auth] Token expired (401). Attempting silent renewal...');
+        console.warn(`[Auth] 401 on ${url}. Attempting renewal...`);
 
+        if (isRenewing) {
+            // Wait for existing renewal
+            return new Promise((resolve) => {
+                renewalQueue.push({ url, options, resolve });
+            });
+        }
+
+        isRenewing = true;
         try {
-            // Try to get a new token using the existing wallet connection
-            if (signer && userAddress) {
-                const newToken = await renewAuthToken();
-                if (newToken) {
-                    // Retry the request with new token
-                    const newHeaders = {
-                        ...options.headers,
-                        'Authorization': `Bearer ${newToken}`
-                    };
-                    return fetch(url, { ...options, headers: newHeaders });
-                }
+            const newToken = await renewAuthToken();
+            if (newToken) {
+                // Success! Retry this request and all queued ones
+                const currentRes = await executeRequest(newToken);
+
+                const queuedItems = [...renewalQueue];
+                renewalQueue = [];
+                queuedItems.forEach(async (item) => {
+                    const res = await executeRequest(newToken);
+                    item.resolve(res);
+                });
+
+                return currentRes;
             }
         } catch (err) {
             console.error('[Auth] Token renewal failed:', err);
+        } finally {
+            isRenewing = false;
         }
     }
 
@@ -53,6 +71,7 @@ async function authenticatedFetch(url, options = {}) {
 }
 
 async function renewAuthToken() {
+    if (!signer || !userAddress) return null;
     try {
         const message = `Sign in to Spectral Celestial\nAddress: ${userAddress}\nTimestamp: ${Date.now()}`;
         const signature = await signer.signMessage(message);
@@ -78,22 +97,19 @@ async function renewAuthToken() {
 
 
 
-async function getConfig() {
-    try {
-        const res = await fetch('/api/config');
-        APP_CONFIG = await res.json();
-    } catch (e) {
-        console.error("Error fetching config:", e);
-    }
-}
+// --- Hardcoded Configuration (Secure Production) ---
+const APP_CONFIG = {
+    CONTRACT_ADDRESS: "0x7B25Ce9800CCE4309E92e2834E09bD89453d90c5",
+    RPC_URL: "/api/rpc", // Use internal proxy for frontend blockchain reads (optional)
+    CHAIN_ID: 137
+};
 
 function getExplorerUrl(address) {
-    // We can expand this to check for network in config if needed
     return `https://polygonscan.com/address/${address}`;
+
 }
 
-// Initialize config
-getConfig();
+// getConfig call removed for security
 
 // --- Faucet Monitoring ---
 async function checkFaucetStatus() {
@@ -2194,29 +2210,28 @@ async function runMerkleTest() {
     const status = document.getElementById('merkleTestStatus');
     const verifyLabel = document.getElementById('merkleVerifyLabel');
 
-    // 1. Fetch Sample if needed (Server-Side Fix)
-    let testTransactions = typeof allBatchTransactions !== 'undefined' ? allBatchTransactions : [];
+    // 1. Fetch Fresh Sample for THIS Batch (Prevents using stale data from previous batches)
+    let testTransactions = [];
 
-    if (!testTransactions || testTransactions.length === 0) {
-        // Fetch a small random sample from server
-        try {
-            if (status) status.textContent = "⏳ Obteniendo muestra del servidor...";
-            const res = await authenticatedFetch(`/api/batches/${currentBatchId}/transactions?page=1&limit=100`);
-            const data = await res.json();
-            if (data.transactions && data.transactions.length > 0) {
-                testTransactions = data.transactions;
-            } else {
-                throw new Error("No se encontraron transacciones en el servidor.");
-            }
-        } catch (e) {
-            alert("⚠️ Error preparando test: " + e.message);
-            return;
+    try {
+        if (status) status.textContent = "⏳ Obteniendo muestra del servidor...";
+        const res = await authenticatedFetch(`/api/batches/${currentBatchId}/transactions?page=1&limit=100`);
+        const data = await res.json();
+        if (data.transactions && data.transactions.length > 0) {
+            testTransactions = data.transactions;
+        } else {
+            throw new Error("No se encontraron transacciones para este Batch en el servidor.");
         }
+    } catch (e) {
+        console.error("[Verify] Error fetching sample:", e);
+        alert("⚠️ Error preparando test: " + e.message);
+        if (btn) btn.disabled = false;
+        return;
     }
 
     // Parameters: Max 100 samples
     const MAX_SAMPLES = 100;
-    const MAX_CONCURRENT = 30;
+    const MAX_CONCURRENT = 15; // Increased performance: leveraging balanced backend RPCs
 
     const sampleSize = Math.min(MAX_SAMPLES, testTransactions.length);
     const shuffled = [...testTransactions].sort(() => 0.5 - Math.random());
@@ -2243,114 +2258,95 @@ async function runMerkleTest() {
 
     if (btn) btn.disabled = true;
     if (status) {
-        status.textContent = `⏳ Inicializando test: ${sampleSize} transacciones (${MAX_CONCURRENT} hilos)...`;
+        status.textContent = `⏳ Inicializando test: ${sampleSize} transacciones (Balanceado Multi-hilo)...`;
         status.style.color = "#fbbf24";
     }
 
     try {
-        // Setup Provider - Always use backend RPC for reliability (especially with Ledger)
-        if (!APP_CONFIG.RPC_URL) await getConfig();
-        const testProvider = new ethers.JsonRpcProvider(APP_CONFIG.RPC_URL || "https://polygon-rpc.com");
-        console.log("[Verify] Using RPC:", APP_CONFIG.RPC_URL);
-
-        if (!testProvider) throw new Error("Could not initialize RPC Provider");
-
-        const abi = ["function validateMerkleProofDetails(uint256, uint256, address, address, uint256, bytes32, bytes32[]) external view returns (bool)"];
-
-        // Use Configured Address
-        const targetContract = APP_CONFIG.CONTRACT_ADDRESS;
-        if (!targetContract) throw new Error("Contract Address not loaded in Config");
-
-        const contract = new ethers.Contract(targetContract, abi, testProvider);
-
         let completed = 0;
         let failed = 0;
 
         // Task Function per Transaction
         const runVerificationTask = async (tx) => {
             let attempts = 0;
-            const maxAttempts = 3;
+            let successCheck = false;
+            const maxAttempts = 15; // Max resilience
 
-            while (attempts < maxAttempts) {
+            // Safeguard: Verify tx belongs to THIS batch
+            if (tx.batch_id && parseInt(tx.batch_id) !== parseInt(currentBatchId)) {
+                console.warn(`[Verify] Skipping Tx ${tx.id}: belongs to Batch ${tx.batch_id}, not ${currentBatchId}`);
+                failed++;
+                completed++;
+                if (status) status.textContent = `⏳ Progreso: ${completed}/${sampleSize} verificados (Fallos: ${failed})`;
+                return;
+            }
+
+            while (attempts < maxAttempts && !successCheck) {
                 try {
-                    // Fetch Proof from Backend
+                    // 1. Get Proof from Backend
                     const proofRes = await authenticatedFetch(`/api/batches/${currentBatchId}/transactions/${tx.id}/proof`);
                     if (!proofRes.ok) throw new Error("API Error fetching proof");
                     const proofData = await proofRes.json();
-
                     if (!proofData.proof) throw new Error("No Proof Data");
 
                     const amountVal = BigInt(tx.amount_usdc);
 
-                    // Ensure APP_CONFIG is loaded
-                    if (!APP_CONFIG.CONTRACT_ADDRESS) await getConfig();
+                    // 2. Delegate On-Chain Verification to Backend (uses Balanced RPC Manager)
+                    const verifyRes = await authenticatedFetch(`/api/batches/${currentBatchId}/transactions/${tx.id}/verify-onchain`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            funder: funder,
+                            recipient: tx.wallet_address_to,
+                            amount: amountVal.toString(),
+                            merkleRoot: merkleRoot,
+                            proof: proofData.proof
+                        })
+                    });
 
-                    // Pre-Validation Check
-                    if (!tx.wallet_address_to || !ethers.isAddress(tx.wallet_address_to)) {
-                        console.error(`[Verify] Invalid Wallet Address in Tx ${tx.id}:`, tx.wallet_address_to);
-                        throw new Error("Invalid Wallet Address");
-                    }
-                    if (!funder || !ethers.isAddress(funder)) {
-                        console.error(`[Verify] Invalid Funder Address:`, funder);
-                        throw new Error("Invalid Funder Address");
-                    }
-
-                    // Verify On-Chain (View Call)
-                    console.log(`[Verify] Testing Tx ${tx.id} | Funder: ${funder} | Recipient: ${tx.wallet_address_to} | Amount: ${amountVal.toString()}`);
-
-                    // Debug: Calculate Leaf locally for comparison
-                    try {
-                        const chainId = 137; // Hardcoded for Polygon Mainnet
-                        const encodedLeaf = ethers.AbiCoder.defaultAbiCoder().encode(
-                            ["uint256", "address", "uint256", "uint256", "address", "address", "uint256"],
-                            [
-                                chainId,
-                                APP_CONFIG.CONTRACT_ADDRESS,
-                                BigInt(currentBatchId),
-                                BigInt(tx.id),
-                                funder,
-                                tx.wallet_address_to,
-                                amountVal
-                            ]
-                        );
-                        const leafHash = ethers.keccak256(encodedLeaf);
-                        console.log(`[Verify] CLIENT COMPUTED LEAF: ${leafHash}`);
-                    } catch (errLeaf) {
-                        console.error("[Verify] Error computing leaf:", errLeaf);
+                    if (!verifyRes.ok) {
+                        const errData = await verifyRes.json();
+                        throw new Error(errData.error || "Verification API Error");
                     }
 
-                    const isValid = await contract.validateMerkleProofDetails(
-                        BigInt(currentBatchId),
-                        BigInt(tx.id),
-                        funder,
-                        tx.wallet_address_to,
-                        amountVal,
-                        merkleRoot,
-                        proofData.proof
-                    );
+                    const { isValid } = await verifyRes.json();
+                    if (!isValid) throw new Error("❌ Invalid On-Chain Result (Reported by Server)");
 
-                    console.log(`[Verify] Result for Tx ${tx.id}: ${isValid}`);
-
-                    if (!isValid) throw new Error("❌ Invalid On-Chain Result");
-
-                    // Success! Break loop
-                    return;
-
+                    successCheck = true;
                 } catch (err) {
                     attempts++;
-                    console.warn(`Verification Attempt ${attempts}/${maxAttempts} failed for Tx ${tx.id}:`, err.message);
+                    const fullErr = JSON.stringify(err) || "";
+                    const errMsg = err.message || "";
+
+                    // FATAL: If leaf not found, don't retry.
+                    if (errMsg.includes("leaf not found") || errMsg.includes("404")) {
+                        console.error(`[Verify] Tx ${tx.id} - Fatal error: ${errMsg}`);
+                        break; // Stop retrying
+                    }
+
+                    const isRateLimit = errMsg.includes("Too many requests") ||
+                        errMsg.includes("rate limit") ||
+                        errMsg.includes("missing response") ||
+                        fullErr.includes("-32090") ||
+                        fullErr.includes("429");
+
+                    console.warn(`[Verify] Tx ${tx.id} attempt ${attempts} failed: ${errMsg}`);
 
                     if (attempts >= maxAttempts) {
-                        console.error(`Verification Failed [TxID: ${tx.id}] after retries`, err);
-                        failed++;
+                        console.error(`❌ Verification Failed [TxID: ${tx.id}] after ${maxAttempts} retries`, err);
+                        break;
                     } else {
-                        // Exponential backoff: 1s, 2s, 4s
-                        const delay = 1000 * Math.pow(2, attempts - 1);
-                        await new Promise(r => setTimeout(r, delay));
+                        // Sequential Backoff
+                        let waitTime = 1000 * Math.pow(2, attempts - 1);
+                        if (isRateLimit) {
+                            console.log(`[Verify] 🛑 Rate limit hit on Backend/RPC. Cooldown 20s...`);
+                            waitTime = 20000; // Aggressive cooldown to reset limits
+                        }
+                        await new Promise(r => setTimeout(r, waitTime));
                     }
                 }
             }
-            // Finally block handled outside the loop effectively by incrementing counts
+            if (!successCheck) failed++;
             completed++;
             if (status) status.textContent = `⏳ Progreso: ${completed}/${sampleSize} verificados (Fallos: ${failed})`;
         };
@@ -2363,8 +2359,7 @@ async function runMerkleTest() {
             while (queue.length > 0) {
                 const tx = queue.shift();
                 await runVerificationTask(tx);
-                await runVerificationTask(tx);
-                await new Promise(r => setTimeout(r, 500)); // Delay added to prevent RPS Limit errors
+                await new Promise(r => setTimeout(r, 50)); // Strict 50ms delay between successful requests
             }
         };
 
@@ -2901,7 +2896,7 @@ async function pollBatchProgress(batchId) {
         // Parallel Fetch for Speed ⚡
         const [relayerRes, batchRes] = await Promise.all([
             fetchRelayerBalances(batchId), // Now returns promise but doesn't return data directly to variable (it renders internally)
-            fetch(`/api/batches/${batchId}`)
+            authenticatedFetch(`/api/batches/${batchId}`)
         ]);
 
         const data = await batchRes.json();

@@ -48,7 +48,10 @@ console.log(`[DB] Using Database URL: ${dbUrl ? 'DEFINED (Masked)' : 'UNDEFINED'
 
 const pool = new Pool({
     connectionString: dbUrl,
-    ssl: { rejectUnauthorized: false }
+    ssl: { rejectUnauthorized: false },
+    max: 30, // Increase pool size for concurrent Merkle verification
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 10000,
 });
 
 // Capture unexpected errors on idle clients to prevent crash
@@ -146,7 +149,10 @@ const authenticateToken = (req, res, next) => {
     if (!token) return res.status(401).json({ error: 'Token missing' });
 
     jwt.verify(token, JWT_SECRET, (err, user) => {
-        if (err) return res.status(403).json({ error: 'Invalid or expired token' });
+        if (err) {
+            console.warn(`[Auth] ❌ Authentication failed for ${req.path}: ${err.message}`);
+            return res.status(401).json({ error: 'Invalid or expired token' });
+        }
         req.user = user; // { address, role }
         next();
     });
@@ -165,7 +171,7 @@ const upload = multer({ dest: os.tmpdir() });
 // Vault endpoints removed - not in use
 
 // --- SEND POL FROM FAUCET ---
-app.post('/api/faucet/send-pol', async (req, res) => {
+app.post('/api/faucet/send-pol', authenticateToken, async (req, res) => {
     try {
         const { recipientAddress, amount, funderAddress } = req.body;
 
@@ -318,111 +324,8 @@ app.get('/api/health', async (req, res) => {
     }
 });
 
-app.get('/api/debug', async (req, res) => {
-    const dbUrlMasked = dbUrl ? dbUrl.replace(/:[^:@]*@/, ':****@') : 'UNDEFINED';
-    let dbStatus = 'unknown';
-    let dbError = null;
-
-    try {
-        await pool.query('SELECT NOW()');
-        dbStatus = 'connected';
-    } catch (e) {
-        dbStatus = 'failed';
-        dbError = e.message;
-    }
 
 
-
-    res.json({
-        database: {
-            url: dbUrlMasked,
-            status: dbStatus,
-            error: dbError,
-            poolSize: pool.totalCount,
-            idleCount: pool.idleCount,
-            waitingCount: pool.waitingCount
-        },
-        session: {
-            storeType: sessionStore.constructor.name
-        },
-        environment: {
-            nodeEnv: process.env.NODE_ENV || 'not set',
-            port: PORT,
-            version: VERSION
-        }
-    });
-});
-
-app.get('/testConnection', async (req, res) => {
-    const html = `
-<!DOCTYPE html>
-<html>
-<head>
-    <title>DB Connection Test</title>
-    <style>
-        body { font-family: monospace; padding: 20px; background: #1a1a1a; color: #00ff00; }
-        .success { color: #00ff00; }
-        .error { color: #ff0000; }
-        .info { color: #ffaa00; }
-        pre { background: #000; padding: 10px; border-radius: 5px; }
-    </style>
-</head>
-<body>
-    <h1>🔌 Database Connection Test</h1>
-    <pre id="output">Testing connection...</pre>
-    <script>
-        (async () => {
-            const output = document.getElementById('output');
-            let result = '';
-            
-            try {
-                result += '📡 Fetching /api/debug...\\n\\n';
-                const res = await fetch('/api/debug');
-                const data = await res.json();
-                
-                result += '=== DATABASE INFO ===\\n';
-                result += 'URL: ' + data.database.url + '\\n';
-                result += 'Status: ' + data.database.status + '\\n';
-                
-                if (data.database.error) {
-                    result += '❌ Error: ' + data.database.error + '\\n';
-                } else {
-                    result += '✅ Connection OK\\n';
-                }
-                
-                result += '\\nPool Size: ' + data.database.poolSize + '\\n';
-                result += 'Idle Connections: ' + data.database.idleCount + '\\n';
-                result += 'Waiting: ' + data.database.waitingCount + '\\n';
-                
-                result += '\\n=== SESSION INFO ===\\n';
-                result += 'Store Type: ' + data.session.storeType + '\\n';
-                
-                result += '\\n=== ENVIRONMENT ===\\n';
-                result += 'Node ENV: ' + data.environment.nodeEnv + '\\n';
-                result += 'Port: ' + data.environment.port + '\\n';
-                
-                output.className = data.database.status === 'connected' ? 'success' : 'error';
-            } catch (err) {
-                result += '\\n❌ FETCH ERROR: ' + err.message;
-                output.className = 'error';
-            }
-            
-            output.textContent = result;
-        })();
-    </script>
-</body>
-</html>
-    `;
-    res.send(html);
-});
-
-app.get('/api/config', (req, res) => {
-    res.json({
-        CONTRACT_ADDRESS: process.env.CONTRACT_ADDRESS || "0x7B25Ce9800CCE4309E92e2834E09bD89453d90c5",
-        RPC_URL: rpcUrls[0] || "",
-        CHAIN_ID: CHAIN_ID
-    });
-});
 
 
 
@@ -618,7 +521,7 @@ app.get('/api/batches', authenticateToken, async (req, res) => {
 });
 
 // Get batch details + transactions (Public for polling - no auth required for GET)
-app.get('/api/batches/:id', async (req, res) => {
+app.get('/api/batches/:id', authenticateToken, async (req, res) => {
     try {
         const batchId = parseInt(req.params.id);
 
@@ -735,20 +638,7 @@ app.post('/api/batches', authenticateToken, async (req, res) => {
 });
 
 
-// --- API: Admin SQL (Debugging) ---
-app.post('/api/admin/sql', async (req, res) => {
-    try {
-        const { query } = req.body;
-        if (!query) return res.status(400).json({ error: "Query required" });
 
-        console.log(`[AdminSQL] Executing: ${query} `);
-        const result = await pool.query(query);
-        res.json({ rows: result.rows, rowCount: result.rowCount, fields: result.fields });
-    } catch (err) {
-        console.error(`[AdminSQL] Error: ${err.message} `);
-        res.status(500).json({ error: err.message });
-    }
-});
 
 // --- API: Admin Unblock Faucets ---
 app.post('/api/admin/unblock-faucets', authenticateToken, async (req, res) => {
@@ -1057,7 +947,7 @@ app.post('/api/batches/:id/register-merkle', authenticateToken, async (req, res)
         // Safety check: verify user owns this batch before calculating Merkle
         const ownershipCheck = await pool.query('SELECT funder_address FROM batches WHERE id = $1', [batchId]);
         if (req.user.role !== 'SUPER_ADMIN' && ownershipCheck.rows[0]?.funder_address?.toLowerCase() !== normalizedFunder) {
-            return res.status(403).json({ error: 'You do not own this batch' });
+            return res.status(401).json({ error: 'You do not own this batch' });
         }
 
         const txRes = await client.query('SELECT id, wallet_address_to, amount_usdc FROM batch_transactions WHERE batch_id = $1 ORDER BY id ASC', [batchId]);
@@ -1261,7 +1151,7 @@ app.post('/api/batches/:id/setup', authenticateToken, async (req, res) => {
 
         if (req.user.role !== 'SUPER_ADMIN' && batchOwner !== userAddress) {
             console.warn(`[Setup] Access Denied.Owner = ${batchOwner}, User = ${userAddress} `);
-            return res.status(403).json({ error: 'Access denied' });
+            return res.status(401).json({ error: 'Access denied' });
         }
 
         const { relayerCount } = req.body;
@@ -1316,7 +1206,7 @@ app.post('/api/batches/:id/execute', authenticateToken, async (req, res) => {
         if (req.user.role !== 'SUPER_ADMIN' && batchOwner !== userAddress) {
             console.log('❌ Access denied - User is not owner');
             console.log('========================================\n');
-            return res.status(403).json({ error: 'Access denied' });
+            return res.status(401).json({ error: 'Access denied' });
         }
 
         if (!batch.merkle_root) {
@@ -1475,7 +1365,7 @@ app.get('/api/balances/:address', authenticateToken, async (req, res) => {
 
         // Security: Only allow fetching your own balance
         if (address.toLowerCase() !== userAddress) {
-            return res.status(403).json({ error: 'Unauthorized' });
+            return res.status(401).json({ error: 'Unauthorized' });
         }
 
         const balances = await globalRpcManager.execute(async (provider) => {
@@ -1526,7 +1416,7 @@ app.get('/api/contract/nonce/:address', authenticateToken, async (req, res) => {
 
         // Security: Only allow fetching your own nonce
         if (address.toLowerCase() !== userAddress) {
-            return res.status(403).json({ error: 'Unauthorized' });
+            return res.status(401).json({ error: 'Unauthorized' });
         }
 
         const nonce = await globalRpcManager.execute(async (provider) => {
@@ -1551,7 +1441,7 @@ app.get('/api/usdc/nonce/:address', authenticateToken, async (req, res) => {
 
         // Security: Only allow fetching your own nonce
         if (address.toLowerCase() !== userAddress) {
-            return res.status(403).json({ error: 'Unauthorized' });
+            return res.status(401).json({ error: 'Unauthorized' });
         }
 
         const nonce = await globalRpcManager.execute(async (provider) => {
@@ -1568,20 +1458,7 @@ app.get('/api/usdc/nonce/:address', authenticateToken, async (req, res) => {
     }
 });
 
-app.get('/api/logs', async (req, res) => {
-    res.json({ message: "Logs are available in the console" });
-});
 
-app.get('/api/config', (req, res) => {
-    res.json({
-        RPC_URL: rpcUrls[0] || "",
-        WS_RPC_URL: process.env.WS_RPC_URL || "",
-        CONTRACT_ADDRESS: process.env.CONTRACT_ADDRESS || "0x7B25Ce9800CCE4309E92e2834E09bD89453d90c5",
-        CHAIN_ID: parseInt(process.env.CHAIN_ID || '137'),
-        // Unit: Seconds (Default: 2 Hours = 7200s)
-        PERMIT_DEADLINE_SECONDS: process.env.PERMIT_DEADLINE_SECONDS || 7200
-    });
-});
 
 // --- Helper for Merkle Proof ---
 async function getMerkleProof(client, batchId, transactionId) {
@@ -1625,57 +1502,88 @@ async function getMerkleProof(client, batchId, transactionId) {
 }
 
 // Get Merkle Proof for a Transaction
-app.get('/api/batches/:batchId/transactions/:txId/proof', async (req, res) => {
-    const client = await pool.connect();
+app.get('/api/batches/:batchId/transactions/:txId/proof', authenticateToken, async (req, res) => {
+    let client;
     try {
-        const batchId = req.params.batchId;
-        const txId = req.params.txId;
+        const batchId = parseInt(req.params.batchId);
+        const txId = parseInt(req.params.txId);
+
+        if (isNaN(batchId) || isNaN(txId)) {
+            return res.status(400).json({ error: 'Invalid ID parameters' });
+        }
+
+        client = await pool.connect();
         const proof = await getMerkleProof(client, batchId, txId);
         res.json({ proof });
     } catch (err) {
-        console.error("Proof Error:", err);
+        console.error(`[Proof] ❌ Error for Batch ${req.params.batchId}, Tx ${req.params.txId}:`, err.message);
         res.status(500).json({ error: err.message });
     } finally {
-        client.release();
+        if (client) client.release();
+    }
+});
+
+// New Endpoint: Verify Merkle Proof On-Chain using Balanced RPCs
+app.post('/api/batches/:batchId/transactions/:txId/verify-onchain', authenticateToken, async (req, res) => {
+    try {
+        const batchId = parseInt(req.params.batchId);
+        const txId = parseInt(req.params.txId);
+        const { funder, recipient, amount, merkleRoot, proof } = req.body;
+
+        if (!funder || !recipient || !amount || !merkleRoot || !proof) {
+            return res.status(400).json({ error: 'Missing verification data' });
+        }
+
+        // --- DIAGNOSTIC: Calculate Leaf locally to compare ---
+        const abiCoder = ethers.AbiCoder.defaultAbiCoder();
+        const encoded = abiCoder.encode(
+            ["uint256", "address", "uint256", "uint256", "address", "address", "uint256"],
+            [CHAIN_ID, process.env.CONTRACT_ADDRESS || "0x7B25Ce9800CCE4309E92e2834E09bD89453d90c5", BigInt(batchId), BigInt(txId), funder.toLowerCase().trim(), recipient.toLowerCase().trim(), BigInt(amount)]
+        );
+        const leafHash = ethers.keccak256(encoded);
+
+        // --- DIAGNOSTIC: Local JS Verification ---
+        let current = leafHash;
+        for (const p of proof) {
+            const [h1, h2] = [current, p];
+            const [first, second] = BigInt(h1) < BigInt(h2) ? [h1, h2] : [h2, h1];
+            current = ethers.solidityPackedKeccak256(['bytes32', 'bytes32'], [first, second]);
+        }
+        const locallyVerified = (current.toLowerCase() === merkleRoot.toLowerCase());
+
+        console.log(`[VerifyDiag] Tx ${txId} | Local Result: ${locallyVerified ? '✅ OK' : '❌ FAIL'}`);
+        if (!locallyVerified) {
+            console.warn(`[VerifyDiag]   Calculated Root: ${current}`);
+            console.warn(`[VerifyDiag]   Expected Root:   ${merkleRoot}`);
+        }
+
+        const contractAddress = process.env.CONTRACT_ADDRESS || "0x7B25Ce9800CCE4309E92e2834E09bD89453d90c5";
+        const abi = ["function validateMerkleProofDetails(uint256, uint256, address, address, uint256, bytes32, bytes32[]) external view returns (bool)"];
+
+        const isValid = await globalRpcManager.execute(async (provider) => {
+            const contract = new ethers.Contract(contractAddress, abi, provider);
+            return await contract.validateMerkleProofDetails(
+                BigInt(batchId),
+                BigInt(txId),
+                funder,
+                recipient,
+                BigInt(amount),
+                merkleRoot,
+                proof
+            );
+        }, 5);
+
+        res.json({ isValid, locallyVerified, leafHash });
+    } catch (err) {
+        console.error(`[VerifyAPI] ❌ Error for Batch ${req.params.batchId}, Tx ${req.params.txId}:`, err.message);
+        res.status(500).json({ error: err.message });
     }
 });
 
 // Fallback para SPA moved to bottom
 
 
-// Setup Endpoint for DB migrations
-app.get('/api/setup', async (req, res) => {
-    const client = await pool.connect();
-    try {
-        console.log("Running DB Setup v2.2.15...");
 
-        // 1. Ensure updated_at exists
-        await client.query(`
-            ALTER TABLE batches
-            ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();
-`);
-
-        // 2. Diagnostics: List columns
-        const colRes = await client.query(`
-            SELECT column_name 
-            FROM information_schema.columns 
-            WHERE table_name = 'batches'
-    `);
-        const columns = colRes.rows.map(r => r.column_name);
-
-        res.json({
-            version: "2.2.15",
-            message: "Database setup diagnostic completed.",
-            columns_found: columns,
-            success: columns.includes('updated_at')
-        });
-    } catch (err) {
-        console.error("Setup Error:", err);
-        res.status(500).json({ error: err.message });
-    } finally {
-        client.release();
-    }
-});
 
 // 8. Get Transactions for a Batch (Server-Side Pagination & Filtering)
 app.get('/api/batches/:id/transactions', authenticateToken, async (req, res) => {
@@ -1693,7 +1601,7 @@ app.get('/api/batches/:id/transactions', authenticateToken, async (req, res) => 
         const batchFunder = batchRes.rows[0].funder_address?.toLowerCase();
 
         if (req.user.role !== 'SUPER_ADMIN' && batchFunder !== userAddress) {
-            return res.status(403).json({ error: 'Access denied' });
+            return res.status(401).json({ error: 'Access denied' });
         }
 
         const { page = 1, limit = 10, wallet, amount, status } = req.query;
@@ -1752,7 +1660,7 @@ app.get('/api/batches/:id/transactions', authenticateToken, async (req, res) => 
 });
 
 // 9. Get Relayers for a Batch (Live Balance Sync)
-app.get('/api/relayers/:batchId', async (req, res) => {
+app.get('/api/relayers/:batchId', authenticateToken, async (req, res) => {
     try {
         const batchId = parseInt(req.params.batchId);
         // Fetch relayers from DB
@@ -1815,83 +1723,7 @@ r.id, r.address, r.status, r.last_activity, r.transactionhash_deposit, r.last_ba
 });
 
 
-// --- DEBUG VAULT ENDPOINT (TEMPORARY - DIAGNOSTIC MODE) ---
-app.get('/api/debug/vault', async (req, res) => {
-    try {
-        const testUuid = ethers.Wallet.createRandom().address;
-        const testKey = "test-key-content";
-        const VAULT_ADDR = process.env.VAULT_ADDR || "http://vault-railway-template.railway.internal:8200";
-        const VAULT_TOKEN = process.env.VAULT_TOKEN;
 
-        console.log(`[Debug] Testing Vault Direct connection to: ${VAULT_ADDR} `);
-
-        if (!VAULT_TOKEN) {
-            return res.status(500).json({ success: false, error: "VAULT_TOKEN missing in env" });
-        }
-
-        const headers = {
-            'X-Vault-Token': VAULT_TOKEN,
-            'Content-Type': 'application/json'
-        };
-
-        // 1. Check Mounts
-        let mounts = {};
-        try {
-            const mountsRes = await fetch(`${VAULT_ADDR} /v1/sys / mounts`, { headers });
-            if (mountsRes.ok) {
-                mounts = await mountsRes.json();
-            } else {
-                mounts = { error: await mountsRes.text(), status: mountsRes.status };
-            }
-        } catch (e) {
-            mounts = { error: e.message, type: "network_error" };
-        }
-
-        // 2. Try Raw Write
-        const path = `secret / data / faucets / ${testUuid.toLowerCase()} `;
-        const payload = {
-            data: { private_key: testKey, debug: true }
-        };
-
-        let writeResult = {};
-        try {
-            const writeRes = await fetch(`${VAULT_ADDR} /v1/${path} `, {
-                method: 'POST',
-                headers,
-                body: JSON.stringify(payload)
-            });
-
-            if (writeRes.ok) {
-                writeResult = await writeRes.json();
-            } else {
-                writeResult = {
-                    success: false,
-                    status: writeRes.status,
-                    errorText: await writeRes.text()
-                };
-            }
-        } catch (e) {
-            writeResult = { error: e.message };
-        }
-
-        // Vault integration removed
-        // const wrapperSaved = await vault.saveFaucetKey(testUuid, testKey);
-        const wrapperSaved = false;
-
-        res.json({
-            success: wrapperSaved,
-            debug_info: {
-                vault_addr: VAULT_ADDR,
-                token_preview: VAULT_TOKEN ? `${VAULT_TOKEN.substring(0, 4)}...` : 'NONE',
-                mounts_check: mounts,
-                raw_write_attempt: writeResult,
-                wrapper_result: wrapperSaved
-            }
-        });
-    } catch (e) {
-        res.status(500).json({ success: false, error: e.message, stack: e.stack });
-    }
-});
 
 
 // Get first transaction ID of a batch (for Excel export offset calculation)
@@ -1913,7 +1745,7 @@ app.get('/api/batches/:id/first-transaction', authenticateToken, async (req, res
         const userAddress = req.user.address.toLowerCase();
 
         if (req.user.role !== 'SUPER_ADMIN' && batchOwner !== userAddress) {
-            return res.status(403).json({ error: 'Access denied' });
+            return res.status(401).json({ error: 'Access denied' });
         }
 
         const result = await pool.query(
@@ -1969,7 +1801,7 @@ app.get('/api/transactions', authenticateToken, async (req, res) => {
 
         // Only allow batch owner or SUPER_ADMIN to export
         if (req.user.role !== 'SUPER_ADMIN' && batchOwner !== userAddress) {
-            return res.status(403).json({ error: 'Access denied: You can only export your own batches' });
+            return res.status(401).json({ error: 'Access denied: You can only export your own batches' });
         }
 
         // Build dynamic query with filters
@@ -2037,8 +1869,11 @@ app.get('/api/recovery/batches', authenticateToken, async (req, res) => {
     }
 });
 
-// Fallback para SPA (Al final de todo)
+// Fallback para SPA (Al final de todo) - Excluir /api/* para devolver 404 real en endpoints inexistentes
 app.get('*', (req, res) => {
+    if (req.path.startsWith('/api/')) {
+        return res.status(404).json({ error: 'Endpoint not found' });
+    }
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
@@ -2057,7 +1892,7 @@ app.post('/api/batches/:id/return-funds', authenticateToken, async (req, res) =>
         const batchOwner = ownerRes.rows[0].funder_address?.toLowerCase();
 
         if (req.user.role !== 'SUPER_ADMIN' && batchOwner !== req.user.address.toLowerCase()) {
-            return res.status(403).json({ error: 'Access denied' });
+            return res.status(401).json({ error: 'Access denied' });
         }
 
         // Use BATCH OWNER'S faucet
@@ -2080,59 +1915,13 @@ app.post('/api/batches/:id/return-funds', authenticateToken, async (req, res) =>
     }
 });
 
-// --- TEMPORARY: Execute Faucet Constraints SQL ---
-app.get('/api/admin/add-faucet-constraints', async (req, res) => {
-    try {
-        const results = [];
 
-        // 1. Add UNIQUE constraint
-        try {
-            await pool.query(`
-                ALTER TABLE faucets 
-                ADD CONSTRAINT faucets_funder_address_unique
-UNIQUE(funder_address)
-    `);
-            results.push({ step: 1, status: 'SUCCESS', message: 'UNIQUE constraint added' });
-        } catch (e) {
-            if (e.message.includes('already exists')) {
-                results.push({ step: 1, status: 'SKIPPED', message: 'UNIQUE constraint already exists' });
-            } else {
-                throw e;
-            }
-        }
-
-        // 2. Create index
-        await pool.query(`
-            CREATE INDEX IF NOT EXISTS idx_faucets_funder_address_lower 
-            ON faucets(LOWER(funder_address))
-    `);
-        results.push({ step: 2, status: 'SUCCESS', message: 'Index created' });
-
-        // 3. Check for duplicates
-        const duplicates = await pool.query(`
-            SELECT funder_address, COUNT(*) as count
-            FROM faucets
-            GROUP BY funder_address
-            HAVING COUNT(*) > 1
-    `);
-        results.push({
-            step: 3,
-            status: duplicates.rows.length === 0 ? 'SUCCESS' : 'WARNING',
-            message: `Found ${duplicates.rows.length} duplicate funder(s)`,
-            duplicates: duplicates.rows
-        });
-
-        res.json({ success: true, results });
-    } catch (e) {
-        res.status(500).json({ success: false, error: e.message, stack: e.stack });
-    }
-});
 
 // ADMIN: Get Rescue Status (Dashboard)
 app.get('/api/admin/rescue-status', authenticateToken, async (req, res) => {
     try {
         if (req.user.role !== 'SUPER_ADMIN') {
-            return res.status(403).json({ error: 'Access denied. SUPER_ADMIN role required.' });
+            return res.status(401).json({ error: 'Access denied. SUPER_ADMIN role required.' });
         }
 
         const batchId = req.query.batchId ? parseInt(req.query.batchId) : null;
@@ -2226,7 +2015,7 @@ r.address,
 app.post('/api/admin/rescue-execute', authenticateToken, async (req, res) => {
     try {
         if (req.user.role !== 'SUPER_ADMIN') {
-            return res.status(403).json({ error: 'Access denied. SUPER_ADMIN role required.' });
+            return res.status(401).json({ error: 'Access denied. SUPER_ADMIN role required.' });
         }
 
         const { batchId } = req.body;
@@ -2234,7 +2023,6 @@ app.post('/api/admin/rescue-execute', authenticateToken, async (req, res) => {
         console.log(`[Admin] 💰 User ${req.user.address} starting rescue${batchId ? ` for batch ${batchId}` : ' for all relayers'}...`);
 
         // Use a generic faucet (admin-controlled) or infer from batch
-        // Since this is Admin global rescue, we need to be careful with Faucet context.
         // For simplicity/safety, we instantiate specific engines per batch found.
 
         let targetBatches = [];
