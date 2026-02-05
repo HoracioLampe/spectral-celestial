@@ -158,8 +158,10 @@ async function exportToExcel() {
 
             // Format amounts to strictly 6 decimal places (USDC raw precision)
             const planFormatted = tx.amount ? (parseFloat(tx.amount) / 1000000).toFixed(6) : '0.000000';
-            const sentValue = tx.status === 'COMPLETED' ? (tx.amount_sent || tx.amount) : (tx.amount_sent || null);
-            const sentFormatted = sentValue ? (parseFloat(sentValue) / 1000000).toFixed(6) : '0.000000';
+
+            // STRICT MAPPING: Only use amount_sent (from amount_transferred in DB)
+            const sentRaw = tx.amount_sent ? parseFloat(tx.amount_sent) : 0;
+            const sentFormatted = (sentRaw / 1000000).toFixed(6);
 
             data.push([
                 sequentialId,                                   // ID REF (preserves original numbering)
