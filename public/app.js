@@ -3587,23 +3587,21 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function showInstantPaymentSection() {
-    // Hide other sections (mainBatchPanel is now the shared container)
-    const toHide = ['batchSection', 'restrictedView', 'contractAdminSection'];
-    toHide.forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.classList.add('hidden');
+    // Ocultar secciones y el mainBatchPanel
+    document.getElementById('mainBatchPanel')?.classList.add('hidden');
+    ['batchSection', 'contractAdminSection', 'restrictedView'].forEach(id => {
+        document.getElementById(id)?.classList.add('hidden');
     });
 
-    // Show instant payment section
+    // Mostrar IP (tiene su propio glass-panel)
     const ipSection = document.getElementById('instantPaymentSection');
     if (ipSection) ipSection.classList.remove('hidden');
 
-    // Update active nav link
+    // Marcar nav activo
     document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
-    const navIP = document.getElementById('navInstantPayment');
-    if (navIP) navIP.classList.add('active');
+    document.getElementById('navInstantPayment')?.classList.add('active');
 
-    // Load data
+    // Cargar datos
     ipLoadPolicy();
     ipLoadTransfers(1);
 }
@@ -3961,12 +3959,13 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function showContractAdminSection() {
-    // Ocultar las demás secciones
-    ['batchSection', 'instantPaymentSection', 'restrictedView'].forEach(id => {
+    // Ocultar mainBatchPanel y demás secciones
+    document.getElementById('mainBatchPanel')?.classList.add('hidden');
+    ['instantPaymentSection', 'restrictedView'].forEach(id => {
         document.getElementById(id)?.classList.add('hidden');
     });
 
-    // Mostrar la sección
+    // Mostrar CAD (tiene su propio glass-panel)
     const section = document.getElementById('contractAdminSection');
     if (section) section.classList.remove('hidden');
 
@@ -3974,7 +3973,7 @@ function showContractAdminSection() {
     document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
     document.getElementById('navContractAdmin')?.classList.add('active');
 
-    // Cargar info on-chain automáticamente
+    // Cargar info on-chain
     cadLoadContractStatus();
 }
 

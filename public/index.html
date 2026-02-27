@@ -113,9 +113,6 @@
                     <img src="assets/Transparent Logo.svg" alt="DappsFactory" class="logo-img">
                 </div>
                 <nav class="side-nav">
-                    <a href="#" class="nav-link">
-                        <span class="nav-icon">📊</span> Dashboard
-                    </a>
                     <a href="#" class="nav-link active">
                         <span class="nav-icon">📤</span> Transacciones
                     </a>
@@ -139,11 +136,9 @@
             </div>
 
             <div class="sidebar-bottom">
-                <button id="themeToggle" class="theme-toggle" title="Cambiar Tema">
-                    <span id="themeIcon">🌙</span>
-                </button>
                 <div id="walletInfo" class="wallet-info hidden"
                     style="display: flex; flex-direction: column; gap: 1rem;">
+
 
                     <!-- Funder Wallet Section -->
                     <div class="wallet-section">
@@ -600,11 +595,13 @@
         </div> <!-- Fin de batchDetailView -->
     </div> <!-- Fin batchSection -->
 
-    <!-- INSTANT PAYMENT SECTION -->
-    <div id="instantPaymentSection" class="hidden">
+    </main> <!-- END mainBatchPanel -->
+
+    <!-- INSTANT PAYMENT SECTION (mismo glass-panel layout que Transacciones) -->
+    <div id="instantPaymentSection" class="glass-panel hidden">
 
         <!-- POLICY PANEL -->
-        <div class="ip-panel" id="ipPolicyPanel">
+        <div id="ipPolicyPanel">
             <div class="top-bar">
                 <h2>⚡ Instant Payments</h2>
                 <div id="ipPolicyStatus" class="ip-policy-placeholder">Cargando estado del permit...</div>
@@ -731,8 +728,8 @@
         </div>
     </div> <!-- Fin instantPaymentSection -->
 
-    <!-- CONTRACT ADMIN SECTION (SUPER_ADMIN only) -->
-    <div id="contractAdminSection" class="hidden">
+    <!-- CONTRACT ADMIN SECTION (mismo glass-panel layout que Transacciones, SUPER_ADMIN only) -->
+    <div id="contractAdminSection" class="glass-panel hidden">
         <div class="ip-panel">
             <div class="top-bar">
                 <h2>🔐 Contract Admin</h2>
@@ -867,8 +864,6 @@
             </div>
         </div>
     </div> <!-- END CONTRACT ADMIN SECTION -->
-
-    </main> <!-- END mainBatchPanel -->
 
     <!-- MODAL CREAR LOTE -->
     <div id="batchModal" class="modal">
