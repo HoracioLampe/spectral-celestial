@@ -3685,10 +3685,98 @@ window.ipActivatePolicy = async () => {
         return;
     }
 
-    statusEl.textContent = '⏳ Activando permit...';
+    statusEl.textContent = '⏳ Verificando registro on-chain...';
     statusEl.style.color = '#60a5fa';
 
     try {
+        // ── PASO 1: Verificar si el relayer ya está registrado ──────────────
+        const statusRes = await authenticatedFetch('/api/v1/instant/relayer/status');
+        const statusData = await statusRes.json();
+
+        if (!statusData.contractReady) {
+            statusEl.textContent = '⚠️ Contrato no configurado en el servidor (INSTANT_PAYMENT_CONTRACT_ADDRESS)';
+            statusEl.style.color = '#f59e0b';
+            return;
+        }
+
+        if (!statusData.registered) {
+            // ── PASO 1b: Registrar relayer via EIP-712 ──────────────────────
+            statusEl.textContent = '🦊 MetaMask: firmá la autorización del relayer...';
+            statusEl.style.color = '#f59e0b';
+
+            if (!signer) {
+                statusEl.textContent = '❌ Conectá MetaMask primero';
+                statusEl.style.color = '#ef4444';
+                return;
+            }
+
+            // Signature valid for 1 hour
+            const registerDeadline = Math.floor(Date.now() / 1000) + 3600;
+            const contractAddress = statusData.contractAddress;
+            const expectedFaucet = statusData.expectedFaucet;
+
+            if (!expectedFaucet) {
+                statusEl.textContent = '❌ No se encontró faucet para esta wallet';
+                statusEl.style.color = '#ef4444';
+                return;
+            }
+
+            // EIP-712 domain must match the contract's __EIP712_init("InstantPayment", "1")
+            const domain = {
+                name: 'InstantPayment',
+                version: '1',
+                chainId: 137, // Polygon Mainnet
+                verifyingContract: contractAddress
+            };
+
+            const types = {
+                RegisterRelayer: [
+                    { name: 'coldWallet', type: 'address' },
+                    { name: 'relayer', type: 'address' },
+                    { name: 'deadline', type: 'uint256' },
+                ]
+            };
+
+            const message = {
+                coldWallet: userAddress,
+                relayer: expectedFaucet,
+                deadline: registerDeadline,
+            };
+
+            let signature;
+            try {
+                signature = await signer.signTypedData(domain, types, message);
+            } catch (signErr) {
+                statusEl.textContent = '❌ Firma cancelada: ' + signErr.message;
+                statusEl.style.color = '#ef4444';
+                return;
+            }
+
+            statusEl.textContent = '⏳ Registrando relayer on-chain (el faucet paga el gas)...';
+            statusEl.style.color = '#60a5fa';
+
+            const regRes = await authenticatedFetch('/api/v1/instant/relayer/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ deadline: registerDeadline, signature })
+            });
+            const regData = await regRes.json();
+
+            if (!regRes.ok || !regData.success) {
+                statusEl.textContent = '❌ Error registrando relayer: ' + (regData.error || 'Desconocido');
+                statusEl.style.color = '#ef4444';
+                return;
+            }
+
+            statusEl.textContent = '✅ Relayer registrado. TX: ' + regData.tx_hash.slice(0, 10) + '...';
+            statusEl.style.color = '#10b981';
+            await new Promise(r => setTimeout(r, 1200));
+        }
+
+        // ── PASO 2: Activar política (llamado desde el faucet, no MetaMask) ──
+        statusEl.textContent = '⏳ Activando política de pago...';
+        statusEl.style.color = '#60a5fa';
+
         const res = await authenticatedFetch('/api/v1/instant/policy/activate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -3697,14 +3785,14 @@ window.ipActivatePolicy = async () => {
         const data = await res.json();
 
         if (res.ok && data.success) {
-            statusEl.textContent = '✅ Permit activado. TX: ' + (data.tx_hash || '');
+            statusEl.textContent = '✅ Permit activado. TX: ' + (data.tx_hash?.slice(0, 10) || '—') + '...';
             statusEl.style.color = '#10b981';
             setTimeout(() => {
                 document.getElementById('ipActivateForm').classList.add('hidden');
                 ipLoadPolicy();
             }, 2000);
         } else {
-            statusEl.textContent = '❌ Error: ' + (data.error || 'Desconocido');
+            statusEl.textContent = '❌ Error activando política: ' + (data.error || 'Desconocido');
             statusEl.style.color = '#ef4444';
         }
     } catch (err) {

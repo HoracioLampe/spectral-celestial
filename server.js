@@ -2327,14 +2327,22 @@ console.log("🔄 Transaction Monitor: Enabled (checks every 60s)");
 const xlsx_ip = require('xlsx');
 const INSTANT_CONTRACT_ADDRESS = process.env.INSTANT_PAYMENT_CONTRACT_ADDRESS;
 
-// Helper: get contract instance
+// Helper: get contract instance (full ABI)
 function getInstantContract(signerOrProvider) {
     const abi = [
+        // Relayer registration
+        'function registerRelayer(address coldWallet, address relayer, uint256 deadline, bytes calldata signature) external',
+        'function setRelayer(address coldWallet, address relayer) external',
+        'function coldWalletRelayer(address coldWallet) external view returns (address)',
+        // Policy
         'function activatePolicy(address coldWallet, uint256 totalAmount, uint256 deadline) external',
         'function resetPolicy(address coldWallet) external',
         'function getPolicyBalance(address coldWallet) external view returns (uint256, uint256, uint256, uint256, bool, bool)',
+        // Admin
         'function pause() external',
         'function unpause() external',
+        // EIP-712 domain separator (for frontend)
+        'function domainSeparator() external view returns (bytes32)',
     ];
     return new ethers.Contract(INSTANT_CONTRACT_ADDRESS, abi, signerOrProvider);
 }
@@ -2673,6 +2681,78 @@ app.get('/api/v1/instant/webhook/logs', authenticateToken, async (req, res) => {
         const { rows } = await pool.query(query, params);
         res.json(rows);
     } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ── GET /api/v1/instant/relayer/status ─────────────────────────────────────────
+// Returns on-chain relayer registration status for the authenticated cold wallet.
+app.get('/api/v1/instant/relayer/status', authenticateToken, async (req, res) => {
+    try {
+        const coldWallet = req.user.address.toLowerCase();
+        if (!INSTANT_CONTRACT_ADDRESS) {
+            return res.json({ registered: false, relayer: null, contractReady: false });
+        }
+        const provider = globalRpcManager.getProvider();
+        const contract = getInstantContract(provider);
+        const registeredRelayer = await contract.coldWalletRelayer(coldWallet);
+        const isRegistered = registeredRelayer && registeredRelayer !== ethers.ZeroAddress;
+
+        // Also fetch what the DB says the faucet should be
+        const faucet = await faucetService.getFaucetWallet(pool, provider, coldWallet);
+
+        res.json({
+            registered: isRegistered,
+            relayer: isRegistered ? registeredRelayer : null,
+            expectedFaucet: faucet?.address || null,
+            contractReady: true,
+            contractAddress: INSTANT_CONTRACT_ADDRESS
+        });
+    } catch (err) {
+        console.error('[IP] GET /relayer/status error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ── POST /api/v1/instant/relayer/register ───────────────────────────────────────
+// Receives an EIP-712 signature from the cold wallet and submits it to the contract.
+// The faucet wallet pays the gas for registerRelayer().
+app.post('/api/v1/instant/relayer/register', authenticateToken, async (req, res) => {
+    try {
+        const coldWallet = req.user.address.toLowerCase();
+        const { deadline, signature } = req.body;
+
+        if (!deadline || !signature) {
+            return res.status(400).json({ error: 'deadline and signature are required' });
+        }
+        if (!INSTANT_CONTRACT_ADDRESS) {
+            return res.status(503).json({ error: 'Instant Payment contract not configured' });
+        }
+
+        const provider = globalRpcManager.getProvider();
+        const faucetWallet = await faucetService.getFaucetWallet(pool, provider, coldWallet);
+        const contract = getInstantContract(faucetWallet.connect(provider));
+
+        console.log(`[IP] Registering relayer: coldWallet=${coldWallet}, relayer=${faucetWallet.address}`);
+
+        const tx = await contract.registerRelayer(
+            coldWallet,
+            faucetWallet.address,
+            parseInt(deadline),
+            signature,
+            { gasLimit: 100000 }
+        );
+        await tx.wait(1);
+
+        console.log(`[IP] Relayer registered on-chain. TX: ${tx.hash}`);
+        res.json({
+            success: true,
+            tx_hash: tx.hash,
+            cold_wallet: coldWallet,
+            relayer: faucetWallet.address
+        });
+    } catch (err) {
+        console.error('[IP] POST /relayer/register error:', err);
         res.status(500).json({ error: err.message });
     }
 });
