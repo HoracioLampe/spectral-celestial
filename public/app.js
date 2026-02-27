@@ -3587,15 +3587,13 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function showInstantPaymentSection() {
-    // Ocultar secciones y el mainBatchPanel
-    document.getElementById('mainBatchPanel')?.classList.add('hidden');
+    // Ocultar otras secciones DENTRO del mainBatchPanel (mismo patron que batchSection)
     ['batchSection', 'contractAdminSection', 'restrictedView'].forEach(id => {
         document.getElementById(id)?.classList.add('hidden');
     });
 
-    // Mostrar IP (tiene su propio glass-panel)
-    const ipSection = document.getElementById('instantPaymentSection');
-    if (ipSection) ipSection.classList.remove('hidden');
+    // Mostrar IP dentro del mainBatchPanel
+    document.getElementById('instantPaymentSection')?.classList.remove('hidden');
 
     // Marcar nav activo
     document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
@@ -3959,15 +3957,13 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function showContractAdminSection() {
-    // Ocultar mainBatchPanel y demás secciones
-    document.getElementById('mainBatchPanel')?.classList.add('hidden');
-    ['instantPaymentSection', 'restrictedView'].forEach(id => {
+    // Ocultar otras secciones DENTRO del mainBatchPanel (mismo patron que batchSection)
+    ['batchSection', 'instantPaymentSection', 'restrictedView'].forEach(id => {
         document.getElementById(id)?.classList.add('hidden');
     });
 
-    // Mostrar CAD (tiene su propio glass-panel)
-    const section = document.getElementById('contractAdminSection');
-    if (section) section.classList.remove('hidden');
+    // Mostrar CAD dentro del mainBatchPanel
+    document.getElementById('contractAdminSection')?.classList.remove('hidden');
 
     // Marcar nav activo
     document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
