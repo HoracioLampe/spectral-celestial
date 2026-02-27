@@ -13,6 +13,7 @@ const pgSession = require('connect-pg-simple')(session);
 const { generateNonce, SiweMessage } = require('siwe');
 const jwt = require('jsonwebtoken');
 const faucetService = require('./services/faucet'); // Import Faucet Service
+const InstantRelayerEngine = require('./services/instantRelayerEngine');
 require('dotenv').config();
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dappsfactory-secret-key-2026';
@@ -91,12 +92,24 @@ const initSessionTable = async (maxRetries = 5, delayMs = 2000) => {
 
 // Vault integration removed - not in use
 
+// ─── Instant Payment Migration ───────────────────────────────────────────────
+const initInstantPaymentTables = async () => {
+    try {
+        const sql = require('fs').readFileSync(require('path').join(__dirname, 'migrations/004_instant_payment.sql'), 'utf8');
+        await pool.query(sql);
+        console.log('[InstantPayment] ✅ DB tables verified/created');
+    } catch (err) {
+        console.error('[InstantPayment] ⚠️ Migration error:', err.message);
+    }
+};
+
 // Warm up the connection (don't block server start)
 let dbReady = false;
-initSessionTable().then(ready => {
+initSessionTable().then(async ready => {
     dbReady = ready;
     if (ready) {
-        console.log("🔥 Database connection warmed up successfully");
+        console.log('🔥 Database connection warmed up successfully');
+        await initInstantPaymentTables();
     }
 });
 
@@ -2306,6 +2319,383 @@ setInterval(monitorStuckTransactions, 60000); // Every 60 seconds
 console.log("🔄 Transaction Monitor: Enabled (checks every 60s)");
 
 // Debug routes removed and consolidated at top for performance and priority routing
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// === INSTANT PAYMENT API ===
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const xlsx_ip = require('xlsx');
+const INSTANT_CONTRACT_ADDRESS = process.env.INSTANT_PAYMENT_CONTRACT_ADDRESS;
+
+// Helper: get contract instance
+function getInstantContract(signerOrProvider) {
+    const abi = [
+        'function activatePolicy(address coldWallet, uint256 totalAmount, uint256 deadline) external',
+        'function resetPolicy(address coldWallet) external',
+        'function getPolicyBalance(address coldWallet) external view returns (uint256, uint256, uint256, uint256, bool, bool)',
+        'function pause() external',
+        'function unpause() external',
+    ];
+    return new ethers.Contract(INSTANT_CONTRACT_ADDRESS, abi, signerOrProvider);
+}
+
+// ── POST /api/v1/instant/transfer ──────────────────────────────────────────────
+// Accepts a transfer order from external API clients
+app.post('/api/v1/instant/transfer', authenticateToken, async (req, res) => {
+    try {
+        const funderAddress = req.user.address.toLowerCase();
+        const { transfer_id, destination_wallet, amount_usdc, webhook_url } = req.body;
+
+        if (!transfer_id || !destination_wallet || !amount_usdc) {
+            return res.status(400).json({ error: 'transfer_id, destination_wallet and amount_usdc are required' });
+        }
+        if (!ethers.isAddress(destination_wallet)) {
+            return res.status(400).json({ error: 'Invalid destination_wallet address' });
+        }
+        const amount = parseFloat(amount_usdc);
+        if (isNaN(amount) || amount <= 0) {
+            return res.status(400).json({ error: 'amount_usdc must be a positive number' });
+        }
+
+        // Check idempotency
+        const existing = await pool.query(
+            'SELECT transfer_id, status, tx_hash FROM instant_transfers WHERE transfer_id=$1',
+            [transfer_id]
+        );
+        if (existing.rows.length > 0) {
+            const ex = existing.rows[0];
+            return res.status(409).json({
+                error: 'Transfer already exists',
+                transfer_id: ex.transfer_id,
+                status: ex.status,
+                tx_hash: ex.tx_hash
+            });
+        }
+
+        // Check active policy
+        const policy = await pool.query(
+            'SELECT * FROM instant_policies WHERE cold_wallet=$1 AND is_active=true',
+            [funderAddress]
+        );
+        if (policy.rows.length === 0) {
+            return res.status(402).json({ error: 'No active policy for this funder. Please activate a permit first.' });
+        }
+        const pol = policy.rows[0];
+        const remaining = parseFloat(pol.total_amount) - parseFloat(pol.consumed_amount);
+        if (amount > remaining) {
+            return res.status(402).json({ error: `Insufficient policy balance. Available: ${remaining.toFixed(6)} USDC` });
+        }
+        if (new Date(pol.deadline) < new Date()) {
+            return res.status(402).json({ error: 'Policy has expired. Please reactivate the permit.' });
+        }
+
+        // Insert transfer
+        const result = await pool.query(`
+            INSERT INTO instant_transfers
+              (transfer_id, funder_address, destination_wallet, amount_usdc, status, webhook_url)
+            VALUES ($1, $2, $3, $4, 'pending', $5)
+            RETURNING *
+        `, [transfer_id, funderAddress, destination_wallet.toLowerCase(), amount, webhook_url || null]);
+
+        return res.status(201).json({
+            success: true,
+            transfer_id,
+            status: 'pending',
+            message: 'Transfer queued successfully'
+        });
+    } catch (err) {
+        console.error('[IP] POST /transfer error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ── GET /api/v1/instant/transfers ──────────────────────────────────────────────
+app.get('/api/v1/instant/transfers', authenticateToken, async (req, res) => {
+    try {
+        const funderAddress = req.user.address.toLowerCase();
+        const isAdmin = req.user.role === 'SUPER_ADMIN';
+        const { status, date_from, date_to, wallet, amount, page = 1, limit = 20 } = req.query;
+
+        let where = 'WHERE 1=1';
+        const params = [];
+
+        if (!isAdmin) {
+            params.push(funderAddress);
+            where += ` AND funder_address=$${params.length}`;
+        }
+        if (status && status !== 'ALL') {
+            params.push(status);
+            where += ` AND status=$${params.length}`;
+        }
+        if (date_from) {
+            params.push(date_from);
+            where += ` AND created_at >= $${params.length}::date`;
+        }
+        if (date_to) {
+            params.push(date_to);
+            where += ` AND created_at < ($${params.length}::date + INTERVAL '1 day')`;
+        }
+        if (wallet) {
+            params.push(`%${wallet.toLowerCase()}%`);
+            where += ` AND destination_wallet LIKE $${params.length}`;
+        }
+        if (amount && !isNaN(parseFloat(amount))) {
+            const v = parseFloat(amount);
+            params.push(v * 0.9, v * 1.1);
+            where += ` AND amount_usdc BETWEEN $${params.length - 1} AND $${params.length}`;
+        }
+
+        const countRes = await pool.query(`SELECT COUNT(*) FROM instant_transfers ${where}`, params);
+        const total = parseInt(countRes.rows[0].count);
+
+        const offset = (parseInt(page) - 1) * parseInt(limit);
+        params.push(parseInt(limit), offset);
+        const dataRes = await pool.query(`
+            SELECT * FROM instant_transfers ${where}
+            ORDER BY created_at DESC
+            LIMIT $${params.length - 1} OFFSET $${params.length}
+        `, params);
+
+        res.json({
+            transfers: dataRes.rows,
+            pagination: {
+                totalItems: total,
+                currentPage: parseInt(page),
+                totalPages: Math.ceil(total / parseInt(limit)),
+                itemsPerPage: parseInt(limit)
+            }
+        });
+    } catch (err) {
+        console.error('[IP] GET /transfers error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ── GET /api/v1/instant/transfers/export ───────────────────────────────────────
+app.get('/api/v1/instant/transfers/export', authenticateToken, async (req, res) => {
+    try {
+        const funderAddress = req.user.address.toLowerCase();
+        const isAdmin = req.user.role === 'SUPER_ADMIN';
+        const { status, date_from, date_to, wallet } = req.query;
+
+        let where = 'WHERE 1=1';
+        const params = [];
+        if (!isAdmin) { params.push(funderAddress); where += ` AND funder_address=$${params.length}`; }
+        if (status && status !== 'ALL') { params.push(status); where += ` AND status=$${params.length}`; }
+        if (date_from) { params.push(date_from); where += ` AND created_at >= $${params.length}::date`; }
+        if (date_to) { params.push(date_to); where += ` AND created_at < ($${params.length}::date + INTERVAL '1 day')`; }
+        if (wallet) { params.push(`%${wallet.toLowerCase()}%`); where += ` AND destination_wallet LIKE $${params.length}`; }
+
+        const { rows } = await pool.query(
+            `SELECT transfer_id, funder_address, destination_wallet, amount_usdc, status, tx_hash, attempt_count, created_at, confirmed_at, error_message FROM instant_transfers ${where} ORDER BY created_at DESC`,
+            params
+        );
+
+        const ws = xlsx_ip.utils.json_to_sheet(rows.map(r => ({
+            'Transfer ID': r.transfer_id,
+            'Funder': r.funder_address,
+            'Destino': r.destination_wallet,
+            'Monto USDC': parseFloat(r.amount_usdc).toFixed(6),
+            'Estado': r.status,
+            'TX Hash': r.tx_hash || '',
+            'Intentos': r.attempt_count,
+            'Creado': r.created_at ? new Date(r.created_at).toISOString() : '',
+            'Confirmado': r.confirmed_at ? new Date(r.confirmed_at).toISOString() : '',
+            'Error': r.error_message || ''
+        })));
+        const wb = xlsx_ip.utils.book_new();
+        xlsx_ip.utils.book_append_sheet(wb, ws, 'Instant Transfers');
+        const buf = xlsx_ip.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', `attachment; filename="instant_transfers_${Date.now()}.xlsx"`);
+        res.send(buf);
+    } catch (err) {
+        console.error('[IP] GET /transfers/export error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ── GET /api/v1/instant/policy ─────────────────────────────────────────────────
+app.get('/api/v1/instant/policy', authenticateToken, async (req, res) => {
+    try {
+        const funderAddress = req.user.address.toLowerCase();
+        const { rows } = await pool.query(
+            'SELECT * FROM instant_policies WHERE cold_wallet=$1',
+            [funderAddress]
+        );
+        if (rows.length === 0) return res.json({ hasPolicy: false });
+        const p = rows[0];
+        res.json({
+            hasPolicy: true,
+            cold_wallet: p.cold_wallet,
+            total_amount: parseFloat(p.total_amount),
+            consumed_amount: parseFloat(p.consumed_amount),
+            remaining: Math.max(0, parseFloat(p.total_amount) - parseFloat(p.consumed_amount)),
+            deadline: p.deadline,
+            is_active: p.is_active,
+            is_expired: new Date(p.deadline) < new Date(),
+            contract_address: INSTANT_CONTRACT_ADDRESS
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ── POST /api/v1/instant/policy/activate ──────────────────────────────────────
+// Frontend sends: { totalAmountUsdc, deadlineUnix, permitSig: {v,r,s} } 
+// Backend calls activatePolicy on the contract and saves to DB.
+app.post('/api/v1/instant/policy/activate', authenticateToken, async (req, res) => {
+    try {
+        const funderAddress = req.user.address.toLowerCase();
+        const { totalAmountUsdc, deadlineUnix } = req.body;
+
+        if (!totalAmountUsdc || !deadlineUnix) {
+            return res.status(400).json({ error: 'totalAmountUsdc and deadlineUnix are required' });
+        }
+        if (!INSTANT_CONTRACT_ADDRESS) {
+            return res.status(503).json({ error: 'Instant Payment contract not configured (INSTANT_PAYMENT_CONTRACT_ADDRESS)' });
+        }
+
+        const totalAmountRaw = ethers.parseUnits(totalAmountUsdc.toString(), 6);
+        const deadline = parseInt(deadlineUnix);
+
+        // Get faucet wallet of the funder to call activatePolicy (the contract owner must call this)
+        const provider = globalRpcManager.getProvider();
+        const faucetWallet = await faucetService.getFaucetWallet(pool, provider, funderAddress);
+        const contract = getInstantContract(faucetWallet.connect(provider));
+
+        const tx = await contract.activatePolicy(funderAddress, totalAmountRaw, deadline, {
+            gasLimit: 100000,
+        });
+        await tx.wait(1);
+
+        // Upsert in DB
+        await pool.query(`
+            INSERT INTO instant_policies (cold_wallet, total_amount, consumed_amount, deadline, is_active, contract_address)
+            VALUES ($1, $2, 0, to_timestamp($3), true, $4)
+            ON CONFLICT (cold_wallet) DO UPDATE
+            SET total_amount=$2, consumed_amount=0, deadline=to_timestamp($3), is_active=true, updated_at=NOW()
+        `, [funderAddress, parseFloat(totalAmountUsdc), deadline, INSTANT_CONTRACT_ADDRESS]);
+
+        res.json({ success: true, tx_hash: tx.hash, message: 'Policy activated successfully' });
+    } catch (err) {
+        console.error('[IP] POST /policy/activate error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ── POST /api/v1/instant/policy/reset ─────────────────────────────────────────
+app.post('/api/v1/instant/policy/reset', authenticateToken, async (req, res) => {
+    try {
+        const funderAddress = req.user.address.toLowerCase();
+        await pool.query(
+            'UPDATE instant_policies SET is_active=false, updated_at=NOW() WHERE cold_wallet=$1',
+            [funderAddress]
+        );
+        res.json({ success: true, message: 'Policy reset' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ── POST /api/v1/instant/admin/pause ──────────────────────────────────────────
+app.post('/api/v1/instant/admin/pause', authenticateToken, async (req, res) => {
+    try {
+        if (req.user.role !== 'SUPER_ADMIN') return res.status(403).json({ error: 'SUPER_ADMIN required' });
+        if (!INSTANT_CONTRACT_ADDRESS) return res.status(503).json({ error: 'Contract not configured' });
+        const provider = globalRpcManager.getProvider();
+        const faucetWallet = await faucetService.getFaucetWallet(pool, provider, req.user.address);
+        const contract = getInstantContract(faucetWallet.connect(provider));
+        const tx = await contract.pause({ gasLimit: 60000 });
+        await tx.wait(1);
+        res.json({ success: true, tx_hash: tx.hash });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ── POST /api/v1/instant/admin/unpause ────────────────────────────────────────
+app.post('/api/v1/instant/admin/unpause', authenticateToken, async (req, res) => {
+    try {
+        if (req.user.role !== 'SUPER_ADMIN') return res.status(403).json({ error: 'SUPER_ADMIN required' });
+        if (!INSTANT_CONTRACT_ADDRESS) return res.status(503).json({ error: 'Contract not configured' });
+        const provider = globalRpcManager.getProvider();
+        const faucetWallet = await faucetService.getFaucetWallet(pool, provider, req.user.address);
+        const contract = getInstantContract(faucetWallet.connect(provider));
+        const tx = await contract.unpause({ gasLimit: 60000 });
+        await tx.wait(1);
+        res.json({ success: true, tx_hash: tx.hash });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ── POST /api/v1/instant/webhook/register ─────────────────────────────────────
+app.post('/api/v1/instant/webhook/register', authenticateToken, async (req, res) => {
+    try {
+        const funderAddress = req.user.address.toLowerCase();
+        const { webhook_url } = req.body;
+        if (!webhook_url) return res.status(400).json({ error: 'webhook_url is required' });
+        // Store webhook_url on all pending/future transfers for this funder via default
+        // (Stored per-transfer at creation time. This endpoint sets a preference.)
+        await pool.query(`
+            INSERT INTO instant_policies (cold_wallet, total_amount, deadline, is_active)
+            VALUES ($1, 0, NOW(), false)
+            ON CONFLICT (cold_wallet) DO UPDATE SET updated_at=NOW()
+        `, [funderAddress]);
+        // Update existing pending transfers to include webhook_url
+        await pool.query(
+            'UPDATE instant_transfers SET webhook_url=$1 WHERE funder_address=$2 AND status=\'pending\'',
+            [webhook_url, funderAddress]
+        );
+        res.json({ success: true, webhook_url });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ── GET /api/v1/instant/webhook/logs ──────────────────────────────────────────
+app.get('/api/v1/instant/webhook/logs', authenticateToken, async (req, res) => {
+    try {
+        const funderAddress = req.user.address.toLowerCase();
+        const isAdmin = req.user.role === 'SUPER_ADMIN';
+        let query = `
+            SELECT wl.* FROM instant_webhook_logs wl
+            JOIN instant_transfers t ON t.transfer_id = wl.transfer_id
+        `;
+        const params = [];
+        if (!isAdmin) {
+            params.push(funderAddress);
+            query += ` WHERE t.funder_address=$1`;
+        }
+        query += ' ORDER BY wl.created_at DESC LIMIT 100';
+        const { rows } = await pool.query(query, params);
+        res.json(rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ─── Initialize Instant Relayer Engine ────────────────────────────────────────
+if (INSTANT_CONTRACT_ADDRESS) {
+    const instantRelayer = new InstantRelayerEngine({
+        pool,
+        rpcManager: globalRpcManager,
+        contractAddress: INSTANT_CONTRACT_ADDRESS,
+        faucetService,
+        encryption: null
+    });
+    // Start after DB is ready
+    setTimeout(() => instantRelayer.start(), 8000);
+    console.log('[InstantPayment] Relayer engine scheduled to start in 8s');
+} else {
+    console.warn('[InstantPayment] ⚠️  INSTANT_PAYMENT_CONTRACT_ADDRESS not set — relayer engine disabled');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// END INSTANT PAYMENT API
+// ═══════════════════════════════════════════════════════════════════════════════
 
 app.listen(PORT_LISTEN, () => {
     console.log(`Server is running on port ${PORT_LISTEN} `);

@@ -3575,3 +3575,262 @@ window.triggerRelayerRecovery = async (address) => {
         btn.disabled = false;
     }
 };
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// === INSTANT PAYMENT FRONTEND ===
+// ═══════════════════════════════════════════════════════════════════════════════
+
+let ipCurrentPage = 1;
+let ipTotalPages = 1;
+
+// ── Nav click wiring ──────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+    const navIP = document.getElementById('navInstantPayment');
+    if (navIP) {
+        navIP.addEventListener('click', (e) => {
+            e.preventDefault();
+            showInstantPaymentSection();
+        });
+    }
+});
+
+function showInstantPaymentSection() {
+    // Hide other main panels
+    ['batchSection', 'restrictedView'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.classList.add('hidden');
+    });
+    // Hide the main glass-panel wrapper 
+    const mainPanels = document.querySelectorAll('.content-wrapper > main.glass-panel');
+    mainPanels.forEach(p => p.classList.add('hidden'));
+
+    // Show instant payment section
+    const ipSection = document.getElementById('instantPaymentSection');
+    if (ipSection) ipSection.classList.remove('hidden');
+
+    // Update active nav
+    document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+    const navIP = document.getElementById('navInstantPayment');
+    if (navIP) navIP.classList.add('active');
+
+    // Load data
+    ipLoadPolicy();
+    ipLoadTransfers(1);
+}
+
+// ── Policy ───────────────────────────────────────────────────────────────────
+
+async function ipLoadPolicy() {
+    const statusEl = document.getElementById('ipPolicyStatus');
+    try {
+        const res = await authenticatedFetch('/api/v1/instant/policy');
+        const data = await res.json();
+
+        const card = document.getElementById('ipPolicyCard');
+        const noCard = document.getElementById('ipNoPolicyCard');
+
+        if (!data.hasPolicy) {
+            if (statusEl) statusEl.textContent = '';
+            card.classList.add('hidden');
+            noCard.classList.remove('hidden');
+            return;
+        }
+
+        noCard.classList.add('hidden');
+        card.classList.remove('hidden');
+        if (statusEl) statusEl.textContent = '';
+
+        const fmt = (n) => parseFloat(n).toFixed(2) + ' USDC';
+        document.getElementById('ipTotalAmount').textContent = fmt(data.total_amount);
+        document.getElementById('ipConsumed').textContent = fmt(data.consumed_amount);
+        document.getElementById('ipRemaining').textContent = fmt(data.remaining);
+        document.getElementById('ipDeadline').textContent = new Date(data.deadline).toLocaleString();
+
+        const badge = document.getElementById('ipPolicyBadge');
+        if (data.is_expired) {
+            badge.innerHTML = '<span class="ip-badge ip-badge-failed">Expirado</span>';
+        } else if (data.is_active) {
+            badge.innerHTML = '<span class="ip-badge ip-badge-confirmed">Activo</span>';
+        } else {
+            badge.innerHTML = '<span class="ip-badge ip-badge-pending">Inactivo</span>';
+        }
+    } catch (err) {
+        if (statusEl) statusEl.textContent = 'Error cargando política: ' + err.message;
+        console.error('[IP] ipLoadPolicy error:', err);
+    }
+}
+
+window.ipShowActivateForm = () => {
+    const form = document.getElementById('ipActivateForm');
+    form.classList.remove('hidden');
+    // Pre-fill deadline with +30 days
+    const future = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    const local = new Date(future - future.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    document.getElementById('ipFormExpiry').value = local;
+    form.scrollIntoView({ behavior: 'smooth' });
+};
+
+window.ipActivatePolicy = async () => {
+    const amount = parseFloat(document.getElementById('ipFormAmount').value);
+    const expiry = document.getElementById('ipFormExpiry').value;
+    const statusEl = document.getElementById('ipActivateStatus');
+
+    if (!amount || amount <= 0) { statusEl.textContent = '❌ Monto inválido'; statusEl.style.color = '#ef4444'; return; }
+    if (!expiry) { statusEl.textContent = '❌ Fecha de expiración requerida'; statusEl.style.color = '#ef4444'; return; }
+
+    const deadlineUnix = Math.floor(new Date(expiry).getTime() / 1000);
+    if (deadlineUnix <= Math.floor(Date.now() / 1000)) {
+        statusEl.textContent = '❌ La fecha debe ser en el futuro';
+        statusEl.style.color = '#ef4444';
+        return;
+    }
+
+    statusEl.textContent = '⏳ Activando permit...';
+    statusEl.style.color = '#60a5fa';
+
+    try {
+        const res = await authenticatedFetch('/api/v1/instant/policy/activate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ totalAmountUsdc: amount, deadlineUnix })
+        });
+        const data = await res.json();
+
+        if (res.ok && data.success) {
+            statusEl.textContent = '✅ Permit activado. TX: ' + (data.tx_hash || '');
+            statusEl.style.color = '#10b981';
+            setTimeout(() => {
+                document.getElementById('ipActivateForm').classList.add('hidden');
+                ipLoadPolicy();
+            }, 2000);
+        } else {
+            statusEl.textContent = '❌ Error: ' + (data.error || 'Desconocido');
+            statusEl.style.color = '#ef4444';
+        }
+    } catch (err) {
+        statusEl.textContent = '❌ Error: ' + err.message;
+        statusEl.style.color = '#ef4444';
+    }
+};
+
+window.ipResetPolicy = async () => {
+    if (!confirm('¿Estás seguro de resetear el permit? Esto desactivará la política activa.')) return;
+    try {
+        await authenticatedFetch('/api/v1/instant/policy/reset', { method: 'POST' });
+        await ipLoadPolicy();
+    } catch (err) {
+        alert('Error al resetear: ' + err.message);
+    }
+};
+
+// ── Transfers Table ───────────────────────────────────────────────────────────
+
+async function ipLoadTransfers(page) {
+    ipCurrentPage = page || 1;
+
+    const status = document.getElementById('ipFilterStatus')?.value || 'ALL';
+    const dateFrom = document.getElementById('ipFilterDateFrom')?.value || '';
+    const dateTo = document.getElementById('ipFilterDateTo')?.value || '';
+    const wallet = document.getElementById('ipFilterWallet')?.value || '';
+    const amount = document.getElementById('ipFilterAmount')?.value || '';
+
+    const params = new URLSearchParams({ page: ipCurrentPage, limit: 20 });
+    if (status && status !== 'ALL') params.append('status', status);
+    if (dateFrom) params.append('date_from', dateFrom);
+    if (dateTo) params.append('date_to', dateTo);
+    if (wallet) params.append('wallet', wallet);
+    if (amount) params.append('amount', amount);
+
+    const tbody = document.getElementById('ipTransfersBody');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; opacity:0.6;">Cargando...</td></tr>';
+
+    try {
+        const res = await authenticatedFetch(`/api/v1/instant/transfers?${params.toString()}`);
+        const data = await res.json();
+
+        ipTotalPages = data.pagination?.totalPages || 1;
+        const indicator = document.getElementById('ipPageIndicator');
+        if (indicator) indicator.textContent = `Página ${ipCurrentPage} de ${ipTotalPages}`;
+
+        const prevBtn = document.getElementById('ipPrevPage');
+        const nextBtn = document.getElementById('ipNextPage');
+        if (prevBtn) prevBtn.disabled = ipCurrentPage <= 1;
+        if (nextBtn) nextBtn.disabled = ipCurrentPage >= ipTotalPages;
+
+        if (!data.transfers || data.transfers.length === 0) {
+            if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; opacity:0.6;">No hay transferencias.</td></tr>';
+            return;
+        }
+
+        if (tbody) {
+            tbody.innerHTML = data.transfers.map(t => {
+                const shortId = t.transfer_id.slice(0, 8) + '...';
+                const shortDst = t.destination_wallet ? `${t.destination_wallet.slice(0, 6)}...${t.destination_wallet.slice(-4)}` : '—';
+                const txLink = t.tx_hash
+                    ? `<a href="https://polygonscan.com/tx/${t.tx_hash}" target="_blank" class="hash-link">${t.tx_hash.slice(0, 8)}...↗</a>`
+                    : '—';
+                const date = t.created_at ? new Date(t.created_at).toLocaleString() : '—';
+                const badge = ipStatusBadge(t.status);
+                return `<tr>
+                    <td style="font-family:monospace; font-size:0.8rem;" title="${t.transfer_id}">${shortId}</td>
+                    <td style="font-family:monospace; font-size:0.85rem;" title="${t.destination_wallet}">${shortDst}</td>
+                    <td style="font-weight:600; color:#4ade80;">${parseFloat(t.amount_usdc).toFixed(6)}</td>
+                    <td>${badge}</td>
+                    <td style="font-family:monospace; font-size:0.8rem;">${txLink}</td>
+                    <td style="font-size:0.8rem; color:#94a3b8;">${date}</td>
+                    <td style="text-align:center; color:#94a3b8;">${t.attempt_count}</td>
+                </tr>`;
+            }).join('');
+        }
+    } catch (err) {
+        if (tbody) tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color:#ef4444;">Error: ${err.message}</td></tr>`;
+        console.error('[IP] ipLoadTransfers error:', err);
+    }
+}
+
+function ipStatusBadge(status) {
+    const map = {
+        pending: { label: 'Pending', cls: 'ip-badge-pending' },
+        processing: { label: 'Processing', cls: 'ip-badge-processing' },
+        confirmed: { label: 'Confirmed', cls: 'ip-badge-confirmed' },
+        failed: { label: 'Failed', cls: 'ip-badge-failed' },
+    };
+    const s = map[status] || { label: status, cls: 'ip-badge-pending' };
+    return `<span class="ip-badge ${s.cls}">${s.label}</span>`;
+}
+
+window.ipClearFilters = () => {
+    ['ipFilterStatus', 'ipFilterDateFrom', 'ipFilterDateTo', 'ipFilterWallet', 'ipFilterAmount']
+        .forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.value = el.tagName === 'SELECT' ? 'ALL' : '';
+        });
+    ipLoadTransfers(1);
+};
+
+window.ipExportExcel = async () => {
+    const status = document.getElementById('ipFilterStatus')?.value || 'ALL';
+    const dateFrom = document.getElementById('ipFilterDateFrom')?.value || '';
+    const dateTo = document.getElementById('ipFilterDateTo')?.value || '';
+    const wallet = document.getElementById('ipFilterWallet')?.value || '';
+
+    const params = new URLSearchParams();
+    if (status && status !== 'ALL') params.append('status', status);
+    if (dateFrom) params.append('date_from', dateFrom);
+    if (dateTo) params.append('date_to', dateTo);
+    if (wallet) params.append('wallet', wallet);
+
+    try {
+        const res = await authenticatedFetch(`/api/v1/instant/transfers/export?${params.toString()}`);
+        if (!res.ok) { alert('Error al exportar'); return; }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `instant_transfers_${Date.now()}.xlsx`;
+        a.click();
+        URL.revokeObjectURL(url);
+    } catch (err) {
+        alert('Error al exportar: ' + err.message);
+    }
+};
