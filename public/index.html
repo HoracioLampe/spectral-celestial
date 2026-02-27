@@ -227,7 +227,7 @@
             </header>
 
             <!-- MAIN CONTAINER -->
-            <main class="glass-panel">
+            <main id="mainBatchPanel" class="glass-panel">
 
                 <!-- SECCIÓN LOTES (DEFAULT) -->
                 <div id="batchSection">
@@ -596,215 +596,213 @@
         </div> <!-- Fin de batchDetailView -->
     </div>
 
-    </main>
+    <!-- INSTANT PAYMENT SECTION (inside mainBatchPanel, same as batchSection) -->
+    <div id="instantPaymentSection" class="hidden">
 
-    <!-- INSTANT PAYMENT SECTION -->
-    <div id="instantPaymentSection" class="hidden" style="padding:0;">
-        <main class="glass-panel">
+        <!-- POLICY PANEL -->
+        <div class="ip-panel" id="ipPolicyPanel">
+            <div class="top-bar">
+                <h2>⚡ Instant Payments</h2>
+                <div id="ipPolicyStatus" class="ip-policy-placeholder">Cargando estado del permit...</div>
+            </div>
 
-            <!-- POLICY PANEL -->
-            <div class="ip-panel" id="ipPolicyPanel">
-                <div class="top-bar">
-                    <h2>⚡ Instant Payments</h2>
-                    <div id="ipPolicyStatus" class="ip-policy-placeholder">Cargando estado del permit...</div>
-                </div>
-
-                <!-- Policy card -->
-                <div id="ipPolicyCard" class="ip-policy-card hidden">
-                    <div class="ip-metrics">
-                        <div class="ip-metric">
-                            <span class="ip-metric-label">Total Autorizado</span>
-                            <span class="ip-metric-value" id="ipTotalAmount">—</span>
-                        </div>
-                        <div class="ip-metric">
-                            <span class="ip-metric-label">Consumido</span>
-                            <span class="ip-metric-value ip-consumed" id="ipConsumed">—</span>
-                        </div>
-                        <div class="ip-metric">
-                            <span class="ip-metric-label">Disponible</span>
-                            <span class="ip-metric-value ip-available" id="ipRemaining">—</span>
-                        </div>
-                        <div class="ip-metric">
-                            <span class="ip-metric-label">Vence</span>
-                            <span class="ip-metric-value" id="ipDeadline">—</span>
-                        </div>
-                        <div class="ip-metric">
-                            <span class="ip-metric-label">Estado</span>
-                            <span class="ip-metric-value" id="ipPolicyBadge">—</span>
-                        </div>
+            <!-- Policy card -->
+            <div id="ipPolicyCard" class="ip-policy-card hidden">
+                <div class="ip-metrics">
+                    <div class="ip-metric">
+                        <span class="ip-metric-label">Total Autorizado</span>
+                        <span class="ip-metric-value" id="ipTotalAmount">—</span>
                     </div>
-                    <div style="margin-top:1rem; display:flex; gap:0.75rem; flex-wrap:wrap;">
-                        <button class="btn btn-glass" onclick="ipShowActivateForm()">🔑 Activar / Renovar
-                            Permit</button>
-                        <button class="btn btn-glass" onclick="ipResetPolicy()"
-                            style="border-color:rgba(239,68,68,0.4); color:#f87171;">🔄 Reset Permit</button>
+                    <div class="ip-metric">
+                        <span class="ip-metric-label">Consumido</span>
+                        <span class="ip-metric-value ip-consumed" id="ipConsumed">—</span>
+                    </div>
+                    <div class="ip-metric">
+                        <span class="ip-metric-label">Disponible</span>
+                        <span class="ip-metric-value ip-available" id="ipRemaining">—</span>
+                    </div>
+                    <div class="ip-metric">
+                        <span class="ip-metric-label">Vence</span>
+                        <span class="ip-metric-value" id="ipDeadline">—</span>
+                    </div>
+                    <div class="ip-metric">
+                        <span class="ip-metric-label">Estado</span>
+                        <span class="ip-metric-value" id="ipPolicyBadge">—</span>
                     </div>
                 </div>
-
-                <!-- No policy yet -->
-                <div id="ipNoPolicyCard" class="hidden" style="text-align:center; padding:2rem 0; opacity:0.7;">
-                    <p>No hay ningún permit activo para esta wallet.</p>
-                    <button class="btn btn-primary" onclick="ipShowActivateForm()">🔑 Activar Permit</button>
-                </div>
-
-                <!-- Activate form -->
-                <div id="ipActivateForm" class="hidden"
-                    style="margin-top:1.5rem; background:rgba(0,0,0,0.2); padding:1.25rem; border-radius:12px; border:1px solid rgba(255,255,255,0.08);">
-                    <h3 style="margin:0 0 1rem;">Configurar Permit</h3>
-                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-bottom:1rem;">
-                        <div class="form-group">
-                            <label>Monto total USDC</label>
-                            <input id="ipFormAmount" type="number" class="input-glass" placeholder="10000" step="0.01"
-                                min="0">
-                        </div>
-                        <div class="form-group">
-                            <label>Fecha de expiración</label>
-                            <input id="ipFormExpiry" type="datetime-local" class="input-glass">
-                        </div>
-                    </div>
-                    <div style="display:flex; gap:0.75rem;">
-                        <button class="btn btn-primary" onclick="ipActivatePolicy()">✅ Confirmar</button>
-                        <button class="btn btn-glass"
-                            onclick="document.getElementById('ipActivateForm').classList.add('hidden')">Cancelar</button>
-                    </div>
-                    <p id="ipActivateStatus" style="margin-top:0.75rem; font-size:0.85rem;"></p>
+                <div style="margin-top:1rem; display:flex; gap:0.75rem; flex-wrap:wrap;">
+                    <button class="btn btn-glass" onclick="ipShowActivateForm()">🔑 Activar / Renovar
+                        Permit</button>
+                    <button class="btn btn-glass" onclick="ipResetPolicy()"
+                        style="border-color:rgba(239,68,68,0.4); color:#f87171;">🔄 Reset Permit</button>
                 </div>
             </div>
 
-            <!-- TRANSFERS TABLE -->
-            <div class="ip-panel" style="margin-top:1.5rem;">
-                <div class="top-bar">
-                    <h3>📋 Historial de Transferencias</h3>
-                    <button class="btn btn-primary" onclick="ipExportExcel()"
-                        style="background:linear-gradient(135deg,#10b981,#059669);">📊 Exportar Excel</button>
-                </div>
-
-                <!-- Filters -->
-                <div style="display:flex; flex-wrap:wrap; gap:0.75rem; margin-bottom:1rem;">
-                    <select id="ipFilterStatus" class="input-glass" style="width:160px;">
-                        <option value="ALL">Todos los estados</option>
-                        <option value="pending">Pending</option>
-                        <option value="processing">Processing</option>
-                        <option value="confirmed">Confirmed</option>
-                        <option value="failed">Failed</option>
-                    </select>
-                    <input id="ipFilterDateFrom" type="date" class="input-glass" placeholder="Desde">
-                    <input id="ipFilterDateTo" type="date" class="input-glass" placeholder="Hasta">
-                    <input id="ipFilterWallet" type="text" class="input-glass" placeholder="Wallet destino..."
-                        style="width:200px;">
-                    <input id="ipFilterAmount" type="number" class="input-glass" placeholder="Monto USDC"
-                        style="width:130px;">
-                    <button class="btn btn-glass" onclick="ipLoadTransfers(1)">🔍 Filtrar</button>
-                    <button class="btn btn-glass" onclick="ipClearFilters()">✖</button>
-                </div>
-
-                <div class="table-container">
-                    <table id="ipTransfersTable">
-                        <thead>
-                            <tr>
-                                <th>Transfer ID</th>
-                                <th>Destino</th>
-                                <th>Monto USDC</th>
-                                <th>Estado</th>
-                                <th>TX Hash</th>
-                                <th>Fecha</th>
-                                <th>Intentos</th>
-                            </tr>
-                        </thead>
-                        <tbody id="ipTransfersBody">
-                            <tr>
-                                <td colspan="7" style="text-align:center; opacity:0.6;">Cargando...</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-
-                <!-- Pagination -->
-                <div
-                    style="display:flex; justify-content:flex-end; align-items:center; margin-top:1rem; gap:0.5rem; color:#94a3b8; font-size:0.9rem;">
-                    <button class="btn-icon" id="ipPrevPage"
-                        onclick="ipLoadTransfers(Math.max(1, ipCurrentPage-1))">◀</button>
-                    <span id="ipPageIndicator">Página 1 de 1</span>
-                    <button class="btn-icon" id="ipNextPage" onclick="ipLoadTransfers(ipCurrentPage+1)">▶</button>
-                </div>
+            <!-- No policy yet -->
+            <div id="ipNoPolicyCard" class="hidden" style="text-align:center; padding:2rem 0; opacity:0.7;">
+                <p>No hay ningún permit activo para esta wallet.</p>
+                <button class="btn btn-primary" onclick="ipShowActivateForm()">🔑 Activar Permit</button>
             </div>
+
+            <!-- Activate form -->
+            <div id="ipActivateForm" class="hidden"
+                style="margin-top:1.5rem; background:rgba(0,0,0,0.2); padding:1.25rem; border-radius:12px; border:1px solid rgba(255,255,255,0.08);">
+                <h3 style="margin:0 0 1rem;">Configurar Permit</h3>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-bottom:1rem;">
+                    <div class="form-group">
+                        <label>Monto total USDC</label>
+                        <input id="ipFormAmount" type="number" class="input-glass" placeholder="10000" step="0.01"
+                            min="0">
+                    </div>
+                    <div class="form-group">
+                        <label>Fecha de expiración</label>
+                        <input id="ipFormExpiry" type="datetime-local" class="input-glass">
+                    </div>
+                </div>
+                <div style="display:flex; gap:0.75rem;">
+                    <button class="btn btn-primary" onclick="ipActivatePolicy()">✅ Confirmar</button>
+                    <button class="btn btn-glass"
+                        onclick="document.getElementById('ipActivateForm').classList.add('hidden')">Cancelar</button>
+                </div>
+                <p id="ipActivateStatus" style="margin-top:0.75rem; font-size:0.85rem;"></p>
+            </div>
+        </div>
+
+        <!-- TRANSFERS TABLE -->
+        <div class="ip-panel" style="margin-top:1.5rem;">
+            <div class="top-bar">
+                <h3>📋 Historial de Transferencias</h3>
+                <button class="btn btn-primary" onclick="ipExportExcel()"
+                    style="background:linear-gradient(135deg,#10b981,#059669);">📊 Exportar Excel</button>
+            </div>
+
+            <!-- Filters -->
+            <div style="display:flex; flex-wrap:wrap; gap:0.75rem; margin-bottom:1rem;">
+                <select id="ipFilterStatus" class="input-glass" style="width:160px;">
+                    <option value="ALL">Todos los estados</option>
+                    <option value="pending">Pending</option>
+                    <option value="processing">Processing</option>
+                    <option value="confirmed">Confirmed</option>
+                    <option value="failed">Failed</option>
+                </select>
+                <input id="ipFilterDateFrom" type="date" class="input-glass" placeholder="Desde">
+                <input id="ipFilterDateTo" type="date" class="input-glass" placeholder="Hasta">
+                <input id="ipFilterWallet" type="text" class="input-glass" placeholder="Wallet destino..."
+                    style="width:200px;">
+                <input id="ipFilterAmount" type="number" class="input-glass" placeholder="Monto USDC"
+                    style="width:130px;">
+                <button class="btn btn-glass" onclick="ipLoadTransfers(1)">🔍 Filtrar</button>
+                <button class="btn btn-glass" onclick="ipClearFilters()">✖</button>
+            </div>
+
+            <div class="table-container">
+                <table id="ipTransfersTable">
+                    <thead>
+                        <tr>
+                            <th>Transfer ID</th>
+                            <th>Destino</th>
+                            <th>Monto USDC</th>
+                            <th>Estado</th>
+                            <th>TX Hash</th>
+                            <th>Fecha</th>
+                            <th>Intentos</th>
+                        </tr>
+                    </thead>
+                    <tbody id="ipTransfersBody">
+                        <tr>
+                            <td colspan="7" style="text-align:center; opacity:0.6;">Cargando...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pagination -->
+            <div
+                style="display:flex; justify-content:flex-end; align-items:center; margin-top:1rem; gap:0.5rem; color:#94a3b8; font-size:0.9rem;">
+                <button class="btn-icon" id="ipPrevPage"
+                    onclick="ipLoadTransfers(Math.max(1, ipCurrentPage-1))">◀</button>
+                <span id="ipPageIndicator">Página 1 de 1</span>
+                <button class="btn-icon" id="ipNextPage" onclick="ipLoadTransfers(ipCurrentPage+1)">▶</button>
+            </div>
+        </div>
 
         </main>
-    </div>
-    <!-- END INSTANT PAYMENT SECTION -->
+        <!-- END INSTANT PAYMENT SECTION -->
 
-    <!-- MODAL CREAR LOTE -->
-    <div id="batchModal" class="modal">
-        <div class="modal-content">
-            <span class="close-modal" onclick="closeBatchModal()">&times;</span>
-            <h2>📦 Nuevo Lote</h2>
-            <div class="grid-form" style="display: block;"> <!-- Override grid for simple stack -->
-                <div class="form-group" style="margin-bottom: 1rem;">
-                    <label>Número de Lote *</label>
-                    <input type="text" id="newBatchNumber" class="input-glass" placeholder="Ej: LOTE-2024-001">
+        <!-- MODAL CREAR LOTE -->
+        <div id="batchModal" class="modal">
+            <div class="modal-content">
+                <span class="close-modal" onclick="closeBatchModal()">&times;</span>
+                <h2>📦 Nuevo Lote</h2>
+                <div class="grid-form" style="display: block;"> <!-- Override grid for simple stack -->
+                    <div class="form-group" style="margin-bottom: 1rem;">
+                        <label>Número de Lote *</label>
+                        <input type="text" id="newBatchNumber" class="input-glass" placeholder="Ej: LOTE-2024-001">
+                    </div>
+                    <div class="form-group" style="margin-bottom: 1rem;">
+                        <label>Detalle Corto *</label>
+                        <input type="text" id="newBatchDetail" class="input-glass" placeholder="Ej: Pago Nómina Enero">
+                    </div>
+                    <div class="form-group" style="margin-bottom: 1.5rem;">
+                        <label>Descripción</label>
+                        <textarea id="newBatchDesc" class="input-glass" rows="3"
+                            placeholder="Notas internas..."></textarea>
+                    </div>
+                    <button id="btnSaveBatch" class="btn btn-primary" style="width: 100%;">Crear Lote</button>
                 </div>
-                <div class="form-group" style="margin-bottom: 1rem;">
-                    <label>Detalle Corto *</label>
-                    <input type="text" id="newBatchDetail" class="input-glass" placeholder="Ej: Pago Nómina Enero">
-                </div>
-                <div class="form-group" style="margin-bottom: 1.5rem;">
-                    <label>Descripción</label>
-                    <textarea id="newBatchDesc" class="input-glass" rows="3" placeholder="Notas internas..."></textarea>
-                </div>
-                <button id="btnSaveBatch" class="btn btn-primary" style="width: 100%;">Crear Lote</button>
             </div>
         </div>
-    </div>
 
-    </main>
+        </main>
 
-    <footer style="text-align: center; padding: 1rem; opacity: 0.6; font-size: 0.8rem; color: #fff;">
-        Spectral Celestial Wallet - v3.0.0 (STRICT 100 RELAYERS)
-    </footer>
-    <!-- Faucet Management Modal -->
-    <div id="faucetModal" class="modal hidden">
-        <div class="modal-content glass">
-            <span class="close" onclick="closeFaucetModal()">&times;</span>
-            <h2>Gestión de Faucet para Lote</h2>
-            <div style="background: rgba(255,255,255,0.05); padding: 0.75rem; border-radius: 8px; margin-bottom: 1rem;">
-                <p
-                    style="font-size: 0.8rem; color: #94a3b8; margin: 0; display: flex; align-items: center; gap: 0.5rem;">
-                    Address: <a id="faucetModalLink" href="#" target="_blank" class="hash-link"
-                        style="color: #60a5fa; font-family: monospace; word-break: break-all;">---</a>
-                    <button onclick="copyFaucetAddress()" class="btn-icon" style="font-size: 0.7rem;">📋</button>
-                </p>
-                <p
-                    style="font-size: 0.8rem; color: #94a3b8; margin: 0.25rem 0 0 0; display: flex; align-items: center; gap: 0.5rem;">
-                    Private Key: <span id="faucetKey"
-                        style="color: #ef4444; font-family: monospace; word-break: break-all;">---</span>
-                    <button onclick="copyFaucetKey()" class="btn-icon" style="font-size: 0.7rem;">📋</button>
-                </p>
-                <p style="font-size: 0.8rem; color: #94a3b8; margin: 0.25rem 0 0 0;">Balance: <span id="faucetBalance"
-                        style="color: #4ade80; font-weight: bold;">---</span></p>
+        <footer style="text-align: center; padding: 1rem; opacity: 0.6; font-size: 0.8rem; color: #fff;">
+            Spectral Celestial Wallet - v3.0.0 (STRICT 100 RELAYERS)
+        </footer>
+        <!-- Faucet Management Modal -->
+        <div id="faucetModal" class="modal hidden">
+            <div class="modal-content glass">
+                <span class="close" onclick="closeFaucetModal()">&times;</span>
+                <h2>Gestión de Faucet para Lote</h2>
+                <div
+                    style="background: rgba(255,255,255,0.05); padding: 0.75rem; border-radius: 8px; margin-bottom: 1rem;">
+                    <p
+                        style="font-size: 0.8rem; color: #94a3b8; margin: 0; display: flex; align-items: center; gap: 0.5rem;">
+                        Address: <a id="faucetModalLink" href="#" target="_blank" class="hash-link"
+                            style="color: #60a5fa; font-family: monospace; word-break: break-all;">---</a>
+                        <button onclick="copyFaucetAddress()" class="btn-icon" style="font-size: 0.7rem;">📋</button>
+                    </p>
+                    <p
+                        style="font-size: 0.8rem; color: #94a3b8; margin: 0.25rem 0 0 0; display: flex; align-items: center; gap: 0.5rem;">
+                        Private Key: <span id="faucetKey"
+                            style="color: #ef4444; font-family: monospace; word-break: break-all;">---</span>
+                        <button onclick="copyFaucetKey()" class="btn-icon" style="font-size: 0.7rem;">📋</button>
+                    </p>
+                    <p style="font-size: 0.8rem; color: #94a3b8; margin: 0.25rem 0 0 0;">Balance: <span
+                            id="faucetBalance" style="color: #4ade80; font-weight: bold;">---</span></p>
+                </div>
+                <div class="form-group" style="margin-bottom: 1rem;">
+                    <button onclick="generateFaucet()" class="btn-glass"
+                        style="width: 100%; border: 1px dashed rgba(255,255,255,0.2); color: #fbbf24;">✨ Generar Nueva
+                        Faucet</button>
+                </div>
+                <div class="form-group">
+                    <label for="bufferPercent">Porcentaje de Buffer de Gas (%)</label>
+                    <input type="number" id="bufferPercent" value="50" min="0" max="200" class="input-glass" />
+                </div>
+                <div class="form-group">
+                    <label for="relayerCountInput">Cantidad de Relayers</label>
+                    <input type="number" id="relayerCountInput" value="5" min="1" max="100" class="input-glass" />
+                </div>
+                <div class="form-group">
+                    <button class="btn-glass" id="btnDistributeGas" onclick="triggerGasDistribution()">Distribuir
+                        Gas</button>
+                    <button class="btn-glass" id="btnRefreshBalances" onclick="refreshRelayerBalances()">Actualizar
+                        Balances</button>
+                </div>
+                <p id="modalFaucetStatus"></p>
             </div>
-            <div class="form-group" style="margin-bottom: 1rem;">
-                <button onclick="generateFaucet()" class="btn-glass"
-                    style="width: 100%; border: 1px dashed rgba(255,255,255,0.2); color: #fbbf24;">✨ Generar Nueva
-                    Faucet</button>
-            </div>
-            <div class="form-group">
-                <label for="bufferPercent">Porcentaje de Buffer de Gas (%)</label>
-                <input type="number" id="bufferPercent" value="50" min="0" max="200" class="input-glass" />
-            </div>
-            <div class="form-group">
-                <label for="relayerCountInput">Cantidad de Relayers</label>
-                <input type="number" id="relayerCountInput" value="5" min="1" max="100" class="input-glass" />
-            </div>
-            <div class="form-group">
-                <button class="btn-glass" id="btnDistributeGas" onclick="triggerGasDistribution()">Distribuir
-                    Gas</button>
-                <button class="btn-glass" id="btnRefreshBalances" onclick="refreshRelayerBalances()">Actualizar
-                    Balances</button>
-            </div>
-            <p id="modalFaucetStatus"></p>
         </div>
-    </div>
-    </main>
+        </main>
     </div> <!-- content-wrapper -->
     </div> <!-- app-layout -->
 

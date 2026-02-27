@@ -3595,20 +3595,18 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function showInstantPaymentSection() {
-    // Hide other main panels
-    ['batchSection', 'restrictedView'].forEach(id => {
+    // Hide other sections (mainBatchPanel is now the shared container)
+    const toHide = ['batchSection', 'restrictedView'];
+    toHide.forEach(id => {
         const el = document.getElementById(id);
         if (el) el.classList.add('hidden');
     });
-    // Hide the main glass-panel wrapper 
-    const mainPanels = document.querySelectorAll('.content-wrapper > main.glass-panel');
-    mainPanels.forEach(p => p.classList.add('hidden'));
 
     // Show instant payment section
     const ipSection = document.getElementById('instantPaymentSection');
     if (ipSection) ipSection.classList.remove('hidden');
 
-    // Update active nav
+    // Update active nav link
     document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
     const navIP = document.getElementById('navInstantPayment');
     if (navIP) navIP.classList.add('active');
