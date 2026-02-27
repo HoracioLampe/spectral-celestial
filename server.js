@@ -2332,12 +2332,18 @@ function getInstantContract(signerOrProvider) {
     const abi = [
         // Relayer registration
         'function registerRelayer(address coldWallet, address relayer, uint256 deadline, bytes calldata signature) external',
-        'function setRelayer(address coldWallet, address relayer) external',
         'function coldWalletRelayer(address coldWallet) external view returns (address)',
+        'function getRelayerNonce(address coldWallet) external view returns (uint256)',
         // Policy
         'function activatePolicy(address coldWallet, uint256 totalAmount, uint256 deadline) external',
         'function resetPolicy(address coldWallet) external',
         'function getPolicyBalance(address coldWallet) external view returns (uint256, uint256, uint256, uint256, bool, bool)',
+        // Policy limit (admin)
+        'function maxPolicyAmount() external view returns (uint256)',
+        'function setMaxPolicyAmount(uint256 newMax) external',
+        // Transfers
+        'function executeTransfer(bytes32 transferId, address from, address to, uint256 amount) external',
+        'function isTransferExecuted(bytes32 transferId) external view returns (bool)',
         // Admin
         'function pause() external',
         'function unpause() external',
@@ -2607,6 +2613,63 @@ app.post('/api/v1/instant/policy/reset', authenticateToken, async (req, res) => 
     }
 });
 
+// ── GET /api/v1/instant/admin/config ──────────────────────────────────────────
+// Lee maxPolicyAmount del contrato. El frontend usa este valor para limitar el input.
+app.get('/api/v1/instant/admin/config', authenticateToken, async (req, res) => {
+    try {
+        if (!INSTANT_CONTRACT_ADDRESS) {
+            return res.json({ maxPolicyAmountUsdc: 20000, contractReady: false });
+        }
+        const provider = globalRpcManager.getProvider();
+        const contract = getInstantContract(provider);
+        const maxRaw = await contract.maxPolicyAmount();
+        const maxUsdc = Number(maxRaw) / 1_000_000;
+        res.json({
+            maxPolicyAmountUsdc: maxUsdc,
+            maxPolicyAmountRaw: maxRaw.toString(),
+            contractReady: true,
+            contractAddress: INSTANT_CONTRACT_ADDRESS
+        });
+    } catch (err) {
+        console.error('[IP] GET /admin/config error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ── POST /api/v1/instant/admin/config ─────────────────────────────────────────
+// Actualiza maxPolicyAmount en el contrato. Solo SUPER_ADMIN.
+app.post('/api/v1/instant/admin/config', authenticateToken, async (req, res) => {
+    try {
+        if (req.user.role !== 'SUPER_ADMIN') return res.status(403).json({ error: 'SUPER_ADMIN required' });
+        if (!INSTANT_CONTRACT_ADDRESS) return res.status(503).json({ error: 'Contract not configured' });
+
+        const { maxPolicyAmountUsdc } = req.body;
+        if (!maxPolicyAmountUsdc || isNaN(parseFloat(maxPolicyAmountUsdc)) || parseFloat(maxPolicyAmountUsdc) <= 0) {
+            return res.status(400).json({ error: 'maxPolicyAmountUsdc must be a positive number' });
+        }
+
+        const newMaxRaw = ethers.parseUnits(maxPolicyAmountUsdc.toString(), 6);
+
+        const provider = globalRpcManager.getProvider();
+        const faucetWallet = await faucetService.getFaucetWallet(pool, provider, req.user.address);
+        const contract = getInstantContract(faucetWallet.connect(provider));
+
+        const tx = await contract.setMaxPolicyAmount(newMaxRaw, { gasLimit: 80000 });
+        await tx.wait(1);
+
+        console.log(`[IP] maxPolicyAmount updated to ${maxPolicyAmountUsdc} USDC by ${req.user.address}. TX: ${tx.hash}`);
+        res.json({
+            success: true,
+            tx_hash: tx.hash,
+            maxPolicyAmountUsdc: parseFloat(maxPolicyAmountUsdc),
+            message: `Max policy amount updated to ${maxPolicyAmountUsdc} USDC`
+        });
+    } catch (err) {
+        console.error('[IP] POST /admin/config error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // ── POST /api/v1/instant/admin/pause ──────────────────────────────────────────
 app.post('/api/v1/instant/admin/pause', authenticateToken, async (req, res) => {
     try {
@@ -2710,6 +2773,24 @@ app.get('/api/v1/instant/relayer/status', authenticateToken, async (req, res) =>
         });
     } catch (err) {
         console.error('[IP] GET /relayer/status error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ── GET /api/v1/instant/relayer/nonce ──────────────────────────────────────────
+// Retorna el nonce actual de registro de relayer. El frontend lo incluye en la firma EIP-712.
+app.get('/api/v1/instant/relayer/nonce', authenticateToken, async (req, res) => {
+    try {
+        const coldWallet = req.user.address.toLowerCase();
+        if (!INSTANT_CONTRACT_ADDRESS) {
+            return res.json({ nonce: 0, contractReady: false });
+        }
+        const provider = globalRpcManager.getProvider();
+        const contract = getInstantContract(provider);
+        const nonce = await contract.getRelayerNonce(coldWallet);
+        res.json({ nonce: Number(nonce), contractReady: true });
+    } catch (err) {
+        console.error('[IP] GET /relayer/nonce error:', err);
         res.status(500).json({ error: err.message });
     }
 });

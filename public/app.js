@@ -71,29 +71,18 @@ async function authenticatedFetch(url, options = {}) {
 }
 
 async function renewAuthToken() {
-    if (!signer || !userAddress) return null;
-    try {
-        const message = `Sign in to Spectral Celestial\nAddress: ${userAddress}\nTimestamp: ${Date.now()}`;
-        const signature = await signer.signMessage(message);
-
-        const response = await fetch('/api/auth/verify', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ address: userAddress, signature, message })
-        });
-
-        if (response.ok) {
-            const data = await response.json();
-            AUTH_TOKEN = data.token;
-            localStorage.setItem('jwt_token', data.token);
-            console.log('[Auth] ✅ Token renewed successfully');
-            return data.token;
-        }
-    } catch (err) {
-        console.error('[Auth] Token renewal error:', err);
-    }
+    // Con hardware wallets (Ledger), firmar automáticamente en cada 401
+    // abre el dispositivo físico sin consentimiento y crea un loop infinito.
+    // Solución: limpiar la sesión y pedir al usuario que se loguee de nuevo.
+    console.warn('[Auth] Session expired. Please log in again.');
+    AUTH_TOKEN = null;
+    localStorage.removeItem('jwt_token');
+    localStorage.removeItem('user_address');
+    const btnConnect = document.getElementById('btnConnect');
+    if (btnConnect) { btnConnect.innerHTML = '🦊 Reconectar'; btnConnect.disabled = false; }
     return null;
 }
+
 
 
 
@@ -358,6 +347,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             if (payload.role === 'SUPER_ADMIN') {
                 if (navAdmin) navAdmin.classList.remove('hidden');
+                document.getElementById('navContractAdmin')?.classList.remove('hidden');
             }
 
             if (payload.role === 'REGISTERED') {
@@ -678,6 +668,7 @@ async function connectWallet() {
 
                         if (role === 'SUPER_ADMIN') {
                             if (navAdmin) navAdmin.classList.remove('hidden');
+                            document.getElementById('navContractAdmin')?.classList.remove('hidden');
                             if (adminRescueFunds) {
                                 adminRescueFunds.classList.remove('hidden');
                                 adminRescueFunds.onclick = async (e) => {
@@ -697,6 +688,7 @@ async function connectWallet() {
                         } else {
                             if (navAdmin) navAdmin.classList.add('hidden');
                             if (adminRescueFunds) adminRescueFunds.classList.add('hidden');
+                            document.getElementById('navContractAdmin')?.classList.add('hidden');
                         }
 
                         appLayout.style.opacity = "0";
@@ -3596,7 +3588,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function showInstantPaymentSection() {
     // Hide other sections (mainBatchPanel is now the shared container)
-    const toHide = ['batchSection', 'restrictedView'];
+    const toHide = ['batchSection', 'restrictedView', 'contractAdminSection'];
     toHide.forEach(id => {
         const el = document.getElementById(id);
         if (el) el.classList.add('hidden');
@@ -3683,6 +3675,17 @@ window.ipActivatePolicy = async () => {
         return;
     }
 
+    // Validar contra el límite on-chain
+    try {
+        const cfgRes = await authenticatedFetch('/api/v1/instant/admin/config');
+        const cfgData = await cfgRes.json();
+        if (cfgData.contractReady && amount > cfgData.maxPolicyAmountUsdc) {
+            statusEl.textContent = `❌ El monto excede el límite máximo permitido: ${cfgData.maxPolicyAmountUsdc.toFixed(2)} USDC`;
+            statusEl.style.color = '#ef4444';
+            return;
+        }
+    } catch (e) { /* si falla la lectura del config, el contrato rechazará si excede */ }
+
     statusEl.textContent = '⏳ Verificando registro on-chain...';
     statusEl.style.color = '#60a5fa';
 
@@ -3732,13 +3735,20 @@ window.ipActivatePolicy = async () => {
                     { name: 'coldWallet', type: 'address' },
                     { name: 'relayer', type: 'address' },
                     { name: 'deadline', type: 'uint256' },
+                    { name: 'nonce', type: 'uint256' },
                 ]
             };
+
+            // Leer el nonce actual del contrato (necesario para la firma)
+            const nonceRes = await authenticatedFetch(`/api/v1/instant/relayer/nonce`);
+            const nonceData = await nonceRes.json();
+            const currentNonce = nonceData.nonce ?? 0;
 
             const message = {
                 coldWallet: userAddress,
                 relayer: expectedFaucet,
                 deadline: registerDeadline,
+                nonce: currentNonce,
             };
 
             let signature;
@@ -3920,3 +3930,220 @@ window.ipExportExcel = async () => {
         alert('Error al exportar: ' + err.message);
     }
 };
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// === CONTRACT ADMIN (SUPER_ADMIN only) — Direct Web3 via MetaMask ===
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ABI mínimo del contrato InstantPayment para las operaciones del owner
+const CAD_ABI = [
+    'function owner() view returns (address)',
+    'function pendingOwner() view returns (address)',
+    'function paused() view returns (bool)',
+    'function maxPolicyAmount() view returns (uint256)',
+    'function transferOwnership(address newOwner)',
+    'function acceptOwnership()',
+    'function pause()',
+    'function unpause()',
+    'function setMaxPolicyAmount(uint256 newMax)',
+    'function resetPolicy(address coldWallet)',
+];
+
+// Nav wiring — se registra en DOMContentLoaded
+document.addEventListener('DOMContentLoaded', () => {
+    const navCAD = document.getElementById('navContractAdmin');
+    if (navCAD) {
+        navCAD.addEventListener('click', (e) => {
+            e.preventDefault();
+            showContractAdminSection();
+        });
+    }
+});
+
+function showContractAdminSection() {
+    // Ocultar las demás secciones
+    ['batchSection', 'instantPaymentSection', 'restrictedView'].forEach(id => {
+        document.getElementById(id)?.classList.add('hidden');
+    });
+
+    // Mostrar la sección
+    const section = document.getElementById('contractAdminSection');
+    if (section) section.classList.remove('hidden');
+
+    // Marcar nav activo
+    document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+    document.getElementById('navContractAdmin')?.classList.add('active');
+
+    // Cargar info on-chain automáticamente
+    cadLoadContractStatus();
+}
+
+/** Obtiene el contrato con signer de MetaMask (para escritura) o provider read-only */
+async function cadGetContract(writeable = false) {
+    const res = await authenticatedFetch('/api/v1/instant/admin/config');
+    const cfg = await res.json();
+    if (!cfg.contractReady || !cfg.contractAddress) {
+        throw new Error('Contrato no configurado en el servidor (INSTANT_PAYMENT_CONTRACT_ADDRESS)');
+    }
+    if (writeable) {
+        if (!signer) throw new Error('Conectá MetaMask primero');
+        return new ethers.Contract(cfg.contractAddress, CAD_ABI, signer);
+    }
+    // Read-only: usar un provider JSON-RPC
+    const provider = new ethers.JsonRpcProvider('https://polygon-rpc.com');
+    return { contract: new ethers.Contract(cfg.contractAddress, CAD_ABI, provider), address: cfg.contractAddress };
+}
+
+/** Carga y muestra el estado on-chain del contrato */
+async function cadLoadContractStatus() {
+    const statusEl = document.getElementById('cadLoadStatus');
+    if (statusEl) { statusEl.textContent = '⏳ Cargando datos on-chain...'; statusEl.style.color = '#60a5fa'; }
+
+    try {
+        const { contract, address } = await cadGetContract(false);
+
+        const [owner, pendingOwner, isPaused, maxPolicy] = await Promise.all([
+            contract.owner(),
+            contract.pendingOwner().catch(() => ethers.ZeroAddress),
+            contract.paused(),
+            contract.maxPolicyAmount(),
+        ]);
+
+        const short = (addr) => addr && addr !== ethers.ZeroAddress
+            ? `${addr.slice(0, 6)}...${addr.slice(-4)}`
+            : '—';
+        const explorerBase = 'https://polygonscan.com/address/';
+
+        // Contrato
+        const cadContractLink = document.getElementById('cadContractLink');
+        if (cadContractLink) { cadContractLink.textContent = short(address); cadContractLink.href = explorerBase + address; }
+
+        // Owner
+        const cadOwnerLink = document.getElementById('cadOwnerLink');
+        if (cadOwnerLink) { cadOwnerLink.textContent = short(owner); cadOwnerLink.href = explorerBase + owner; }
+
+        // Pending owner
+        const cadPendingOwnerLink = document.getElementById('cadPendingOwnerLink');
+        const cadPendingOwnerInline = document.getElementById('cadPendingOwnerInline');
+        const hasPending = pendingOwner && pendingOwner !== ethers.ZeroAddress;
+        const pendingTxt = hasPending ? short(pendingOwner) : 'Ninguno';
+        if (cadPendingOwnerLink) { cadPendingOwnerLink.textContent = pendingTxt; cadPendingOwnerLink.href = hasPending ? explorerBase + pendingOwner : '#'; }
+        if (cadPendingOwnerInline) cadPendingOwnerInline.textContent = hasPending ? pendingOwner : '—';
+
+        // Estado paused
+        const cadPauseBadge = document.getElementById('cadPauseBadge');
+        if (cadPauseBadge) {
+            cadPauseBadge.textContent = isPaused ? '⏸ Pausado' : '▶ Activo';
+            cadPauseBadge.style.color = isPaused ? '#f87171' : '#4ade80';
+        }
+        const cadPauseBtn = document.getElementById('cadPauseBtn');
+        if (cadPauseBtn) cadPauseBtn.textContent = isPaused ? '🦊 Despausar Contrato' : '🦊 Pausar Contrato';
+
+        // Max policy
+        const maxUsdc = Number(maxPolicy) / 1_000_000;
+        const cadMaxPolicyDisplay = document.getElementById('cadMaxPolicyDisplay');
+        if (cadMaxPolicyDisplay) cadMaxPolicyDisplay.textContent = `${maxUsdc.toLocaleString('es', { minimumFractionDigits: 0 })} USDC`;
+
+        if (statusEl) { statusEl.textContent = '✅ Datos cargados correctamente'; statusEl.style.color = '#4ade80'; }
+    } catch (err) {
+        console.error('[CAD] cadLoadContractStatus error:', err);
+        if (statusEl) { statusEl.textContent = '❌ ' + err.message; statusEl.style.color = '#ef4444'; }
+    }
+}
+
+/** Setea el maxPolicyAmount via MetaMask (solo owner) */
+window.cadSetMaxPolicy = async () => {
+    const input = parseFloat(document.getElementById('cadMaxPolicyInput')?.value);
+    const statusEl = document.getElementById('cadMaxPolicyStatus');
+    if (!input || input <= 0) { statusEl.textContent = '❌ Monto inválido'; statusEl.style.color = '#ef4444'; return; }
+    statusEl.textContent = '🦊 Abriendo MetaMask...'; statusEl.style.color = '#f59e0b';
+    try {
+        const contract = await cadGetContract(true);
+        const newMaxRaw = BigInt(Math.round(input * 1_000_000));
+        const tx = await contract.setMaxPolicyAmount(newMaxRaw);
+        statusEl.textContent = '⏳ Esperando confirmación...'; statusEl.style.color = '#60a5fa';
+        await tx.wait(1);
+        statusEl.textContent = `✅ maxPolicyAmount seteado a ${input.toLocaleString('es')} USDC. TX: ${tx.hash.slice(0, 10)}...`; statusEl.style.color = '#4ade80';
+        await cadLoadContractStatus();
+    } catch (err) {
+        statusEl.textContent = '❌ ' + err.message; statusEl.style.color = '#ef4444';
+    }
+};
+
+/** Propone transferOwnership(newOwner) — Ownable2Step paso 1 */
+window.cadTransferOwnership = async () => {
+    const newOwner = document.getElementById('cadNewOwnerInput')?.value?.trim();
+    const statusEl = document.getElementById('cadTransferStatus');
+    if (!newOwner || !ethers.isAddress(newOwner)) { statusEl.textContent = '❌ Dirección inválida'; statusEl.style.color = '#ef4444'; return; }
+    if (!confirm(`¿Proponer transferencia de ownership a:\n${newOwner}\n\nEl nuevo owner deberá llamar acceptOwnership() para completar.`)) return;
+    statusEl.textContent = '🦊 Abriendo MetaMask...'; statusEl.style.color = '#f59e0b';
+    try {
+        const contract = await cadGetContract(true);
+        const tx = await contract.transferOwnership(newOwner);
+        statusEl.textContent = '⏳ Esperando confirmación...'; statusEl.style.color = '#60a5fa';
+        await tx.wait(1);
+        statusEl.textContent = `✅ Transferencia propuesta. TX: ${tx.hash.slice(0, 10)}...\n⚠️ El nuevo owner debe llamar acceptOwnership().`; statusEl.style.color = '#4ade80';
+        await cadLoadContractStatus();
+    } catch (err) {
+        statusEl.textContent = '❌ ' + err.message; statusEl.style.color = '#ef4444';
+    }
+};
+
+/** Acepta el ownership — Ownable2Step paso 2 (llamado desde la wallet del pending owner) */
+window.cadAcceptOwnership = async () => {
+    const statusEl = document.getElementById('cadAcceptStatus');
+    if (!confirm('¿Aceptar el ownership de este contrato con la wallet conectada en MetaMask?')) return;
+    statusEl.textContent = '🦊 Abriendo MetaMask...'; statusEl.style.color = '#f59e0b';
+    try {
+        const contract = await cadGetContract(true);
+        const tx = await contract.acceptOwnership();
+        statusEl.textContent = '⏳ Esperando confirmación...'; statusEl.style.color = '#60a5fa';
+        await tx.wait(1);
+        statusEl.textContent = `✅ Ownership aceptado. TX: ${tx.hash.slice(0, 10)}...`; statusEl.style.color = '#4ade80';
+        await cadLoadContractStatus();
+    } catch (err) {
+        statusEl.textContent = '❌ ' + err.message; statusEl.style.color = '#ef4444';
+    }
+};
+
+/** Pausa o despauza el contrato según su estado actual */
+window.cadTogglePause = async () => {
+    const statusEl = document.getElementById('cadPauseStatus');
+    statusEl.textContent = '⏳ Leyendo estado...'; statusEl.style.color = '#60a5fa';
+    try {
+        const { contract: readContract } = await cadGetContract(false);
+        const isPaused = await readContract.paused();
+        const action = isPaused ? 'despausar' : 'pausar';
+        if (!confirm(`¿Confirmar: ${action} el contrato InstantPayment?\n${isPaused ? '▶ Reanudará transferencias.' : '⏸ Bloqueará transferencias y activaciones de policy.'}`)) {
+            statusEl.textContent = ''; return;
+        }
+        const writeContract = await cadGetContract(true);
+        statusEl.textContent = '🦊 Abriendo MetaMask...'; statusEl.style.color = '#f59e0b';
+        const tx = isPaused ? await writeContract.unpause() : await writeContract.pause();
+        statusEl.textContent = '⏳ Esperando confirmación...'; statusEl.style.color = '#60a5fa';
+        await tx.wait(1);
+        statusEl.textContent = `✅ Contrato ${isPaused ? 'reanudado' : 'pausado'}. TX: ${tx.hash.slice(0, 10)}...`; statusEl.style.color = '#4ade80';
+        await cadLoadContractStatus();
+    } catch (err) {
+        statusEl.textContent = '❌ ' + err.message; statusEl.style.color = '#ef4444';
+    }
+};
+
+/** Resetea la policy de una cold wallet específica (solo owner) */
+window.cadResetPolicyAdmin = async () => {
+    const coldWallet = document.getElementById('cadResetPolicyInput')?.value?.trim();
+    const statusEl = document.getElementById('cadResetPolicyStatus');
+    if (!coldWallet || !ethers.isAddress(coldWallet)) { statusEl.textContent = '❌ Dirección inválida'; statusEl.style.color = '#ef4444'; return; }
+    if (!confirm(`¿Resetear (desactivar) la policy de:\n${coldWallet}\n\nEsto desactivará el permit activo de esa wallet.`)) return;
+    statusEl.textContent = '🦊 Abriendo MetaMask...'; statusEl.style.color = '#f59e0b';
+    try {
+        const contract = await cadGetContract(true);
+        const tx = await contract.resetPolicy(coldWallet);
+        statusEl.textContent = '⏳ Esperando confirmación...'; statusEl.style.color = '#60a5fa';
+        await tx.wait(1);
+        statusEl.textContent = `✅ Policy reseteada. TX: ${tx.hash.slice(0, 10)}...`; statusEl.style.color = '#4ade80';
+    } catch (err) {
+        statusEl.textContent = '❌ ' + err.message; statusEl.style.color = '#ef4444';
+    }
+};
+

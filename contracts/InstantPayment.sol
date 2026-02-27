@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity 0.8.20;
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
@@ -40,7 +41,7 @@ interface IERC20Permit {
  */
 contract InstantPayment is
     Initializable,
-    OwnableUpgradeable,
+    Ownable2StepUpgradeable,
     PausableUpgradeable,
     ReentrancyGuardUpgradeable,
     UUPSUpgradeable,
@@ -59,9 +60,9 @@ contract InstantPayment is
 
     // ─── EIP-712 ──────────────────────────────────────────────────────────────
 
-    /// @dev "RegisterRelayer(address coldWallet,address relayer,uint256 deadline)"
+    /// @dev "RegisterRelayer(address coldWallet,address relayer,uint256 deadline,uint256 nonce)"
     bytes32 public constant REGISTER_RELAYER_TYPEHASH = keccak256(
-        "RegisterRelayer(address coldWallet,address relayer,uint256 deadline)"
+        "RegisterRelayer(address coldWallet,address relayer,uint256 deadline,uint256 nonce)"
     );
 
     // ─── State ────────────────────────────────────────────────────────────────
@@ -74,24 +75,32 @@ contract InstantPayment is
     /// @dev transferId => executed
     mapping(bytes32 => bool) public transfers;
 
+    /// @dev coldWallet => nonce para RegisterRelayer (anti-replay)
+    mapping(address => uint256) public relayerNonces;
+
     /// @dev coldWallet => Policy
     mapping(address => Policy) public policies;
+
+    /// @dev Máximo USDC que puede configurarse en una policy (6 decimales). Default: 20.000 USDC
+    uint256 public maxPolicyAmount = 20_000e6;
 
     // ─── Events ───────────────────────────────────────────────────────────────
 
     event RelayerRegistered(address indexed coldWallet, address indexed relayer);
     event PolicyActivated(address indexed coldWallet, uint256 totalAmount, uint256 deadline);
     event TransferExecuted(bytes32 indexed transferId, address indexed from, address indexed to, uint256 amount);
-    event TransferFailed(bytes32 indexed transferId, string reason);
     event PolicyReset(address indexed coldWallet);
+    event MaxPolicyAmountUpdated(uint256 oldAmount, uint256 newAmount);
 
     // ─── Errors ───────────────────────────────────────────────────────────────
 
     error NotAuthorizedRelayer(address caller, address coldWallet);
+    error NotAuthorizedToReset(address caller);
     error AlreadyExecuted(bytes32 transferId);
     error PolicyExpired(address coldWallet);
     error PolicyInactive(address coldWallet);
     error ExceedsPolicyLimit(uint256 requested, uint256 available);
+    error ExceedsMaxPolicyAmount(uint256 requested, uint256 maxAllowed);
     error InsufficientAllowance(uint256 allowance, uint256 needed);
     error ZeroAmount();
     error InvalidAddress();
@@ -118,7 +127,8 @@ contract InstantPayment is
     }
 
     function initialize(address _usdcToken, address _owner) public initializer {
-        __Ownable_init(_owner);
+        if (_usdcToken == address(0)) revert InvalidAddress(); // M02: validar token
+        __Ownable_init(_owner); // Ownable2StepUpgradeable incluye __Ownable_init; OZ v5 revierte si _owner==address(0)
         __Pausable_init();
         __ReentrancyGuard_init();
         __UUPSUpgradeable_init();
@@ -132,6 +142,8 @@ contract InstantPayment is
      * @notice Register an authorized relayer for a cold wallet.
      *         The cold wallet signs the EIP-712 message off-chain (MetaMask).
      *         Anyone can submit the signature on-chain (gas paid by relayer).
+     *         El nonce se incrementa solo si la TX tiene éxito. Si revierte,
+     *         el relayer puede reintentar con la misma firma.
      *
      * @param coldWallet  Address of the cold wallet (signer)
      * @param relayer     Address of the hot relayer/faucet wallet
@@ -147,29 +159,34 @@ contract InstantPayment is
         if (coldWallet == address(0) || relayer == address(0)) revert InvalidAddress();
         if (block.timestamp > deadline) revert SignatureExpired();
 
+        // Leer nonce actual sin incrementar todavía
+        uint256 currentNonce = relayerNonces[coldWallet];
+
         bytes32 structHash = keccak256(abi.encode(
             REGISTER_RELAYER_TYPEHASH,
             coldWallet,
             relayer,
-            deadline
+            deadline,
+            currentNonce
         ));
         bytes32 hash = _hashTypedDataV4(structHash);
         address signer = hash.recover(signature);
 
         if (signer != coldWallet) revert InvalidSignature();
 
+        // Consumir el nonce solo después de verificar la firma
+        relayerNonces[coldWallet] = currentNonce + 1;
+
         coldWalletRelayer[coldWallet] = relayer;
         emit RelayerRegistered(coldWallet, relayer);
     }
 
     /**
-     * @notice Admin override: directly set a relayer without EIP-712.
-     *         Use only for emergency recovery or testing.
+     * @notice Retorna el nonce actual de registro de relayer para un cold wallet.
+     *         El frontend debe leer este valor antes de generar la firma EIP-712.
      */
-    function setRelayer(address coldWallet, address relayer) external onlyOwner {
-        if (coldWallet == address(0)) revert InvalidAddress();
-        coldWalletRelayer[coldWallet] = relayer;
-        emit RelayerRegistered(coldWallet, relayer);
+    function getRelayerNonce(address coldWallet) external view returns (uint256) {
+        return relayerNonces[coldWallet];
     }
 
     // ─── Policy Management ────────────────────────────────────────────────────
@@ -188,7 +205,8 @@ contract InstantPayment is
         uint256 deadline
     ) external onlyRelayerOf(coldWallet) whenNotPaused {
         if (totalAmount == 0) revert ZeroAmount();
-        require(deadline > block.timestamp, "Deadline must be in the future");
+        if (totalAmount > maxPolicyAmount) revert ExceedsMaxPolicyAmount(totalAmount, maxPolicyAmount);
+        if (deadline <= block.timestamp) revert PolicyExpired(coldWallet);
 
         policies[coldWallet] = Policy({
             totalAmount:    totalAmount,
@@ -205,10 +223,9 @@ contract InstantPayment is
      *         Callable by the cold wallet's registered relayer OR by the owner.
      */
     function resetPolicy(address coldWallet) external {
-        require(
-            msg.sender == coldWalletRelayer[coldWallet] || msg.sender == owner(),
-            "Not authorized"
-        );
+        if (msg.sender != coldWalletRelayer[coldWallet] && msg.sender != owner()) {
+            revert NotAuthorizedToReset(msg.sender);
+        }
         policies[coldWallet].isActive = false;
         emit PolicyReset(coldWallet);
     }
@@ -252,13 +269,11 @@ contract InstantPayment is
         policy.consumedAmount += amount;
 
         // ── Execute ───────────────────────────────────────────────────────
-        bool success = usdcToken.transferFrom(from, to, amount);
-        if (!success) {
-            transfers[transferId] = false;
-            policy.consumedAmount -= amount;
-            emit TransferFailed(transferId, "USDC transferFrom returned false");
-            return;
-        }
+        // Si transferFrom falla, la EVM revierte TODO automáticamente (CEI pattern)
+        require(
+            usdcToken.transferFrom(from, to, amount),
+            "USDC transfer failed"
+        );
 
         emit TransferExecuted(transferId, from, to, amount);
     }
@@ -299,10 +314,28 @@ contract InstantPayment is
 
     // ─── Admin ────────────────────────────────────────────────────────────────
 
+    /**
+     * @notice Actualiza el monto máximo permitido en una policy.
+     *         El frontend debe leer este valor para limitar el input del usuario.
+     * @param newMax Nuevo límite en USDC (6 decimales). Ejemplo: 50_000e6 = 50.000 USDC
+     */
+    function setMaxPolicyAmount(uint256 newMax) external onlyOwner {
+        if (newMax == 0) revert ZeroAmount();
+        emit MaxPolicyAmountUpdated(maxPolicyAmount, newMax);
+        maxPolicyAmount = newMax;
+    }
+
     function pause() external onlyOwner { _pause(); }
     function unpause() external onlyOwner { _unpause(); }
+
 
     // ─── UUPS ─────────────────────────────────────────────────────────────────
 
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
+
+    // ─── Storage Gap ──────────────────────────────────────────────────────────
+    // Reservar slots para futuras variables de estado en upgrades.
+    // Reducir __gap en 1 por cada nueva variable de estado que se agregue en V2+.
+    // Ref: sharp_edges.md#storage-collision
+    uint256[44] private __gap;
 }
