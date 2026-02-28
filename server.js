@@ -2316,7 +2316,8 @@ console.log("🔄 Transaction Monitor: Enabled (checks every 60s)");
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const xlsx_ip = require('xlsx');
-const INSTANT_CONTRACT_ADDRESS = process.env.INSTANT_PAYMENT_CONTRACT_ADDRESS;
+const INSTANT_CONTRACT_ADDRESS = process.env.INSTANT_PAYMENT_CONTRACT_ADDRESS
+    || '0x971da9d642C94f6B5E3867EC891FBA7ef8287d29'; // Polygon Mainnet proxy (public address)
 
 // Helper: get contract instance (full ABI)
 function getInstantContract(signerOrProvider) {
