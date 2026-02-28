@@ -2227,7 +2227,7 @@ app.post('/api/relayer/:address/recover', authenticateToken, async (req, res) =>
     }
 });
 
-const VERSION = "2.6.1-reactive-unseal";
+const VERSION = "2.6.2-instant-payment-dev"; // diagnostic: 20260228-0110
 const PORT_LISTEN = process.env.PORT || 3000;
 
 // ============================================
