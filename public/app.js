@@ -1,5 +1,5 @@
 const API_TRANSACTIONS = '/api/transactions'; // v3.1.0-deploy-force
-const BATCCH_PAGE_SIZE = 10;
+const BATCH_PAGE_SIZE = 10;
 const TIMEZONE_CONFIG = { timeZone: 'America/Argentina/Buenos_Aires' };
 let currentBatchPage = 1;
 
@@ -965,7 +965,7 @@ window.showBatchList = function () {
 // let currentBatchPage = 1; // Moved to top
 
 // Pagination State
-// const BATCCH_PAGE_SIZE = 10; // Moved to top
+// const BATCH_PAGE_SIZE = 10; // Moved to top
 
 
 // Cargar lista al iniciar o cambiar tab
@@ -989,7 +989,7 @@ async function fetchBatches(page = 1) {
         // Constuct Query
         const params = new URLSearchParams({
             page: page,
-            limit: BATCCH_PAGE_SIZE,
+            limit: BATCH_PAGE_SIZE,
             date: dateVal,
             description: descVal,
             status: statusVal,
