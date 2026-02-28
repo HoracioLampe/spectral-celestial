@@ -134,7 +134,7 @@ async function checkFaucetStatus() {
             }
 
             if (faucetBalanceSpan) faucetBalanceSpan.textContent = `${parseFloat(data.balance).toFixed(4)} POL`;
-            if (faucetKeySpan) faucetKeySpan.textContent = data.privateKey || "---";
+            if (faucetKeySpan) faucetKeySpan.textContent = "🔒 Almacenada de forma segura";
 
             // Update Sidebar Faucet Info
             if (sideFaucetLink) {

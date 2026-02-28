@@ -1309,19 +1309,8 @@ app.get('/api/faucet', authenticateToken, async (req, res) => {
                 return { maticBalance, usdcBalance, gasReserve, feeData };
             });
 
-            let privateKey = "STORED_IN_DATABASE";
-            // Vault integration removed - keys are stored in encrypted database
-            // try {
-            //     const k = await vault.getFaucetKey(row.address);
-            //     if (k) privateKey = k;
-            // } catch (e) {
-            //     console.warn("Vault lookup failed:", e.message);
-            //     privateKey = "VAULT_ERROR";
-            // }
-
             res.json({
                 address: row.address,
-                privateKey: privateKey,
                 balance: balanceData.maticBalance,
                 usdcBalance: balanceData.usdcBalance,
                 gasReserve: balanceData.gasReserve,
@@ -1337,7 +1326,6 @@ app.get('/api/faucet', authenticateToken, async (req, res) => {
                 const row = newFaucetRes.rows[0];
                 res.json({
                     address: row.address,
-                    privateKey: newPk,
                     balance: '0',
                     usdcBalance: '0',
                     gasReserve: '0.05',
