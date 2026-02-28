@@ -86,7 +86,7 @@ async function renewAuthToken() {
 
 
 
-// --- Hardcoded Configuration (Secure Production) ---
+// Contract & Network Configuration
 const APP_CONFIG = {
     CONTRACT_ADDRESS: "0x7B25Ce9800CCE4309E92e2834E09bD89453d90c5",
     RPC_URL: "/api/rpc", // Use internal proxy for frontend blockchain reads (optional)
