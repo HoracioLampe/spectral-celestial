@@ -128,8 +128,8 @@ contract InstantPayment is
     }
 
     function initialize(address _usdcToken, address _owner) public initializer {
-        if (_usdcToken == address(0)) revert InvalidAddress(); // M02: validar token
-        __Ownable_init(_owner); // Ownable2StepUpgradeable incluye __Ownable_init; OZ v5 revierte si _owner==address(0)
+        if (_usdcToken == address(0)) revert InvalidAddress();
+        __Ownable_init(_owner);
         __Pausable_init();
         __ReentrancyGuard_init();
         __UUPSUpgradeable_init();

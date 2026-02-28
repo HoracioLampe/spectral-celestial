@@ -53,10 +53,10 @@ async function authenticatedFetch(url, options = {}) {
 
                 const queuedItems = [...renewalQueue];
                 renewalQueue = [];
-                queuedItems.forEach(async (item) => {
+                await Promise.all(queuedItems.map(async (item) => {
                     const res = await executeRequest(newToken);
                     item.resolve(res);
-                });
+                }));
 
                 return currentRes;
             }
