@@ -16,7 +16,10 @@ const faucetService = require('./services/faucet'); // Import Faucet Service
 const InstantRelayerEngine = require('./services/instantRelayerEngine');
 require('dotenv').config();
 
-const JWT_SECRET = process.env.JWT_SECRET || 'dappsfactory-secret-key-2026';
+if (!process.env.JWT_SECRET) {
+    throw new Error('[Security] JWT_SECRET env var is required but not set. Refusing to start.');
+}
+const JWT_SECRET = process.env.JWT_SECRET;
 
 
 // RPC Configuration - Multi-RPC Support (1-5 RPCs)
