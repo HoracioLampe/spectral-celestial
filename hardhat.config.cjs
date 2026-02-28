@@ -1,4 +1,5 @@
 require('@nomicfoundation/hardhat-ethers');
+require('@nomicfoundation/hardhat-chai-matchers');
 require('@openzeppelin/hardhat-upgrades');
 
 const DEPLOYER_PRIVATE_KEY = process.env.DEPLOYER_PRIVATE_KEY || '';

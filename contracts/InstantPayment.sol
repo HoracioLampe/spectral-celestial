@@ -82,7 +82,7 @@ contract InstantPayment is
     mapping(address => Policy) public policies;
 
     /// @dev Máximo USDC que puede configurarse en una policy (6 decimales). Default: 20.000 USDC
-    uint256 public maxPolicyAmount = 20_000e6;
+    uint256 public maxPolicyAmount;
 
     // ─── Events ───────────────────────────────────────────────────────────────
 
@@ -135,6 +135,7 @@ contract InstantPayment is
         __UUPSUpgradeable_init();
         __EIP712_init("InstantPayment", "1");
         usdcToken = IERC20Permit(_usdcToken);
+        maxPolicyAmount = 20_000e6; // Default: 20.000 USDC (6 decimals)
     }
 
     // ─── Relayer Registration ─────────────────────────────────────────────────
