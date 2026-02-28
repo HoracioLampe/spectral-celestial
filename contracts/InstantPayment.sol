@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.20;
+pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
@@ -106,6 +106,7 @@ contract InstantPayment is
     error InvalidAddress();
     error SignatureExpired();
     error InvalidSignature();
+    error TransferFailed();
 
     // ─── Modifiers ────────────────────────────────────────────────────────────
 
@@ -270,10 +271,7 @@ contract InstantPayment is
 
         // ── Execute ───────────────────────────────────────────────────────
         // Si transferFrom falla, la EVM revierte TODO automáticamente (CEI pattern)
-        require(
-            usdcToken.transferFrom(from, to, amount),
-            "USDC transfer failed"
-        );
+        if (!usdcToken.transferFrom(from, to, amount)) revert TransferFailed();
 
         emit TransferExecuted(transferId, from, to, amount);
     }
