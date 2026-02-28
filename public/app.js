@@ -3989,40 +3989,51 @@ async function cadGetContract(writeable = false) {
     return { contract: new ethers.Contract(cfg.contractAddress, CAD_ABI, provider), address: cfg.contractAddress };
 }
 
-/** Carga y muestra el estado on-chain del contrato */
+/** Carga y muestra el estado on-chain del contrato (via backend → Chainstack) */
 async function cadLoadContractStatus() {
     const statusEl = document.getElementById('cadLoadStatus');
     if (statusEl) { statusEl.textContent = '⏳ Cargando datos on-chain...'; statusEl.style.color = '#60a5fa'; }
 
     try {
-        const { contract, address } = await cadGetContract(false);
+        // Usar backend en lugar de llamar al blockchain desde el browser
+        const res = await authenticatedFetch('/api/v1/instant/admin/status');
+        const data = await res.json();
 
-        const [owner, pendingOwner, isPaused, maxPolicy] = await Promise.all([
-            contract.owner(),
-            contract.pendingOwner().catch(() => ethers.ZeroAddress),
-            contract.paused(),
-            contract.maxPolicyAmount(),
-        ]);
+        if (!data.contractReady) {
+            throw new Error('Contrato no configurado en el servidor (INSTANT_PAYMENT_CONTRACT_ADDRESS)');
+        }
+        if (data.rpcError) {
+            if (statusEl) { statusEl.textContent = '⚠️ RPC error: ' + data.rpcError; statusEl.style.color = '#f59e0b'; }
+            return;
+        }
 
-        const short = (addr) => addr && addr !== ethers.ZeroAddress
-            ? `${addr.slice(0, 6)}...${addr.slice(-4)}`
-            : '—';
+        const { owner, pendingOwner, isPaused, maxPolicyAmountUsdc, contractAddress } = data;
+
         const explorerBase = 'https://polygonscan.com/address/';
+        const addrHtml = (addr) => {
+            if (!addr || addr === '0x0000000000000000000000000000000000000000') return '—';
+            return `<span style="font-family:monospace; font-size:0.8rem; word-break:break-all">${addr}</span>
+                    <button onclick="event.stopPropagation(); event.preventDefault(); navigator.clipboard.writeText('${addr}').then(()=>{ this.textContent='✅'; setTimeout(()=>this.textContent='📋',1500) })" 
+                        title="Copiar" style="background:none;border:none;cursor:pointer;color:#60a5fa;margin-left:4px;font-size:0.9rem;">📋</button>`;
+        };
 
         // Contrato
         const cadContractLink = document.getElementById('cadContractLink');
-        if (cadContractLink) { cadContractLink.textContent = short(address); cadContractLink.href = explorerBase + address; }
+        if (cadContractLink) { cadContractLink.innerHTML = addrHtml(contractAddress); cadContractLink.href = explorerBase + contractAddress; }
 
         // Owner
         const cadOwnerLink = document.getElementById('cadOwnerLink');
-        if (cadOwnerLink) { cadOwnerLink.textContent = short(owner); cadOwnerLink.href = explorerBase + owner; }
+        if (cadOwnerLink) { cadOwnerLink.innerHTML = addrHtml(owner); cadOwnerLink.href = explorerBase + owner; }
 
         // Pending owner
         const cadPendingOwnerLink = document.getElementById('cadPendingOwnerLink');
         const cadPendingOwnerInline = document.getElementById('cadPendingOwnerInline');
-        const hasPending = pendingOwner && pendingOwner !== ethers.ZeroAddress;
-        const pendingTxt = hasPending ? short(pendingOwner) : 'Ninguno';
-        if (cadPendingOwnerLink) { cadPendingOwnerLink.textContent = pendingTxt; cadPendingOwnerLink.href = hasPending ? explorerBase + pendingOwner : '#'; }
+        const zeroAddr = '0x0000000000000000000000000000000000000000';
+        const hasPending = pendingOwner && pendingOwner !== zeroAddr;
+        if (cadPendingOwnerLink) {
+            cadPendingOwnerLink.innerHTML = hasPending ? addrHtml(pendingOwner) : 'Ninguno';
+            cadPendingOwnerLink.href = hasPending ? explorerBase + pendingOwner : '#';
+        }
         if (cadPendingOwnerInline) cadPendingOwnerInline.textContent = hasPending ? pendingOwner : '—';
 
         // Estado paused
@@ -4035,9 +4046,12 @@ async function cadLoadContractStatus() {
         if (cadPauseBtn) cadPauseBtn.textContent = isPaused ? '🦊 Despausar Contrato' : '🦊 Pausar Contrato';
 
         // Max policy
-        const maxUsdc = Number(maxPolicy) / 1_000_000;
         const cadMaxPolicyDisplay = document.getElementById('cadMaxPolicyDisplay');
-        if (cadMaxPolicyDisplay) cadMaxPolicyDisplay.textContent = `${maxUsdc.toLocaleString('es', { minimumFractionDigits: 0 })} USDC`;
+        if (cadMaxPolicyDisplay) {
+            cadMaxPolicyDisplay.textContent = maxPolicyAmountUsdc != null
+                ? `${maxPolicyAmountUsdc.toLocaleString('es', { minimumFractionDigits: 0 })} USDC`
+                : '—';
+        }
 
         if (statusEl) { statusEl.textContent = '✅ Datos cargados correctamente'; statusEl.style.color = '#4ade80'; }
     } catch (err) {

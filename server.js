@@ -1898,13 +1898,7 @@ app.get('/api/recovery/batches', authenticateToken, async (req, res) => {
     }
 });
 
-// Fallback para SPA (Al final de todo) - Excluir /api/* para devolver 404 real en endpoints inexistentes
-app.get('*', (req, res) => {
-    if (req.path.startsWith('/api/')) {
-        return res.status(404).json({ error: 'Endpoint not found' });
-    }
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
+// NOTA: El catch-all SPA fue movido al final del archivo para no interceptar rutas de Instant Payment
 
 
 // Manual Fund Recovery Endpoint
@@ -2345,6 +2339,120 @@ function getInstantContract(signerOrProvider) {
     return new ethers.Contract(INSTANT_CONTRACT_ADDRESS, abi, signerOrProvider);
 }
 
+// ── GET /api/v1/instant/relayer/status ────────────────────────────────────────
+// El frontend llama esto ANTES de activar la política para verificar:
+//   1. Si el contrato está configurado (contractReady)
+//   2. Si ya hay un relayer registrado para esta cold wallet
+//   3. Qué faucet le corresponde (expectedFaucet)
+app.get('/api/v1/instant/relayer/status', authenticateToken, async (req, res) => {
+    try {
+        const funderAddress = req.user.address.toLowerCase();
+
+        if (!INSTANT_CONTRACT_ADDRESS) {
+            return res.json({ contractReady: false, registered: false });
+        }
+
+        const provider = globalRpcManager.getProvider();
+        const contract = getInstantContract(provider);
+
+        // Buscar la faucet asociada a este funder
+        const faucetRes = await pool.query(
+            'SELECT address FROM faucets WHERE LOWER(funder_address) = $1 LIMIT 1',
+            [funderAddress]
+        );
+        const expectedFaucet = faucetRes.rows[0]?.address || null;
+
+        // Verificar si ya hay un relayer registrado on-chain
+        let registered = false;
+        let registeredRelayer = null;
+        try {
+            const relayerAddr = await contract.coldWalletRelayer(funderAddress);
+            if (relayerAddr && relayerAddr !== ethers.ZeroAddress) {
+                registered = true;
+                registeredRelayer = relayerAddr;
+            }
+        } catch (e) {
+            // Si el contrato no tiene el método o falla, asumimos no registrado
+        }
+
+        res.json({
+            contractReady: true,
+            contractAddress: INSTANT_CONTRACT_ADDRESS,
+            registered,
+            registeredRelayer,
+            expectedFaucet,
+            coldWallet: funderAddress,
+        });
+    } catch (err) {
+        console.error('[IP] GET /relayer/status error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ── GET /api/v1/instant/relayer/nonce ─────────────────────────────────────────
+// Devuelve el nonce actual del contrato para la cold wallet del usuario.
+// Necesario para construir la firma EIP-712 de registerRelayer.
+app.get('/api/v1/instant/relayer/nonce', authenticateToken, async (req, res) => {
+    try {
+        const funderAddress = req.user.address.toLowerCase();
+
+        if (!INSTANT_CONTRACT_ADDRESS) {
+            return res.status(503).json({ error: 'Contract not configured' });
+        }
+
+        const provider = globalRpcManager.getProvider();
+        const contract = getInstantContract(provider);
+
+        let nonce = 0;
+        try {
+            const nonceRaw = await contract.getRelayerNonce(funderAddress);
+            nonce = Number(nonceRaw);
+        } catch (e) {
+            // Si el contrato no tiene el método, devolvemos 0
+        }
+
+        res.json({ nonce, coldWallet: funderAddress });
+    } catch (err) {
+        console.error('[IP] GET /relayer/nonce error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ── POST /api/v1/instant/relayer/register ─────────────────────────────────────
+// El backend registra el relayer on-chain usando la firma EIP-712 del usuario.
+app.post('/api/v1/instant/relayer/register', authenticateToken, async (req, res) => {
+    try {
+        const funderAddress = req.user.address.toLowerCase();
+        const { deadline, signature } = req.body;
+
+        if (!deadline || !signature) {
+            return res.status(400).json({ error: 'deadline and signature are required' });
+        }
+        if (!INSTANT_CONTRACT_ADDRESS) {
+            return res.status(503).json({ error: 'Contract not configured' });
+        }
+
+        const provider = globalRpcManager.getProvider();
+        const faucetWallet = await faucetService.getFaucetWallet(pool, provider, funderAddress);
+        const contract = getInstantContract(faucetWallet.connect(provider));
+
+        const tx = await contract.registerRelayer(
+            funderAddress,
+            faucetWallet.address,
+            deadline,
+            signature,
+            { gasLimit: 150000 }
+        );
+        await tx.wait(1);
+
+        console.log(`[IP] Relayer registered: coldWallet=${funderAddress} relayer=${faucetWallet.address} tx=${tx.hash}`);
+        res.json({ success: true, tx_hash: tx.hash, relayer: faucetWallet.address });
+    } catch (err) {
+        console.error('[IP] POST /relayer/register error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // ── POST /api/v1/instant/transfer ──────────────────────────────────────────────
 // Accepts a transfer order from external API clients
 app.post('/api/v1/instant/transfer', authenticateToken, async (req, res) => {
@@ -2612,18 +2720,86 @@ app.get('/api/v1/instant/admin/config', authenticateToken, async (req, res) => {
         if (!INSTANT_CONTRACT_ADDRESS) {
             return res.json({ maxPolicyAmountUsdc: 20000, contractReady: false });
         }
-        const provider = globalRpcManager.getProvider();
-        const contract = getInstantContract(provider);
-        const maxRaw = await contract.maxPolicyAmount();
-        const maxUsdc = Number(maxRaw) / 1_000_000;
+
+        let maxPolicyAmountUsdc = 20000;
+        let maxPolicyAmountRaw = null;
+        let rpcError = null;
+
+        try {
+            const provider = globalRpcManager.getProvider();
+            const contract = getInstantContract(provider);
+            const maxRaw = await contract.maxPolicyAmount();
+            maxPolicyAmountUsdc = Number(maxRaw) / 1_000_000;
+            maxPolicyAmountRaw = maxRaw.toString();
+        } catch (rpcErr) {
+            console.warn('[IP] GET /admin/config: RPC call failed, using defaults:', rpcErr.message);
+            rpcError = rpcErr.message;
+        }
+
+        // Siempre devolver contractReady:true si INSTANT_CONTRACT_ADDRESS está configurado
+        // aunque la llamada RPC falle (el contrato existe, solo hay problema de conectividad)
         res.json({
-            maxPolicyAmountUsdc: maxUsdc,
-            maxPolicyAmountRaw: maxRaw.toString(),
+            maxPolicyAmountUsdc,
+            maxPolicyAmountRaw,
             contractReady: true,
-            contractAddress: INSTANT_CONTRACT_ADDRESS
+            contractAddress: INSTANT_CONTRACT_ADDRESS,
+            ...(rpcError && { rpcError })
         });
     } catch (err) {
         console.error('[IP] GET /admin/config error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ── GET /api/v1/instant/admin/status ──────────────────────────────────────────
+// Lee el estado completo del contrato on-chain usando el pool de RPCs de Chainstack.
+// El frontend NO debe llamar al blockchain directamente — usa este endpoint.
+app.get('/api/v1/instant/admin/status', authenticateToken, async (req, res) => {
+    try {
+        if (!INSTANT_CONTRACT_ADDRESS) {
+            return res.json({ contractReady: false });
+        }
+
+        const fullAbi = [
+            'function owner() view returns (address)',
+            'function pendingOwner() view returns (address)',
+            'function paused() view returns (bool)',
+            'function maxPolicyAmount() view returns (uint256)',
+        ];
+
+        let owner = null, pendingOwner = null, isPaused = false, maxPolicyAmountUsdc = null;
+        const zeroAddr = ethers.ZeroAddress;
+
+        try {
+            const provider = globalRpcManager.getProvider();
+            const contract = new ethers.Contract(INSTANT_CONTRACT_ADDRESS, fullAbi, provider);
+
+            // Leer cada getter individualmente — si uno falla, los otros siguen
+            [owner, pendingOwner, isPaused, maxPolicyAmountUsdc] = await Promise.all([
+                contract.owner().catch(() => null),
+                contract.pendingOwner().catch(() => zeroAddr),
+                contract.paused().catch(() => false),
+                contract.maxPolicyAmount().catch(() => null).then(v => v != null ? Number(v) / 1_000_000 : null),
+            ]);
+        } catch (rpcErr) {
+            console.warn('[IP] GET /admin/status: RPC read failed:', rpcErr.message);
+            return res.json({
+                contractReady: true,
+                contractAddress: INSTANT_CONTRACT_ADDRESS,
+                rpcError: rpcErr.message,
+            });
+        }
+
+        res.json({
+            contractReady: true,
+            contractAddress: INSTANT_CONTRACT_ADDRESS,
+            owner,
+            pendingOwner,
+            isPaused,
+            maxPolicyAmountUsdc,
+        });
+    } catch (err) {
+        console.error('[IP] GET /admin/status error:', err);
         res.status(500).json({ error: err.message });
     }
 });
@@ -2857,6 +3033,15 @@ app.listen(PORT_LISTEN, () => {
     // Run first check immediately
     setTimeout(monitorStuckTransactions, 5000); // Wait 5s for server to be ready
 });
+
+// ── Fallback SPA (DEBE ir al FINAL, después de todos los endpoints) ────────────
+app.get('*', (req, res) => {
+    if (req.path.startsWith('/api/')) {
+        return res.status(404).json({ error: 'Endpoint not found' });
+    }
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
 
 
 
