@@ -98,7 +98,7 @@ const initSessionTable = async (maxRetries = 5, delayMs = 2000) => {
 // ─── Instant Payment Migration ───────────────────────────────────────────────
 const initInstantPaymentTables = async () => {
     try {
-        const sql = require('fs').readFileSync(require('path').join(__dirname, 'migrations/004_instant_payment.sql'), 'utf8');
+        const sql = fs.readFileSync(path.join(__dirname, 'migrations/004_instant_payment.sql'), 'utf8');
         await pool.query(sql);
         console.log('[InstantPayment] ✅ DB tables verified/created');
     } catch (err) {
