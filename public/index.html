@@ -119,7 +119,7 @@
                     <a href="#" id="navAdmin" class="nav-link hidden">
                         <span class="nav-icon">⚡</span> Admin Portal
                     </a>
-                    <a href="recovery.html" class="nav-link">
+                    <a href="#" id="navRecovery" class="nav-link hidden" title="Recuperación de Fondos (Admin)">
                         <span class="nav-icon">💰</span> Recuperar Fondos
                     </a>
                     <a href="#" id="adminRescueFunds" class="nav-link hidden" title="Rescatar Fondos (Sweep)">
@@ -860,6 +860,25 @@
                 </div>
             </div>
         </div> <!-- END CONTRACT ADMIN SECTION -->
+
+        <!-- RECOVERY SECTION (Admin only) -->
+        <div id="recoverySection" class="glass-panel hidden">
+            <div class="top-bar">
+                <h2>💰 Recuperación de Fondos</h2>
+                <div id="recoveryLoadStatus" style="font-size:0.85rem; color:#94a3b8;">
+                    Gestiona el retorno de MATIC/POL desde los relayers al Faucet correspondiente.
+                </div>
+            </div>
+
+            <div id="recoveryStats" class="recovery-grid"
+                style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1.5rem; margin-top: 1.5rem;">
+                <!-- Cards will be injected here -->
+                <div class="loading-state" style="grid-column: 1/-1; text-align: center; padding: 4rem;">
+                    <div class="loading-spinner" style="margin: 0 auto 1rem; width: 40px; height: 40px;"></div>
+                    <p>Cargando lotes con saldos pendientes...</p>
+                </div>
+            </div>
+        </div> <!-- END RECOVERY SECTION -->
 
     </div> <!-- END mainBatchPanel -->
 

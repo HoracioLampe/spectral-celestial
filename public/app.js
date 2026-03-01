@@ -348,6 +348,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (payload.role === 'SUPER_ADMIN') {
                 if (navAdmin) navAdmin.classList.remove('hidden');
                 document.getElementById('navContractAdmin')?.classList.remove('hidden');
+                document.getElementById('navRecovery')?.classList.remove('hidden');
             }
 
             if (payload.role === 'REGISTERED') {
@@ -3586,7 +3587,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 });
 
-const ALL_MAIN_SECTIONS = ['batchSection', 'instantPaymentSection', 'contractAdminSection', 'restrictedView'];
+const ALL_MAIN_SECTIONS = ['batchSection', 'instantPaymentSection', 'contractAdminSection', 'recoverySection', 'restrictedView'];
 
 /**
  * Función genérica de navegación entre secciones del panel principal.
@@ -3618,6 +3619,10 @@ function showInstantPaymentSection() {
 
 function showBatchSection() {
     showSection('batchSection', 'navTransacciones', () => fetchBatches(currentBatchPage || 1));
+}
+
+function showRecoverySection() {
+    showSection('recoverySection', 'navRecovery', () => loadRecoveryBatches());
 }
 
 // ── Policy ───────────────────────────────────────────────────────────────────
@@ -3978,6 +3983,14 @@ document.addEventListener('DOMContentLoaded', () => {
             showBatchSection();
         });
     }
+
+    const navRec = document.getElementById('navRecovery');
+    if (navRec) {
+        navRec.addEventListener('click', (e) => {
+            e.preventDefault();
+            showRecoverySection();
+        });
+    }
 });
 
 function showContractAdminSection() {
@@ -3986,19 +3999,127 @@ function showContractAdminSection() {
 
 /** Obtiene el contrato con signer de MetaMask (para escritura) o provider read-only */
 async function cadGetContract(writeable = false) {
-    const res = await authenticatedFetch('/api/v1/instant/admin/config');
-    const cfg = await res.json();
-    if (!cfg.contractReady || !cfg.contractAddress) {
-        throw new Error('Contrato no configurado en el servidor (INSTANT_PAYMENT_CONTRACT_ADDRESS)');
+    if (!window.ethereum) { alert('Instalá MetaMask!'); return null; }
+
+    try {
+        const res = await authenticatedFetch('/api/v1/instant/admin/config');
+        const cfg = await res.json();
+
+        if (!cfg.contractReady || !cfg.contractAddress) {
+            throw new Error('Contrato no configurado en el servidor (INSTANT_PAYMENT_CONTRACT_ADDRESS)');
+        }
+
+        if (writeable) {
+            if (!window.signer) {
+                const providerWeb3 = new ethers.BrowserProvider(window.ethereum);
+                window.signer = await providerWeb3.getSigner();
+            }
+            return new ethers.Contract(cfg.contractAddress, CAD_ABI, window.signer);
+        }
+
+        // Read-only: usar un provider JSON-RPC
+        const provider = new ethers.JsonRpcProvider('https://polygon-rpc.com');
+        return {
+            contract: new ethers.Contract(cfg.contractAddress, CAD_ABI, provider),
+            address: cfg.contractAddress
+        };
+    } catch (err) {
+        console.error('[CAD] Error getting contract:', err);
+        throw err;
     }
-    if (writeable) {
-        if (!signer) throw new Error('Conectá MetaMask primero');
-        return new ethers.Contract(cfg.contractAddress, CAD_ABI, signer);
-    }
-    // Read-only: usar un provider JSON-RPC
-    const provider = new ethers.JsonRpcProvider('https://polygon-rpc.com');
-    return { contract: new ethers.Contract(cfg.contractAddress, CAD_ABI, provider), address: cfg.contractAddress };
 }
+
+// ── Recovery Funds Logic (Moved from recovery.js) ───────────────────────────
+
+async function loadRecoveryBatches() {
+    console.log('[Recovery] loadRecoveryBatches() called');
+    const container = document.getElementById('recoveryStats');
+    if (!container) return;
+
+    try {
+        const response = await authenticatedFetch('/api/recovery/batches');
+        if (!response.ok) throw new Error('Error al cargar datos de recuperación');
+
+        const batches = await response.json();
+        if (!Array.isArray(batches) || batches.length === 0) {
+            container.innerHTML = `
+                <div style="grid-column: 1/-1; text-align: center; padding: 4rem; opacity: 0.6;">
+                    <p style="font-size: 1.5rem; margin-bottom: 0.5rem;">🎉 Todo está limpio</p>
+                    <p>No se encontraron lotes con saldos pendientes de recuperar.</p>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = batches.map(batch => `
+            <div class="card" id="batch-rec-${batch.id}" style="display:flex; flex-direction:column; gap:1rem;">
+                <div class="flex justify-between items-center">
+                    <span style="font-weight:700; font-size:1.1rem;">Lote #${batch.id}</span>
+                    <span class="badge ${batch.batch_status === 'COMPLETED' ? 'badge-success' : 'badge-info'}">${batch.batch_status}</span>
+                </div>
+                
+                <div class="grid-2" style="gap:1rem;">
+                    <div class="ip-metric">
+                        <span class="ip-metric-label">Relayers</span>
+                        <span class="ip-metric-value">${batch.total_relayers}</span>
+                    </div>
+                    <div class="ip-metric">
+                        <span class="ip-metric-label">Recuperable</span>
+                        <span class="ip-metric-value" style="color:var(--warning);">${parseFloat(batch.total_pol).toFixed(4)} POL</span>
+                    </div>
+                </div>
+
+                <div style="font-size:0.75rem; color:var(--text-muted); font-family:monospace;">
+                    Funder: ${batch.funder_address ? (batch.funder_address.substring(0, 10) + '...' + batch.funder_address.substring(38)) : 'Desconocido'}
+                </div>
+
+                <button class="btn btn-primary w-full" id="btn-rec-${batch.id}" onclick="recoverFundsAction(${batch.id})">
+                    <span>💰</span> Recuperar Fondos
+                </button>
+            </div>
+        `).join('');
+
+    } catch (err) {
+        console.error('[Recovery] Error loading batches:', err);
+        container.innerHTML = `<p style="color: var(--danger); text-align: center; padding: 2rem;">Error: ${err.message}</p>`;
+    }
+}
+
+window.recoverFundsAction = async (batchId) => {
+    const btn = document.getElementById(`btn-rec-${batchId}`);
+    const card = document.getElementById(`batch-rec-${batchId}`);
+
+    if (!confirm(`¿Estás seguro de que deseas recuperar los fondos del Lote #${batchId}?`)) return;
+
+    try {
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = `<div class="loading-spinner"></div> Procesando...`;
+        }
+
+        const response = await authenticatedFetch(`/api/batches/${batchId}/return-funds`, {
+            method: 'POST'
+        });
+
+        const result = await response.json();
+
+        if (response.ok) {
+            alert(`✅ ${result.message}`);
+            if (card) card.style.opacity = '0.5';
+            if (btn) btn.innerHTML = '✅ Completado';
+            setTimeout(loadRecoveryBatches, 2000);
+        } else {
+            throw new Error(result.error || 'Error en la recuperación');
+        }
+
+    } catch (err) {
+        alert(`❌ Error: ${err.message}`);
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = `<span>💰</span> Reintentar Recuperación`;
+        }
+    }
+};
 
 /** Carga y muestra el estado on-chain del contrato (via backend → Chainstack) */
 async function cadLoadContractStatus() {
