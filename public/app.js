@@ -284,7 +284,12 @@ const txStatus = document.getElementById('txStatus');
 const POLYGON_CHAIN_ID = '0x89'; // 137
 const USDC_ADDRESS = '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359';
 // REMOVED HARDCODED CONTRACT_ADDRESS - Uses APP_CONFIG.CONTRACT_ADDRESS instead
-const USDC_ABI = ["function balanceOf(address owner) view returns (uint256)", "function decimals() view returns (uint8)"];
+const USDC_ABI = [
+    "function balanceOf(address owner) view returns (uint256)",
+    "function decimals() view returns (uint8)",
+    "function allowance(address owner, address spender) view returns (uint256)",
+    "function approve(address spender, uint256 amount) returns (bool)"
+];
 const USCD_ABI = ["function balanceOf(address owner) view returns (uint256)", "function decimals() view returns (uint8)"];
 let provider, signer, userAddress;
 let currentBatchTotalUSDC = 0n; // Use BigInt for precision checking
@@ -3654,12 +3659,29 @@ async function ipLoadPolicy() {
         document.getElementById('ipDeadline').textContent = new Date(data.deadline).toLocaleString();
 
         const badge = document.getElementById('ipPolicyBadge');
+
+        let allowanceSummary = '';
+        try {
+            if (userAddress) {
+                const cfgRes = await authenticatedFetch('/api/v1/instant/admin/config');
+                const cfg = await cfgRes.json();
+                if (cfg.contractAddress && cfg.usdcAddress) {
+                    const usdc = new ethers.Contract(cfg.usdcAddress, USDC_ABI, provider);
+                    const allowance = await usdc.allowance(userAddress, cfg.contractAddress);
+                    const alwFloat = parseFloat(ethers.formatUnits(allowance, 6));
+                    allowanceSummary = alwFloat > 0 ? ` (Aprobado: ${alwFloat})` : ' (Sin Aprobación)';
+                }
+            }
+        } catch (e) {
+            console.warn('[IP] No se pudo verificar allowance USDC:', e.message);
+        }
+
         if (data.is_expired) {
-            badge.innerHTML = '<span class="ip-badge ip-badge-failed">Expirado</span>';
+            badge.innerHTML = '<span class="ip-badge ip-badge-failed">Expirado</span>' + `<small style="opacity:0.6; margin-left:5px">${allowanceSummary}</small>`;
         } else if (data.is_active) {
-            badge.innerHTML = '<span class="ip-badge ip-badge-confirmed">Activo</span>';
+            badge.innerHTML = '<span class="ip-badge ip-badge-confirmed">Activo</span>' + `<small style="opacity:0.6; margin-left:5px">${allowanceSummary}</small>`;
         } else {
-            badge.innerHTML = '<span class="ip-badge ip-badge-pending">Inactivo</span>';
+            badge.innerHTML = '<span class="ip-badge ip-badge-pending">Inactivo</span>' + `<small style="opacity:0.6; margin-left:5px">${allowanceSummary}</small>`;
         }
     } catch (err) {
         if (statusEl) statusEl.textContent = 'Error cargando política: ' + err.message;
@@ -3717,7 +3739,11 @@ window.ipActivatePolicy = async () => {
             return;
         }
 
-        if (!statusData.registered) {
+        const currentRelayerOnChain = statusData.relayer?.toLowerCase();
+        const expectedFaucet = statusData.expectedFaucet?.toLowerCase();
+        const isCorrectRelayer = (statusData.registered && currentRelayerOnChain === expectedFaucet);
+
+        if (!isCorrectRelayer) {
             // ── PASO 1b: Registrar relayer via EIP-712 ──────────────────────
             statusEl.textContent = '🦊 MetaMask: firmá la autorización del relayer...';
             statusEl.style.color = '#f59e0b';
@@ -3826,13 +3852,92 @@ window.ipActivatePolicy = async () => {
     }
 };
 
-window.ipResetPolicy = async () => {
-    if (!confirm('¿Estás seguro de resetear el permit? Esto desactivará la política activa.')) return;
+window.ipResetPolicy = async (btn) => {
+    if (!confirm('¿Estás seguro de desactivar la política? Se detendrán los pagos instantáneos inmediatamente (vía Servidor/Faucet).')) return;
+
+    const originalHTML = btn ? btn.innerHTML : 'Reset Permit';
+    const originalDisabled = btn ? btn.disabled : false;
+
     try {
-        await authenticatedFetch('/api/v1/instant/policy/reset', { method: 'POST' });
-        await ipLoadPolicy();
+        if (btn) {
+            btn.innerHTML = '⏳ Servidor...';
+            btn.disabled = true;
+        }
+
+        const res = await authenticatedFetch('/api/v1/instant/policy/reset', { method: 'POST' });
+        const data = await res.json();
+
+        if (res.ok) {
+            if (btn) btn.innerHTML = '✅ OK Servidor';
+
+            // Preguntar si desea revocar en la blockchain también (MetaMask)
+            if (confirm('Política desactivada en el servidor. ¿Deseas también REVOCAR la aprobación de USDC en tu wallet (MetaMask) para máxima seguridad?\n\n(Esto requiere una firma y gasto de gas)')) {
+                await ipRevokeAllowance(btn);
+            } else {
+                if (btn) btn.innerHTML = '✅ Reset parcial (Servidor)';
+                setTimeout(() => ipLoadPolicy(), 2000);
+            }
+        } else {
+            throw new Error(data.error || 'Error desconocido');
+        }
     } catch (err) {
-        alert('Error al resetear: ' + err.message);
+        console.error('[IP] ipResetPolicy error:', err);
+        alert('❌ Error al resetear: ' + err.message);
+        if (btn) {
+            btn.innerHTML = originalHTML;
+            btn.disabled = originalDisabled;
+        }
+    }
+};
+
+window.ipRevokeAllowance = async (btn) => {
+    const statusEl = document.getElementById('ipActivateStatus');
+    const originalHTML = btn ? btn.innerHTML : 'Revocar';
+
+    try {
+        if (btn) {
+            btn.innerHTML = '🦊 Firmando...';
+            btn.disabled = true;
+        }
+
+        const configRes = await authenticatedFetch('/api/v1/instant/admin/config');
+        const config = await configRes.json();
+        const contractAddress = config.contractAddress;
+        const usdcAddress = config.usdcAddress;
+
+        if (!contractAddress || !usdcAddress) throw new Error('Configuración de contrato no cargada');
+
+        if (!signer) {
+            alert('❌ Conectá MetaMask primero');
+            return;
+        }
+
+        const usdc = new ethers.Contract(usdcAddress, USDC_ABI, signer);
+
+        console.log(`[IP] Revoking allowance for ${contractAddress} on USDC ${usdcAddress}...`);
+        const tx = await usdc.approve(contractAddress, 0);
+
+        if (btn) btn.innerHTML = '⏳ Confirmando...';
+        await tx.wait(1);
+
+        alert('✅ Permiso de USDC revocado con éxito en la blockchain.');
+        if (btn) btn.innerHTML = '🔒 Revocado';
+
+        setTimeout(() => {
+            ipLoadPolicy();
+            if (btn) {
+                btn.innerHTML = originalHTML;
+                btn.disabled = false;
+            }
+        }, 2000);
+
+    } catch (err) {
+        console.error('[IP] ipRevokeAllowance error:', err);
+        alert('❌ Error al revocar: ' + err.message);
+        if (btn) {
+            btn.innerHTML = originalHTML;
+            btn.disabled = false;
+        }
     }
 };
 

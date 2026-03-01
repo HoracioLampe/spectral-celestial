@@ -2680,7 +2680,7 @@ app.post('/api/v1/instant/policy/activate', authenticateToken, async (req, res) 
         const contract = getInstantContract(faucetWallet.connect(provider));
 
         const tx = await contract.activatePolicy(funderAddress, totalAmountRaw, deadline, {
-            gasLimit: 100000,
+            gasLimit: 250000,
         });
         await tx.wait(1);
 
@@ -2703,12 +2703,35 @@ app.post('/api/v1/instant/policy/activate', authenticateToken, async (req, res) 
 app.post('/api/v1/instant/policy/reset', authenticateToken, async (req, res) => {
     try {
         const funderAddress = req.user.address.toLowerCase();
+
+        // 1. Intentar reset on-chain si el contrato está configurado
+        if (INSTANT_CONTRACT_ADDRESS) {
+            try {
+                const provider = globalRpcManager.getProvider();
+                const faucetWallet = await faucetService.getFaucetWallet(pool, provider, funderAddress);
+                const contract = getInstantContract(faucetWallet.connect(provider));
+
+                // Verificar si existe relayer antes de intentar el reset on-chain
+                const registeredRelayer = await contract.coldWalletRelayer(funderAddress);
+                if (registeredRelayer && registeredRelayer !== ethers.ZeroAddress) {
+                    console.log(`[IP] Resetting policy on-chain for ${funderAddress}...`);
+                    const tx = await contract.resetPolicy(funderAddress, { gasLimit: 150000 });
+                    await tx.wait(1);
+                    console.log(`[IP] On-chain policy reset successful. TX: ${tx.hash}`);
+                }
+            } catch (rpcErr) {
+                console.warn('[IP] On-chain reset failed (could be already inactive or network error):', rpcErr.message);
+            }
+        }
+
+        // 2. Siempre actualizar DB
         await pool.query(
             'UPDATE instant_policies SET is_active=false, updated_at=NOW() WHERE cold_wallet=$1',
             [funderAddress]
         );
-        res.json({ success: true, message: 'Policy reset' });
+        res.json({ success: true, message: 'Policy reset successfully' });
     } catch (err) {
+        console.error('[IP] POST /policy/reset error:', err);
         res.status(500).json({ error: err.message });
     }
 });
@@ -2743,6 +2766,7 @@ app.get('/api/v1/instant/admin/config', authenticateToken, async (req, res) => {
             maxPolicyAmountRaw,
             contractReady: true,
             contractAddress: INSTANT_CONTRACT_ADDRESS,
+            usdcAddress: process.env.USDC_ADDRESS || "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
             ...(rpcError && { rpcError })
         });
     } catch (err) {
@@ -2989,7 +3013,7 @@ app.post('/api/v1/instant/relayer/register', authenticateToken, async (req, res)
             faucetWallet.address,
             parseInt(deadline),
             signature,
-            { gasLimit: 100000 }
+            { gasLimit: 250000 }
         );
         await tx.wait(1);
 

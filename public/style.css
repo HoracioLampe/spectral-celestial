@@ -375,8 +375,9 @@ body {
     flex: 1;
     display: flex;
     flex-direction: column;
-    align-items: center;
-    padding: 3rem 2rem;
+    align-items: flex-start;
+    padding: 3rem 4rem;
+    /* Aumentamos el padding izquierdo un poco para que no pegue vs sidebar */
     overflow-y: auto;
 }
 
