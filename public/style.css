@@ -333,6 +333,28 @@ body {
     background: linear-gradient(90deg, transparent, rgba(59, 130, 246, 0.4), transparent);
 }
 
+/* Transparent variant — mantiene width/max-width del layout pero sin decoración visual */
+.glass-panel.panel-transparent {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    padding: 0 !important;
+    border-radius: 0 !important;
+    overflow: visible !important;
+}
+
+.glass-panel.panel-transparent::after {
+    display: none;
+}
+
+/* Wrapper estructural de paneles — cada sección tiene su propio glass-panel */
+#mainBatchPanel {
+    width: 100%;
+    max-width: 1100px;
+}
+
 .sidebar {
     width: 280px;
     background: rgba(8, 12, 24, 0.8);

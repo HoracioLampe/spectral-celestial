@@ -3586,22 +3586,38 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 });
 
-function showInstantPaymentSection() {
-    // Ocultar otras secciones DENTRO del mainBatchPanel (mismo patron que batchSection)
-    ['batchSection', 'contractAdminSection', 'restrictedView'].forEach(id => {
-        document.getElementById(id)?.classList.add('hidden');
-    });
+const ALL_MAIN_SECTIONS = ['batchSection', 'instantPaymentSection', 'contractAdminSection', 'restrictedView'];
 
-    // Mostrar IP dentro del mainBatchPanel
-    document.getElementById('instantPaymentSection')?.classList.remove('hidden');
+/**
+ * Función genérica de navegación entre secciones del panel principal.
+ * Todas las secciones viven dentro de mainBatchPanel.glass-panel.
+ * @param {string}        sectionId - ID del div a mostrar
+ * @param {string}        navId     - ID del <a> de sidebar a marcar como activo
+ * @param {Function|null} onShow    - Callback opcional con lógica específica de la sección
+ */
+function showSection(sectionId, navId, onShow = null) {
+    // 1. Ocultar todas las secciones
+    ALL_MAIN_SECTIONS.forEach(id => document.getElementById(id)?.classList.add('hidden'));
 
-    // Marcar nav activo
+    // 2. Mostrar sección destino
+    document.getElementById(sectionId)?.classList.remove('hidden');
+
+    // 3. Actualizar nav activo
     document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
-    document.getElementById('navInstantPayment')?.classList.add('active');
+    if (navId) document.getElementById(navId)?.classList.add('active');
 
-    // Cargar datos
-    ipLoadPolicy();
-    ipLoadTransfers(1);
+    // 4. Ejecutar lógica específica de la sección
+    if (onShow) onShow();
+}
+
+function showInstantPaymentSection() {
+    showSection('instantPaymentSection', 'navInstantPayment', () => {
+        ipLoadPolicy(); ipLoadTransfers(1);
+    });
+}
+
+function showBatchSection() {
+    showSection('batchSection', 'navTransacciones', () => fetchBatches(currentBatchPage || 1));
 }
 
 // ── Policy ───────────────────────────────────────────────────────────────────
@@ -3954,23 +3970,18 @@ document.addEventListener('DOMContentLoaded', () => {
             showContractAdminSection();
         });
     }
+
+    const navTx = document.getElementById('navTransacciones');
+    if (navTx) {
+        navTx.addEventListener('click', (e) => {
+            e.preventDefault();
+            showBatchSection();
+        });
+    }
 });
 
 function showContractAdminSection() {
-    // Ocultar otras secciones DENTRO del mainBatchPanel (mismo patron que batchSection)
-    ['batchSection', 'instantPaymentSection', 'restrictedView'].forEach(id => {
-        document.getElementById(id)?.classList.add('hidden');
-    });
-
-    // Mostrar CAD dentro del mainBatchPanel
-    document.getElementById('contractAdminSection')?.classList.remove('hidden');
-
-    // Marcar nav activo
-    document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
-    document.getElementById('navContractAdmin')?.classList.add('active');
-
-    // Cargar info on-chain
-    cadLoadContractStatus();
+    showSection('contractAdminSection', 'navContractAdmin', () => cadLoadContractStatus());
 }
 
 /** Obtiene el contrato con signer de MetaMask (para escritura) o provider read-only */

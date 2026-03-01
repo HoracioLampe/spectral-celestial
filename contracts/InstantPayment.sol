@@ -225,7 +225,9 @@ contract InstantPayment is
      *         Callable by the cold wallet's registered relayer OR by the owner.
      */
     function resetPolicy(address coldWallet) external {
-        if (msg.sender != coldWalletRelayer[coldWallet] && msg.sender != owner()) {
+        if (msg.sender != coldWallet &&
+            msg.sender != coldWalletRelayer[coldWallet] &&
+            msg.sender != owner()) {
             revert NotAuthorizedToReset(msg.sender);
         }
         policies[coldWallet].isActive = false;
