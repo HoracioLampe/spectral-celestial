@@ -318,6 +318,8 @@ body {
         /* External Glow */
         inset 0 1px 1px rgba(255, 255, 255, 0.05);
     margin-bottom: 2rem;
+    margin-left: 0;
+    /* Alinear a la izquierda */
     position: relative;
     overflow: hidden;
 }
@@ -1350,7 +1352,6 @@ tr:hover td {
 
 #instantPaymentSection {
     width: 100%;
-    max-width: 1100px;
 }
 
 .ip-panel {

@@ -510,453 +510,474 @@
                                     style="font-family: monospace; font-size: 0.9rem; color: #f59e0b; font-weight: bold; background: rgba(0,0,0,0.2); padding: 2px 6px; border-radius: 4px; display: none;">00:00:00</span>
                             </div>
                         </div>
-                    </div>
-                    <p id="merkleStatus" class="status-text"></p>
-                </div>
-                <!-- Grilla Detalle -->
-                <!-- Grilla Detalle (HIDDEN as per request) -->
-                <div id="txDetailSection" class="top-bar hidden" style="margin-top: 2rem; flex-wrap: wrap; gap: 1rem;">
-                    <h3>📋 Detalle de Transacciones</h3>
-                    <div style="display: flex; gap: 0.5rem; flex-grow: 1; justify-content: flex-end;">
-                        <input type="text" id="filterWallet" placeholder="Filtrar por Wallet..." class="input-glass"
-                            style="font-size: 0.8rem; padding: 0.4rem; width: 150px;">
-                        <input type="number" id="filterAmount" placeholder="Monto USDC..." class="input-glass"
-                            style="font-size: 0.8rem; padding: 0.4rem; width: 100px;">
-                        <select id="filterStatus" class="input-glass" style="font-size: 0.8rem; padding: 0.4rem;">
-                            <option value="">Todos los Estados</option>
-                            <option value="PENDING">PENDING</option>
-                            <option value="ENVIANDO">ENVIANDO</option>
-                            <option value="COMPLETED">COMPLETED</option>
-                            <option value="FAILED">FAILED</option>
-                            <option value="WAITING_CONFIRMATION">WAITING_CONFIRMATION</option>
-                        </select>
-                        <button onclick="applyFilters()" class="btn-primary"
-                            style="font-size: 0.8rem; padding: 0.4rem 0.8rem;">🔍 Filtrar</button>
-                        <button onclick="clearFilters()" class="btn-glass"
-                            style="font-size: 0.8rem; padding: 0.4rem 0.8rem;">✖️</button>
-                        <button onclick="exportToExcel()" class="btn-primary"
-                            style="font-size: 0.8rem; padding: 0.4rem 0.8rem; background: linear-gradient(135deg, #10b981 0%, #059669 100%);">📊
-                            Exportar a Excel</button>
-                        <span id="filterResultCount"
-                            style="margin-left: 10px; align-self: center; font-size: 0.9rem; color: #a78bfa;"></span>
-                    </div>
-                </div>
-                <div id="txTableContainer" class="table-container hidden">
-                    <table id="batchTable">
-                        <thead>
-                            <tr>
-                                <th>ID Ref</th>
-                                <th>Wallet</th>
-                                <th>USDC (Plan)</th>
-                                <th>Enviado</th>
-                                <th>Hash (Ref)</th>
-                                <th>Estado</th>
-                            </tr>
-                        </thead>
-                        <tbody id="batchTableBody">
-                            <tr>
-                                <td colspan="5" style="text-align: center;">Carga un Excel para ver el detalle</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-
-                <!-- Relayer Balances Table (Integrated) -->
-                <div id="relayerGridSection" class="hidden"
-                    style="margin-top: 2.5rem; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 1.5rem;">
-                    <div class="top-bar" style="display: flex; justify-content: space-between; align-items: center;">
-                        <h3>⚡ Balances de Relayers</h3>
-                        <button onclick="refreshRelayerBalances()" class="btn-glass"
-                            style="font-size: 0.75rem; padding: 0.4rem 1rem; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
-                            🔄 Refrescar Grilla
-                        </button>
-                    </div>
-                    <div id="relayerGridInfo" style="margin-bottom: 0.5rem;"></div>
-                    <table id="relayerBalancesTable" class="glass-panel"
-                        style="width:100%; border-collapse: collapse; background: rgba(0,0,0,0.2);">
-                        <thead>
-                            <tr style="border-bottom: 1px solid rgba(255,255,255,0.1);">
-                                <th style="text-align:left; padding:0.75rem; width: 50px;">ID</th>
-                                <th style="text-align:left; padding:0.75rem;">Dirección Relayer</th>
-                                <th style="text-align:left; padding:0.75rem;">Balance MATIC</th>
-                                <th style="text-align:left; padding:0.75rem;">Última Actividad</th>
-                                <th style="text-align:center; padding:0.75rem;">Cant. Txs</th>
-                                <th style="text-align:center; padding:0.75rem;">Acción</th>
-                            </tr>
-                        </thead>
-                        <tbody id="relayerBalancesTableBody">
-                            <tr>
-                                <td colspan="6" style="text-align:center; padding:1.5rem; opacity: 0.6;">Cargando
-                                    balances...</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div> <!-- Fin de batchDetailView -->
-        </div> <!-- Fin batchSection -->
-
-        <!-- INSTANT PAYMENT SECTION -->
-        <div id="instantPaymentSection" class="glass-panel hidden">
-
-            <!-- POLICY PANEL -->
-            <div id="ipPolicyPanel">
-                <div class="top-bar">
-                    <h2>⚡ Instant Payments</h2>
-                    <div id="ipPolicyStatus" class="ip-policy-placeholder">Cargando estado del permit...</div>
-                </div>
-
-                <!-- Policy card -->
-                <div id="ipPolicyCard" class="ip-policy-card hidden">
-                    <div class="ip-metrics">
-                        <div class="ip-metric">
-                            <span class="ip-metric-label">Total Autorizado</span>
-                            <span class="ip-metric-value" id="ipTotalAmount">—</span>
+                        <p id="merkleStatus" class="status-text"></p>
+                        <!-- Grilla Detalle -->
+                        <!-- Grilla Detalle (HIDDEN as per request) -->
+                        <div id="txDetailSection" class="top-bar hidden"
+                            style="margin-top: 2rem; flex-wrap: wrap; gap: 1rem;">
+                            <h3>📋 Detalle de Transacciones</h3>
+                            <div style="display: flex; gap: 0.5rem; flex-grow: 1; justify-content: flex-end;">
+                                <input type="text" id="filterWallet" placeholder="Filtrar por Wallet..."
+                                    class="input-glass" style="font-size: 0.8rem; padding: 0.4rem; width: 150px;">
+                                <input type="number" id="filterAmount" placeholder="Monto USDC..." class="input-glass"
+                                    style="font-size: 0.8rem; padding: 0.4rem; width: 100px;">
+                                <select id="filterStatus" class="input-glass"
+                                    style="font-size: 0.8rem; padding: 0.4rem;">
+                                    <option value="">Todos los Estados</option>
+                                    <option value="PENDING">PENDING</option>
+                                    <option value="ENVIANDO">ENVIANDO</option>
+                                    <option value="COMPLETED">COMPLETED</option>
+                                    <option value="FAILED">FAILED</option>
+                                    <option value="WAITING_CONFIRMATION">WAITING_CONFIRMATION</option>
+                                </select>
+                                <button onclick="applyFilters()" class="btn-primary"
+                                    style="font-size: 0.8rem; padding: 0.4rem 0.8rem;">🔍 Filtrar</button>
+                                <button onclick="clearFilters()" class="btn-glass"
+                                    style="font-size: 0.8rem; padding: 0.4rem 0.8rem;">✖️</button>
+                                <button onclick="exportToExcel()" class="btn-primary"
+                                    style="font-size: 0.8rem; padding: 0.4rem 0.8rem; background: linear-gradient(135deg, #10b981 0%, #059669 100%);">📊
+                                    Exportar a Excel</button>
+                                <span id="filterResultCount"
+                                    style="margin-left: 10px; align-self: center; font-size: 0.9rem; color: #a78bfa;"></span>
+                            </div>
                         </div>
-                        <div class="ip-metric">
-                            <span class="ip-metric-label">Consumido</span>
-                            <span class="ip-metric-value ip-consumed" id="ipConsumed">—</span>
+                        <div id="txTableContainer" class="table-container hidden">
+                            <table id="batchTable">
+                                <thead>
+                                    <tr>
+                                        <th>ID Ref</th>
+                                        <th>Wallet</th>
+                                        <th>USDC (Plan)</th>
+                                        <th>Enviado</th>
+                                        <th>Hash (Ref)</th>
+                                        <th>Estado</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="batchTableBody">
+                                    <tr>
+                                        <td colspan="5" style="text-align: center;">Carga un Excel para ver el
+                                            detalle</td>
+                                    </tr>
+                                </tbody>
+                            </table>
                         </div>
-                        <div class="ip-metric">
-                            <span class="ip-metric-label">Disponible</span>
-                            <span class="ip-metric-value ip-available" id="ipRemaining">—</span>
-                        </div>
-                        <div class="ip-metric">
-                            <span class="ip-metric-label">Vence</span>
-                            <span class="ip-metric-value" id="ipDeadline">—</span>
-                        </div>
-                        <div class="ip-metric">
-                            <span class="ip-metric-label">Estado</span>
-                            <span class="ip-metric-value" id="ipPolicyBadge">—</span>
-                        </div>
-                    </div>
-                    <div style="margin-top:1rem; display:flex; gap:0.75rem; flex-wrap:wrap;">
-                        <button class="btn btn-glass" onclick="ipShowActivateForm()">🔑 Activar / Renovar
-                            Permit</button>
-                        <button class="btn btn-glass" onclick="ipResetPolicy(this)"
-                            style="border-color:rgba(239,68,68,0.4); color:#f87171;">🔄 Reset Permit</button>
-                        <button class="btn btn-glass" onclick="ipRevokeAllowance(this)"
-                            style="border-color:rgba(255,165,0,0.3); color:#ffa500; font-size:0.85rem;">🔒 Revoke
-                            USDC</button>
-                    </div>
-                </div>
 
-                <!-- No policy yet -->
-                <div id="ipNoPolicyCard" class="hidden" style="text-align:center; padding:2rem 0; opacity:0.7;">
-                    <p>No hay ningún permit activo para esta wallet.</p>
-                    <button class="btn btn-primary" onclick="ipShowActivateForm()">🔑 Activar Permit</button>
-                </div>
-
-                <!-- Activate form -->
-                <div id="ipActivateForm" class="hidden"
-                    style="margin-top:1.5rem; background:rgba(0,0,0,0.2); padding:1.25rem; border-radius:12px; border:1px solid rgba(255,255,255,0.08);">
-                    <h3 style="margin:0 0 1rem;">Configurar Permit</h3>
-                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-bottom:1rem;">
-                        <div class="form-group">
-                            <label>Monto total USDC</label>
-                            <input id="ipFormAmount" type="number" class="input-glass" placeholder="10000" step="0.01"
-                                min="0">
+                        <!-- Relayer Balances Table (Integrated) -->
+                        <div id="relayerGridSection" class="hidden"
+                            style="margin-top: 2.5rem; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 1.5rem;">
+                            <div class="top-bar"
+                                style="display: flex; justify-content: space-between; align-items: center;">
+                                <h3>⚡ Balances de Relayers</h3>
+                                <button onclick="refreshRelayerBalances()" class="btn-glass"
+                                    style="font-size: 0.75rem; padding: 0.4rem 1rem; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
+                                    🔄 Refrescar Grilla
+                                </button>
+                            </div>
+                            <div id="relayerGridInfo" style="margin-bottom: 0.5rem;"></div>
+                            <table id="relayerBalancesTable" class="glass-panel"
+                                style="width:100%; border-collapse: collapse; background: rgba(0,0,0,0.2);">
+                                <thead>
+                                    <tr style="border-bottom: 1px solid rgba(255,255,255,0.1);">
+                                        <th style="text-align:left; padding:0.75rem; width: 50px;">ID</th>
+                                        <th style="text-align:left; padding:0.75rem;">Dirección Relayer</th>
+                                        <th style="text-align:left; padding:0.75rem;">Balance MATIC</th>
+                                        <th style="text-align:left; padding:0.75rem;">Última Actividad</th>
+                                        <th style="text-align:center; padding:0.75rem;">Cant. Txs</th>
+                                        <th style="text-align:center; padding:0.75rem;">Acción</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="relayerBalancesTableBody">
+                                    <tr>
+                                        <td colspan="6" style="text-align:center; padding:1.5rem; opacity: 0.6;">
+                                            Cargando
+                                            balances...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
                         </div>
-                        <div class="form-group">
-                            <label>Fecha de expiración</label>
-                            <input id="ipFormExpiry" type="datetime-local" class="input-glass">
+                    </div> <!-- Fin de batchDetailView -->
+                </div> <!-- Fin batchSection -->
+
+                <!-- INSTANT PAYMENT SECTION -->
+                <div id="instantPaymentSection" class="glass-panel hidden">
+
+                    <!-- POLICY PANEL -->
+                    <div id="ipPolicyPanel">
+                        <div class="top-bar">
+                            <h2>⚡ Instant Payments</h2>
+                            <div id="ipPolicyStatus" class="ip-policy-placeholder">Cargando estado del permit...
+                            </div>
                         </div>
-                    </div>
-                    <div style="display:flex; gap:0.75rem;">
-                        <button class="btn btn-primary" onclick="ipActivatePolicy()">✅ Confirmar</button>
-                        <button class="btn btn-glass"
-                            onclick="document.getElementById('ipActivateForm').classList.add('hidden')">Cancelar</button>
-                    </div>
-                    <p id="ipActivateStatus" style="margin-top:0.75rem; font-size:0.85rem;"></p>
-                </div>
-            </div>
 
-            <!-- TRANSFERS TABLE -->
-            <div class="ip-panel" style="margin-top:1.5rem;">
-                <div class="top-bar">
-                    <h3>📋 Historial de Transferencias</h3>
-                    <button class="btn btn-primary" onclick="ipExportExcel()"
-                        style="background:linear-gradient(135deg,#10b981,#059669);">📊 Exportar Excel</button>
-                </div>
-
-                <!-- Filters -->
-                <div style="display:flex; flex-wrap:wrap; gap:0.75rem; margin-bottom:1rem;">
-                    <select id="ipFilterStatus" class="input-glass" style="width:160px;">
-                        <option value="ALL">Todos los estados</option>
-                        <option value="pending">Pending</option>
-                        <option value="processing">Processing</option>
-                        <option value="confirmed">Confirmed</option>
-                        <option value="failed">Failed</option>
-                    </select>
-                    <input id="ipFilterDateFrom" type="date" class="input-glass" placeholder="Desde">
-                    <input id="ipFilterDateTo" type="date" class="input-glass" placeholder="Hasta">
-                    <input id="ipFilterWallet" type="text" class="input-glass" placeholder="Wallet destino..."
-                        style="width:200px;">
-                    <input id="ipFilterAmount" type="number" class="input-glass" placeholder="Monto USDC"
-                        style="width:130px;">
-                    <button class="btn btn-glass" onclick="ipLoadTransfers(1)">🔍 Filtrar</button>
-                    <button class="btn btn-glass" onclick="ipClearFilters()">✖</button>
-                </div>
-
-                <div class="table-container">
-                    <table id="ipTransfersTable">
-                        <thead>
-                            <tr>
-                                <th>Transfer ID</th>
-                                <th>Destino</th>
-                                <th>Monto USDC</th>
-                                <th>Estado</th>
-                                <th>TX Hash</th>
-                                <th>Fecha</th>
-                                <th>Intentos</th>
-                            </tr>
-                        </thead>
-                        <tbody id="ipTransfersBody">
-                            <tr>
-                                <td colspan="7" style="text-align:center; opacity:0.6;">Cargando...</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-
-                <!-- Pagination -->
-                <div
-                    style="display:flex; justify-content:flex-end; align-items:center; margin-top:1rem; gap:0.5rem; color:#94a3b8; font-size:0.9rem;">
-                    <button class="btn-icon" id="ipPrevPage"
-                        onclick="ipLoadTransfers(Math.max(1, ipCurrentPage-1))">◀</button>
-                    <span id="ipPageIndicator">Página 1 de 1</span>
-                    <button class="btn-icon" id="ipNextPage" onclick="ipLoadTransfers(ipCurrentPage+1)">▶</button>
-                </div>
-            </div>
-        </div> <!-- Fin instantPaymentSection -->
-
-        <!-- CONTRACT ADMIN SECTION (SUPER_ADMIN only) -->
-        <div id="contractAdminSection" class="glass-panel hidden">
-            <div class="top-bar">
-                <h2>🔐 Contract Admin</h2>
-                <div id="cadLoadStatus" style="font-size:0.85rem; color:#94a3b8;">Conectá MetaMask para interactuar
-                </div>
-            </div>
-
-            <!-- ── PANEL 1: Info del Contrato ── -->
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:1.5rem; margin-bottom:1.5rem;">
-                <div class="ip-policy-card" style="padding:1.25rem;">
-                    <div
-                        style="font-size:0.7rem; color:#64748b; text-transform:uppercase; letter-spacing:1px; margin-bottom:0.75rem;">
-                        📋 Info On-Chain</div>
-                    <div style="display:flex; flex-direction:column; gap:0.5rem; font-size:0.88rem;">
-                        <div style="display:flex; justify-content:space-between; align-items:center;">
-                            <span style="color:#94a3b8;">Contrato Proxy</span>
-                            <a id="cadContractLink" href="#" target="_blank" class="hash-link"
-                                style="font-family:monospace; font-size:0.8rem;">—</a>
+                        <!-- Policy card -->
+                        <div id="ipPolicyCard" class="ip-policy-card hidden">
+                            <div class="ip-metrics">
+                                <div class="ip-metric">
+                                    <span class="ip-metric-label">Total Autorizado</span>
+                                    <span class="ip-metric-value" id="ipTotalAmount">—</span>
+                                </div>
+                                <div class="ip-metric">
+                                    <span class="ip-metric-label">Consumido</span>
+                                    <span class="ip-metric-value ip-consumed" id="ipConsumed">—</span>
+                                </div>
+                                <div class="ip-metric">
+                                    <span class="ip-metric-label">Disponible</span>
+                                    <span class="ip-metric-value ip-available" id="ipRemaining">—</span>
+                                </div>
+                                <div class="ip-metric">
+                                    <span class="ip-metric-label">Vence</span>
+                                    <span class="ip-metric-value" id="ipDeadline">—</span>
+                                </div>
+                                <div class="ip-metric">
+                                    <span class="ip-metric-label">Estado</span>
+                                    <span class="ip-metric-value" id="ipPolicyBadge">—</span>
+                                </div>
+                            </div>
+                            <div style="margin-top:1rem; display:flex; gap:0.75rem; flex-wrap:wrap;">
+                                <button class="btn btn-glass" onclick="ipShowActivateForm()">🔑 Activar / Renovar
+                                    Permit</button>
+                                <button class="btn btn-glass" onclick="ipResetPolicy(this)"
+                                    style="border-color:rgba(239,68,68,0.4); color:#f87171;">🔄 Reset
+                                    Permit</button>
+                                <button class="btn btn-glass" onclick="ipRevokeAllowance(this)"
+                                    style="border-color:rgba(255,165,0,0.3); color:#ffa500; font-size:0.85rem;">🔒
+                                    Revoke
+                                    USDC</button>
+                            </div>
                         </div>
-                        <div style="display:flex; justify-content:space-between; align-items:center;">
-                            <span style="color:#94a3b8;">Owner actual</span>
-                            <a id="cadOwnerLink" href="#" target="_blank" class="hash-link"
-                                style="font-family:monospace; font-size:0.8rem;">—</a>
+
+                        <!-- No policy yet -->
+                        <div id="ipNoPolicyCard" class="hidden" style="text-align:center; padding:2rem 0; opacity:0.7;">
+                            <p>No hay ningún permit activo para esta wallet.</p>
+                            <button class="btn btn-primary" onclick="ipShowActivateForm()">🔑 Activar
+                                Permit</button>
                         </div>
-                        <div style="display:flex; justify-content:space-between; align-items:center;">
-                            <span style="color:#94a3b8;">Pending owner</span>
-                            <a id="cadPendingOwnerLink" href="#" target="_blank" class="hash-link"
-                                style="font-family:monospace; font-size:0.8rem;">—</a>
-                        </div>
-                        <div style="display:flex; justify-content:space-between; align-items:center;">
-                            <span style="color:#94a3b8;">Estado</span>
-                            <span id="cadPauseBadge" style="font-family:monospace; font-size:0.85rem;">—</span>
-                        </div>
-                        <div style="display:flex; justify-content:space-between; align-items:center;">
-                            <span style="color:#94a3b8;">Max Policy Amount</span>
-                            <span id="cadMaxPolicyDisplay" style="color:#4ade80; font-weight:bold;">—</span>
+
+                        <!-- Activate form -->
+                        <div id="ipActivateForm" class="hidden"
+                            style="margin-top:1.5rem; background:rgba(0,0,0,0.2); padding:1.25rem; border-radius:12px; border:1px solid rgba(255,255,255,0.08);">
+                            <h3 style="margin:0 0 1rem;">Configurar Permit</h3>
+                            <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-bottom:1rem;">
+                                <div class="form-group">
+                                    <label>Monto total USDC</label>
+                                    <input id="ipFormAmount" type="number" class="input-glass" placeholder="10000"
+                                        step="0.01" min="0">
+                                </div>
+                                <div class="form-group">
+                                    <label>Fecha de expiración</label>
+                                    <input id="ipFormExpiry" type="datetime-local" class="input-glass">
+                                </div>
+                            </div>
+                            <div style="display:flex; gap:0.75rem;">
+                                <button class="btn btn-primary" onclick="ipActivatePolicy()">✅ Confirmar</button>
+                                <button class="btn btn-glass"
+                                    onclick="document.getElementById('ipActivateForm').classList.add('hidden')">Cancelar</button>
+                            </div>
+                            <p id="ipActivateStatus" style="margin-top:0.75rem; font-size:0.85rem;"></p>
                         </div>
                     </div>
-                    <button class="btn btn-glass" style="width:100%; margin-top:1rem; font-size:0.82rem;"
-                        onclick="cadLoadContractStatus()">🔄 Refrescar</button>
-                </div>
 
-                <!-- ── PANEL 2: Política Máxima ── -->
-                <div class="ip-policy-card" style="padding:1.25rem;">
-                    <div
-                        style="font-size:0.7rem; color:#64748b; text-transform:uppercase; letter-spacing:1px; margin-bottom:0.75rem;">
-                        💰 Política Máxima de Retiros</div>
-                    <p style="font-size:0.82rem; color:#94a3b8; margin-bottom:1rem;">El owner puede cambiar el
-                        límite máximo de USDC por policy. El frontend y el contrato lo verifican al activar un
-                        permit.</p>
-                    <div class="form-group" style="margin-bottom:0.75rem;">
-                        <label style="font-size:0.82rem;">Nuevo límite (USDC)</label>
-                        <input id="cadMaxPolicyInput" type="number" class="input-glass" placeholder="Ej: 50000" min="1"
-                            step="1">
-                    </div>
-                    <button class="btn btn-primary" style="width:100%;" onclick="cadSetMaxPolicy()">
-                        🦊 Setear vía MetaMask
-                    </button>
-                    <p id="cadMaxPolicyStatus" style="margin-top:0.5rem; font-size:0.82rem;"></p>
-                </div>
-            </div>
-
-            <!-- ── PANEL 3: Ownership (Ownable2Step) ── -->
-            <div class="ip-policy-card" style="padding:1.25rem; margin-bottom:1.5rem;">
-                <div
-                    style="font-size:0.7rem; color:#64748b; text-transform:uppercase; letter-spacing:1px; margin-bottom:0.75rem;">
-                    🔑 Transferencia de Ownership (2-step)</div>
-                <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
-                    <div>
-                        <p style="font-size:0.82rem; color:#94a3b8; margin-bottom:0.75rem;">Paso 1: Proponer nuevo
-                            owner. El nuevo owner debe aceptar.</p>
-                        <div class="form-group" style="margin-bottom:0.75rem;">
-                            <label style="font-size:0.82rem;">Nueva dirección owner</label>
-                            <input id="cadNewOwnerInput" type="text" class="input-glass" placeholder="0x...">
+                    <!-- TRANSFERS TABLE -->
+                    <div class="ip-panel" style="margin-top:1.5rem;">
+                        <div class="top-bar">
+                            <h3>📋 Historial de Transferencias</h3>
+                            <button class="btn btn-primary" onclick="ipExportExcel()"
+                                style="background:linear-gradient(135deg,#10b981,#059669);">📊 Exportar
+                                Excel</button>
                         </div>
-                        <button class="btn btn-glass"
-                            style="width:100%; border-color:rgba(251,191,36,0.4); color:#fbbf24;"
-                            onclick="cadTransferOwnership()">
-                            🦊 Paso 1: transferOwnership()
-                        </button>
-                        <p id="cadTransferStatus" style="margin-top:0.5rem; font-size:0.82rem;"></p>
-                    </div>
-                    <div>
-                        <p style="font-size:0.82rem; color:#94a3b8; margin-bottom:0.75rem;">Paso 2: Si esta wallet
-                            es el pending owner, aceptar la transferencia.</p>
+
+                        <!-- Filters -->
+                        <div style="display:flex; flex-wrap:wrap; gap:0.75rem; margin-bottom:1rem;">
+                            <select id="ipFilterStatus" class="input-glass" style="width:160px;">
+                                <option value="ALL">Todos los estados</option>
+                                <option value="pending">Pending</option>
+                                <option value="processing">Processing</option>
+                                <option value="confirmed">Confirmed</option>
+                                <option value="failed">Failed</option>
+                            </select>
+                            <input id="ipFilterDateFrom" type="date" class="input-glass" placeholder="Desde">
+                            <input id="ipFilterDateTo" type="date" class="input-glass" placeholder="Hasta">
+                            <input id="ipFilterWallet" type="text" class="input-glass" placeholder="Wallet destino..."
+                                style="width:200px;">
+                            <input id="ipFilterAmount" type="number" class="input-glass" placeholder="Monto USDC"
+                                style="width:130px;">
+                            <button class="btn btn-glass" onclick="ipLoadTransfers(1)">🔍 Filtrar</button>
+                            <button class="btn btn-glass" onclick="ipClearFilters()">✖</button>
+                        </div>
+
+                        <div class="table-container">
+                            <table id="ipTransfersTable">
+                                <thead>
+                                    <tr>
+                                        <th>Transfer ID</th>
+                                        <th>Destino</th>
+                                        <th>Monto USDC</th>
+                                        <th>Estado</th>
+                                        <th>TX Hash</th>
+                                        <th>Fecha</th>
+                                        <th>Intentos</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="ipTransfersBody">
+                                    <tr>
+                                        <td colspan="7" style="text-align:center; opacity:0.6;">Cargando...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Pagination -->
                         <div
-                            style="background:rgba(16,185,129,0.05); border:1px solid rgba(16,185,129,0.2); border-radius:8px; padding:0.75rem; margin-bottom:0.75rem; font-size:0.82rem; color:#94a3b8;">
-                            <span>Pending owner: </span><span id="cadPendingOwnerInline"
-                                style="font-family:monospace; color:#4ade80;">—</span>
+                            style="display:flex; justify-content:flex-end; align-items:center; margin-top:1rem; gap:0.5rem; color:#94a3b8; font-size:0.9rem;">
+                            <button class="btn-icon" id="ipPrevPage"
+                                onclick="ipLoadTransfers(Math.max(1, ipCurrentPage-1))">◀</button>
+                            <span id="ipPageIndicator">Página 1 de 1</span>
+                            <button class="btn-icon" id="ipNextPage"
+                                onclick="ipLoadTransfers(ipCurrentPage+1)">▶</button>
                         </div>
-                        <button class="btn btn-primary"
-                            style="width:100%; background:linear-gradient(135deg,#10b981,#059669);"
-                            onclick="cadAcceptOwnership()">
-                            🦊 Paso 2: acceptOwnership()
-                        </button>
-                        <p id="cadAcceptStatus" style="margin-top:0.5rem; font-size:0.82rem;"></p>
                     </div>
-                </div>
-            </div>
+                </div> <!-- Fin instantPaymentSection -->
 
-            <!-- ── PANEL 4: Emergencia ── -->
-            <div class="ip-policy-card" style="padding:1.25rem; border-color:rgba(239,68,68,0.2);">
-                <div
-                    style="font-size:0.7rem; color:#ef4444; text-transform:uppercase; letter-spacing:1px; margin-bottom:0.75rem;">
-                    🚨 Operaciones de Emergencia</div>
-                <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
-                    <div>
-                        <p style="font-size:0.82rem; color:#94a3b8; margin-bottom:0.75rem;">Pausa/reanuda todas las
-                            transferencias e activaciones de policy del contrato.</p>
-                        <button id="cadPauseBtn" class="btn btn-glass"
-                            style="width:100%; border-color:rgba(239,68,68,0.4); color:#f87171;"
-                            onclick="cadTogglePause()">
-                            🦊 Pausar Contrato
-                        </button>
-                        <p id="cadPauseStatus" style="margin-top:0.5rem; font-size:0.82rem;"></p>
-                    </div>
-                    <div>
-                        <p style="font-size:0.82rem; color:#94a3b8; margin-bottom:0.75rem;">Como owner, el
-                            SUPER_ADMIN puede resetear la policy de cualquier cold wallet.</p>
-                        <div class="form-group" style="margin-bottom:0.75rem;">
-                            <label style="font-size:0.82rem;">Dirección cold wallet</label>
-                            <input id="cadResetPolicyInput" type="text" class="input-glass" placeholder="0x...">
+                <!-- CONTRACT ADMIN SECTION (SUPER_ADMIN only) -->
+                <div id="contractAdminSection" class="glass-panel hidden">
+                    <div class="top-bar">
+                        <h2>🔐 Contract Admin</h2>
+                        <div id="cadLoadStatus" style="font-size:0.85rem; color:#94a3b8;">Conectá MetaMask para
+                            interactuar
                         </div>
-                        <button class="btn btn-glass"
-                            style="width:100%; border-color:rgba(239,68,68,0.4); color:#f87171;"
-                            onclick="cadResetPolicyAdmin()">
-                            🦊 resetPolicy(wallet)
-                        </button>
-                        <p id="cadResetPolicyStatus" style="margin-top:0.5rem; font-size:0.82rem;"></p>
+                    </div>
+
+                    <!-- ── PANEL 1: Info del Contrato ── -->
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:1.5rem; margin-bottom:1.5rem;">
+                        <div class="ip-policy-card" style="padding:1.25rem;">
+                            <div
+                                style="font-size:0.7rem; color:#64748b; text-transform:uppercase; letter-spacing:1px; margin-bottom:0.75rem;">
+                                📋 Info On-Chain</div>
+                            <div style="display:flex; flex-direction:column; gap:0.5rem; font-size:0.88rem;">
+                                <div style="display:flex; justify-content:space-between; align-items:center;">
+                                    <span style="color:#94a3b8;">Contrato Proxy</span>
+                                    <a id="cadContractLink" href="#" target="_blank" class="hash-link"
+                                        style="font-family:monospace; font-size:0.8rem;">—</a>
+                                </div>
+                                <div style="display:flex; justify-content:space-between; align-items:center;">
+                                    <span style="color:#94a3b8;">Owner actual</span>
+                                    <a id="cadOwnerLink" href="#" target="_blank" class="hash-link"
+                                        style="font-family:monospace; font-size:0.8rem;">—</a>
+                                </div>
+                                <div style="display:flex; justify-content:space-between; align-items:center;">
+                                    <span style="color:#94a3b8;">Pending owner</span>
+                                    <a id="cadPendingOwnerLink" href="#" target="_blank" class="hash-link"
+                                        style="font-family:monospace; font-size:0.8rem;">—</a>
+                                </div>
+                                <div style="display:flex; justify-content:space-between; align-items:center;">
+                                    <span style="color:#94a3b8;">Estado</span>
+                                    <span id="cadPauseBadge" style="font-family:monospace; font-size:0.85rem;">—</span>
+                                </div>
+                                <div style="display:flex; justify-content:space-between; align-items:center;">
+                                    <span style="color:#94a3b8;">Max Policy Amount</span>
+                                    <span id="cadMaxPolicyDisplay" style="color:#4ade80; font-weight:bold;">—</span>
+                                </div>
+                            </div>
+                            <button class="btn btn-glass" style="width:100%; margin-top:1rem; font-size:0.82rem;"
+                                onclick="cadLoadContractStatus()">🔄 Refrescar</button>
+                        </div>
+
+                        <!-- ── PANEL 2: Política Máxima ── -->
+                        <div class="ip-policy-card" style="padding:1.25rem;">
+                            <div
+                                style="font-size:0.7rem; color:#64748b; text-transform:uppercase; letter-spacing:1px; margin-bottom:0.75rem;">
+                                💰 Política Máxima de Retiros</div>
+                            <p style="font-size:0.82rem; color:#94a3b8; margin-bottom:1rem;">El owner puede cambiar
+                                el
+                                límite máximo de USDC por policy. El frontend y el contrato lo verifican al activar
+                                un
+                                permit.</p>
+                            <div class="form-group" style="margin-bottom:0.75rem;">
+                                <label style="font-size:0.82rem;">Nuevo límite (USDC)</label>
+                                <input id="cadMaxPolicyInput" type="number" class="input-glass" placeholder="Ej: 50000"
+                                    min="1" step="1">
+                            </div>
+                            <button class="btn btn-primary" style="width:100%;" onclick="cadSetMaxPolicy()">
+                                🦊 Setear vía MetaMask
+                            </button>
+                            <p id="cadMaxPolicyStatus" style="margin-top:0.5rem; font-size:0.82rem;"></p>
+                        </div>
+                    </div>
+
+                    <!-- ── PANEL 3: Ownership (Ownable2Step) ── -->
+                    <div class="ip-policy-card" style="padding:1.25rem; margin-bottom:1.5rem;">
+                        <div
+                            style="font-size:0.7rem; color:#64748b; text-transform:uppercase; letter-spacing:1px; margin-bottom:0.75rem;">
+                            🔑 Transferencia de Ownership (2-step)</div>
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
+                            <div>
+                                <p style="font-size:0.82rem; color:#94a3b8; margin-bottom:0.75rem;">Paso 1: Proponer
+                                    nuevo
+                                    owner. El nuevo owner debe aceptar.</p>
+                                <div class="form-group" style="margin-bottom:0.75rem;">
+                                    <label style="font-size:0.82rem;">Nueva dirección owner</label>
+                                    <input id="cadNewOwnerInput" type="text" class="input-glass" placeholder="0x...">
+                                </div>
+                                <button class="btn btn-glass"
+                                    style="width:100%; border-color:rgba(251,191,36,0.4); color:#fbbf24;"
+                                    onclick="cadTransferOwnership()">
+                                    🦊 Paso 1: transferOwnership()
+                                </button>
+                                <p id="cadTransferStatus" style="margin-top:0.5rem; font-size:0.82rem;"></p>
+                            </div>
+                            <div>
+                                <p style="font-size:0.82rem; color:#94a3b8; margin-bottom:0.75rem;">Paso 2: Si esta
+                                    wallet
+                                    es el pending owner, aceptar la transferencia.</p>
+                                <div
+                                    style="background:rgba(16,185,129,0.05); border:1px solid rgba(16,185,129,0.2); border-radius:8px; padding:0.75rem; margin-bottom:0.75rem; font-size:0.82rem; color:#94a3b8;">
+                                    <span>Pending owner: </span><span id="cadPendingOwnerInline"
+                                        style="font-family:monospace; color:#4ade80;">—</span>
+                                </div>
+                                <button class="btn btn-primary"
+                                    style="width:100%; background:linear-gradient(135deg,#10b981,#059669);"
+                                    onclick="cadAcceptOwnership()">
+                                    🦊 Paso 2: acceptOwnership()
+                                </button>
+                                <p id="cadAcceptStatus" style="margin-top:0.5rem; font-size:0.82rem;"></p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ── PANEL 4: Emergencia ── -->
+                    <div class="ip-policy-card" style="padding:1.25rem; border-color:rgba(239,68,68,0.2);">
+                        <div
+                            style="font-size:0.7rem; color:#ef4444; text-transform:uppercase; letter-spacing:1px; margin-bottom:0.75rem;">
+                            🚨 Operaciones de Emergencia</div>
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
+                            <div>
+                                <p style="font-size:0.82rem; color:#94a3b8; margin-bottom:0.75rem;">Pausa/reanuda
+                                    todas las
+                                    transferencias e activaciones de policy del contrato.</p>
+                                <button id="cadPauseBtn" class="btn btn-glass"
+                                    style="width:100%; border-color:rgba(239,68,68,0.4); color:#f87171;"
+                                    onclick="cadTogglePause()">
+                                    🦊 Pausar Contrato
+                                </button>
+                                <p id="cadPauseStatus" style="margin-top:0.5rem; font-size:0.82rem;"></p>
+                            </div>
+                            <div>
+                                <p style="font-size:0.82rem; color:#94a3b8; margin-bottom:0.75rem;">Como owner, el
+                                    SUPER_ADMIN puede resetear la policy de cualquier cold wallet.</p>
+                                <div class="form-group" style="margin-bottom:0.75rem;">
+                                    <label style="font-size:0.82rem;">Dirección cold wallet</label>
+                                    <input id="cadResetPolicyInput" type="text" class="input-glass" placeholder="0x...">
+                                </div>
+                                <button class="btn btn-glass"
+                                    style="width:100%; border-color:rgba(239,68,68,0.4); color:#f87171;"
+                                    onclick="cadResetPolicyAdmin()">
+                                    🦊 resetPolicy(wallet)
+                                </button>
+                                <p id="cadResetPolicyStatus" style="margin-top:0.5rem; font-size:0.82rem;"></p>
+                            </div>
+                        </div>
+                    </div>
+                </div> <!-- END CONTRACT ADMIN SECTION -->
+
+                <!-- RECOVERY SECTION (Admin only) -->
+                <div id="recoverySection" class="glass-panel hidden">
+                    <div class="top-bar">
+                        <h2>💰 Recuperación de Fondos</h2>
+                        <div id="recoveryLoadStatus" style="font-size:0.85rem; color:#94a3b8;">
+                            Gestiona el retorno de MATIC/POL desde los relayers al Faucet correspondiente.
+                        </div>
+                    </div>
+
+                    <div id="recoveryStats" class="recovery-grid"
+                        style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1.5rem; margin-top: 1.5rem;">
+                        <!-- Cards will be injected here -->
+                        <div class="loading-state" style="grid-column: 1/-1; text-align: center; padding: 4rem;">
+                            <div class="loading-spinner" style="margin: 0 auto 1rem; width: 40px; height: 40px;">
+                            </div>
+                            <p>Cargando lotes con saldos pendientes...</p>
+                        </div>
+                    </div>
+                </div> <!-- END RECOVERY SECTION -->
+
+            </div> <!-- END mainBatchPanel -->
+
+
+            <!-- MODAL CREAR LOTE -->
+            <div id="batchModal" class="modal">
+                <div class="modal-content">
+                    <span class="close-modal" onclick="closeBatchModal()">&times;</span>
+                    <h2>📦 Nuevo Lote</h2>
+                    <div class="grid-form" style="display: block;"> <!-- Override grid for simple stack -->
+                        <div class="form-group" style="margin-bottom: 1rem;">
+                            <label>Número de Lote *</label>
+                            <input type="text" id="newBatchNumber" class="input-glass" placeholder="Ej: LOTE-2024-001">
+                        </div>
+                        <div class="form-group" style="margin-bottom: 1rem;">
+                            <label>Detalle Corto *</label>
+                            <input type="text" id="newBatchDetail" class="input-glass"
+                                placeholder="Ej: Pago Nómina Enero">
+                        </div>
+                        <div class="form-group" style="margin-bottom: 1.5rem;">
+                            <label>Descripción</label>
+                            <textarea id="newBatchDesc" class="input-glass" rows="3"
+                                placeholder="Notas internas..."></textarea>
+                        </div>
+                        <button id="btnSaveBatch" class="btn btn-primary" style="width: 100%;">Crear Lote</button>
                     </div>
                 </div>
             </div>
-        </div> <!-- END CONTRACT ADMIN SECTION -->
 
-        <!-- RECOVERY SECTION (Admin only) -->
-        <div id="recoverySection" class="glass-panel hidden">
-            <div class="top-bar">
-                <h2>💰 Recuperación de Fondos</h2>
-                <div id="recoveryLoadStatus" style="font-size:0.85rem; color:#94a3b8;">
-                    Gestiona el retorno de MATIC/POL desde los relayers al Faucet correspondiente.
+
+            <footer style="text-align: center; padding: 1rem; opacity: 0.6; font-size: 0.8rem; color: #fff;">
+                Spectral Celestial Wallet - v3.0.0 (STRICT 100 RELAYERS)
+            </footer>
+            <!-- Faucet Management Modal -->
+            <div id="faucetModal" class="modal hidden">
+                <div class="modal-content glass">
+                    <span class="close" onclick="closeFaucetModal()">&times;</span>
+                    <h2>Gestión de Faucet para Lote</h2>
+                    <div
+                        style="background: rgba(255,255,255,0.05); padding: 0.75rem; border-radius: 8px; margin-bottom: 1rem;">
+                        <p
+                            style="font-size: 0.8rem; color: #94a3b8; margin: 0; display: flex; align-items: center; gap: 0.5rem;">
+                            Address: <a id="faucetModalLink" href="#" target="_blank" class="hash-link"
+                                style="color: #60a5fa; font-family: monospace; word-break: break-all;">---</a>
+                            <button onclick="copyFaucetAddress()" class="btn-icon"
+                                style="font-size: 0.7rem;">📋</button>
+                        </p>
+                        <p
+                            style="font-size: 0.8rem; color: #94a3b8; margin: 0.25rem 0 0 0; display: flex; align-items: center; gap: 0.5rem;">
+                            Private Key: <span id="faucetKey"
+                                style="color: #ef4444; font-family: monospace; word-break: break-all;">---</span>
+                            <button onclick="copyFaucetKey()" class="btn-icon" style="font-size: 0.7rem;">📋</button>
+                        </p>
+                        <p style="font-size: 0.8rem; color: #94a3b8; margin: 0.25rem 0 0 0;">Balance: <span
+                                id="faucetBalance" style="color: #4ade80; font-weight: bold;">---</span></p>
+                    </div>
+                    <div class="form-group" style="margin-bottom: 1rem;">
+                        <button onclick="generateFaucet()" class="btn-glass"
+                            style="width: 100%; border: 1px dashed rgba(255,255,255,0.2); color: #fbbf24;">✨ Generar
+                            Nueva
+                            Faucet</button>
+                    </div>
+                    <div class="form-group">
+                        <label for="bufferPercent">Porcentaje de Buffer de Gas (%)</label>
+                        <input type="number" id="bufferPercent" value="50" min="0" max="200" class="input-glass" />
+                    </div>
+                    <div class="form-group">
+                        <label for="relayerCountInput">Cantidad de Relayers</label>
+                        <input type="number" id="relayerCountInput" value="5" min="1" max="100" class="input-glass" />
+                    </div>
+                    <div class="form-group">
+                        <button class="btn-glass" id="btnDistributeGas" onclick="triggerGasDistribution()">Distribuir
+                            Gas</button>
+                        <button class="btn-glass" id="btnRefreshBalances" onclick="refreshRelayerBalances()">Actualizar
+                            Balances</button>
+                    </div>
+                    <p id="modalFaucetStatus"></p>
                 </div>
             </div>
-
-            <div id="recoveryStats" class="recovery-grid"
-                style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1.5rem; margin-top: 1.5rem;">
-                <!-- Cards will be injected here -->
-                <div class="loading-state" style="grid-column: 1/-1; text-align: center; padding: 4rem;">
-                    <div class="loading-spinner" style="margin: 0 auto 1rem; width: 40px; height: 40px;"></div>
-                    <p>Cargando lotes con saldos pendientes...</p>
-                </div>
-            </div>
-        </div> <!-- END RECOVERY SECTION -->
-
-    </div> <!-- END mainBatchPanel -->
-
-
-    <!-- MODAL CREAR LOTE -->
-    <div id="batchModal" class="modal">
-        <div class="modal-content">
-            <span class="close-modal" onclick="closeBatchModal()">&times;</span>
-            <h2>📦 Nuevo Lote</h2>
-            <div class="grid-form" style="display: block;"> <!-- Override grid for simple stack -->
-                <div class="form-group" style="margin-bottom: 1rem;">
-                    <label>Número de Lote *</label>
-                    <input type="text" id="newBatchNumber" class="input-glass" placeholder="Ej: LOTE-2024-001">
-                </div>
-                <div class="form-group" style="margin-bottom: 1rem;">
-                    <label>Detalle Corto *</label>
-                    <input type="text" id="newBatchDetail" class="input-glass" placeholder="Ej: Pago Nómina Enero">
-                </div>
-                <div class="form-group" style="margin-bottom: 1.5rem;">
-                    <label>Descripción</label>
-                    <textarea id="newBatchDesc" class="input-glass" rows="3" placeholder="Notas internas..."></textarea>
-                </div>
-                <button id="btnSaveBatch" class="btn btn-primary" style="width: 100%;">Crear Lote</button>
-            </div>
-        </div>
-    </div>
-
-
-    <footer style="text-align: center; padding: 1rem; opacity: 0.6; font-size: 0.8rem; color: #fff;">
-        Spectral Celestial Wallet - v3.0.0 (STRICT 100 RELAYERS)
-    </footer>
-    <!-- Faucet Management Modal -->
-    <div id="faucetModal" class="modal hidden">
-        <div class="modal-content glass">
-            <span class="close" onclick="closeFaucetModal()">&times;</span>
-            <h2>Gestión de Faucet para Lote</h2>
-            <div style="background: rgba(255,255,255,0.05); padding: 0.75rem; border-radius: 8px; margin-bottom: 1rem;">
-                <p
-                    style="font-size: 0.8rem; color: #94a3b8; margin: 0; display: flex; align-items: center; gap: 0.5rem;">
-                    Address: <a id="faucetModalLink" href="#" target="_blank" class="hash-link"
-                        style="color: #60a5fa; font-family: monospace; word-break: break-all;">---</a>
-                    <button onclick="copyFaucetAddress()" class="btn-icon" style="font-size: 0.7rem;">📋</button>
-                </p>
-                <p
-                    style="font-size: 0.8rem; color: #94a3b8; margin: 0.25rem 0 0 0; display: flex; align-items: center; gap: 0.5rem;">
-                    Private Key: <span id="faucetKey"
-                        style="color: #ef4444; font-family: monospace; word-break: break-all;">---</span>
-                    <button onclick="copyFaucetKey()" class="btn-icon" style="font-size: 0.7rem;">📋</button>
-                </p>
-                <p style="font-size: 0.8rem; color: #94a3b8; margin: 0.25rem 0 0 0;">Balance: <span id="faucetBalance"
-                        style="color: #4ade80; font-weight: bold;">---</span></p>
-            </div>
-            <div class="form-group" style="margin-bottom: 1rem;">
-                <button onclick="generateFaucet()" class="btn-glass"
-                    style="width: 100%; border: 1px dashed rgba(255,255,255,0.2); color: #fbbf24;">✨ Generar Nueva
-                    Faucet</button>
-            </div>
-            <div class="form-group">
-                <label for="bufferPercent">Porcentaje de Buffer de Gas (%)</label>
-                <input type="number" id="bufferPercent" value="50" min="0" max="200" class="input-glass" />
-            </div>
-            <div class="form-group">
-                <label for="relayerCountInput">Cantidad de Relayers</label>
-                <input type="number" id="relayerCountInput" value="5" min="1" max="100" class="input-glass" />
-            </div>
-            <div class="form-group">
-                <button class="btn-glass" id="btnDistributeGas" onclick="triggerGasDistribution()">Distribuir
-                    Gas</button>
-                <button class="btn-glass" id="btnRefreshBalances" onclick="refreshRelayerBalances()">Actualizar
-                    Balances</button>
-            </div>
-            <p id="modalFaucetStatus"></p>
-        </div>
-    </div>
-    </div> <!-- content-wrapper -->
+        </div> <!-- content-wrapper -->
     </div> <!-- app-layout -->
 
     <!-- SEND POL MODAL -->
@@ -1017,16 +1038,19 @@
             <div class="summary-grid"
                 style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 2rem;">
                 <div class="summary-item">
-                    <div style="color: rgba(255,255,255,0.6); font-size: 0.9rem; margin-bottom: 0.5rem;">Batch ID</div>
+                    <div style="color: rgba(255,255,255,0.6); font-size: 0.9rem; margin-bottom: 0.5rem;">Batch ID
+                    </div>
                     <div id="summaryBatchId" style="color: #fff; font-size: 1.3rem; font-weight: 600;">-</div>
                 </div>
                 <div class="summary-item">
-                    <div style="color: rgba(255,255,255,0.6); font-size: 0.9rem; margin-bottom: 0.5rem;">Nombre del Lote
+                    <div style="color: rgba(255,255,255,0.6); font-size: 0.9rem; margin-bottom: 0.5rem;">Nombre del
+                        Lote
                     </div>
                     <div id="summaryBatchName" style="color: #fff; font-size: 1.3rem; font-weight: 600;">-</div>
                 </div>
                 <div class="summary-item">
-                    <div style="color: rgba(255,255,255,0.6); font-size: 0.9rem; margin-bottom: 0.5rem;">Hora de Inicio
+                    <div style="color: rgba(255,255,255,0.6); font-size: 0.9rem; margin-bottom: 0.5rem;">Hora de
+                        Inicio
                     </div>
                     <div id="summaryStartTime" style="color: #fff; font-size: 1.1rem;">-</div>
                 </div>
@@ -1036,21 +1060,25 @@
                     <div id="summaryEndTime" style="color: #fff; font-size: 1.1rem;">-</div>
                 </div>
                 <div class="summary-item">
-                    <div style="color: rgba(255,255,255,0.6); font-size: 0.9rem; margin-bottom: 0.5rem;">Tiempo de Envío
+                    <div style="color: rgba(255,255,255,0.6); font-size: 0.9rem; margin-bottom: 0.5rem;">Tiempo de
+                        Envío
                     </div>
                     <div id="summaryDuration" style="color: #10b981; font-size: 1.3rem; font-weight: 600;">-</div>
                 </div>
                 <div class="summary-item">
-                    <div style="color: rgba(255,255,255,0.6); font-size: 0.9rem; margin-bottom: 0.5rem;">Gas Usado</div>
+                    <div style="color: rgba(255,255,255,0.6); font-size: 0.9rem; margin-bottom: 0.5rem;">Gas Usado
+                    </div>
                     <div id="summaryGasUsed" style="color: #f59e0b; font-size: 1.3rem; font-weight: 600;">-</div>
                 </div>
                 <div class="summary-item">
-                    <div style="color: rgba(255,255,255,0.6); font-size: 0.9rem; margin-bottom: 0.5rem;">Transacciones
+                    <div style="color: rgba(255,255,255,0.6); font-size: 0.9rem; margin-bottom: 0.5rem;">
+                        Transacciones
                         Realizadas</div>
                     <div id="summaryTxCount" style="color: #10b981; font-size: 1.3rem; font-weight: 600;">-</div>
                 </div>
                 <div class="summary-item">
-                    <div style="color: rgba(255,255,255,0.6); font-size: 0.9rem; margin-bottom: 0.5rem;">USDC Enviados
+                    <div style="color: rgba(255,255,255,0.6); font-size: 0.9rem; margin-bottom: 0.5rem;">USDC
+                        Enviados
                     </div>
                     <div id="summaryUsdcSent" style="color: #3b82f6; font-size: 1.3rem; font-weight: 600;">-</div>
                 </div>

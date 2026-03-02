@@ -3692,8 +3692,8 @@ async function ipLoadPolicy() {
 window.ipShowActivateForm = () => {
     const form = document.getElementById('ipActivateForm');
     form.classList.remove('hidden');
-    // Pre-fill deadline with +30 days
-    const future = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    // Pre-fill deadline with +24 hours
+    const future = new Date(Date.now() + 24 * 60 * 60 * 1000);
     const local = new Date(future - future.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
     document.getElementById('ipFormExpiry').value = local;
     form.scrollIntoView({ behavior: 'smooth' });
