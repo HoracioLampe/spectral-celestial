@@ -3745,7 +3745,7 @@ window.ipActivatePolicy = async () => {
             return;
         }
 
-        const currentRelayerOnChain = statusData.relayer?.toLowerCase();
+        const currentRelayerOnChain = statusData.registeredRelayer?.toLowerCase();
         const expectedFaucet = statusData.expectedFaucet?.toLowerCase();
         const isCorrectRelayer = (statusData.registered && currentRelayerOnChain === expectedFaucet);
 
