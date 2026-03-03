@@ -5,7 +5,8 @@ SET client_encoding = 'UTF8';
 
 BEGIN;
 
-
+-- Add updated_at to instant_transfers (used by InstantRelayerEngine for processing tracking)
+ALTER TABLE instant_transfers ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
 
 CREATE TABLE IF NOT EXISTS instant_api_keys (
   id            SERIAL PRIMARY KEY,
