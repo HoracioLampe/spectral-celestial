@@ -3618,9 +3618,10 @@ function showSection(sectionId, navId, onShow = null) {
 
 function showInstantPaymentSection() {
     showSection('instantPaymentSection', 'navInstantPayment', () => {
-        ipLoadPolicy(); ipLoadTransfers(1);
+        ipLoadPolicy(); ipLoadTransfers(1); ipLoadApiKey();
     });
 }
+
 
 function showBatchSection() {
     showSection('batchSection', 'navTransacciones', () => fetchBatches(currentBatchPage || 1));
@@ -4053,9 +4054,98 @@ window.ipExportExcel = async () => {
     }
 };
 
+// ── API Key Management (B2B) ─────────────────────────────────────────────────
+
+async function ipLoadApiKey() {
+    const noKey = document.getElementById('ipKeyNoKey');
+    const keyInfo = document.getElementById('ipKeyInfo');
+    const keyRevoked = document.getElementById('ipKeyRevoked');
+    try {
+        const res = await authenticatedFetch('/api/v1/instant/admin/key');
+        const data = await res.json();
+        if (!data.hasKey) {
+            noKey?.classList.remove('hidden');
+            keyInfo?.classList.add('hidden');
+            return;
+        }
+        noKey?.classList.add('hidden');
+        keyInfo?.classList.remove('hidden');
+        document.getElementById('ipKeyPrefix').textContent = data.prefix;
+        document.getElementById('ipKeyAccessCount').textContent = data.access_count;
+        document.getElementById('ipKeyLastAccess').textContent = data.last_accessed
+            ? new Date(data.last_accessed).toLocaleString() : 'Nunca';
+        if (!data.is_active) {
+            keyRevoked?.classList.remove('hidden');
+        } else {
+            keyRevoked?.classList.add('hidden');
+        }
+    } catch (err) {
+        console.error('[ApiKey] ipLoadApiKey error:', err);
+    }
+}
+
+window.ipGenerateApiKey = async () => {
+    const statusEl = document.getElementById('ipKeyStatus');
+    if (!confirm('¿Generar / rotar la API Key? Si ya existe una key activa, quedará INVÁLIDA inmediatamente.')) return;
+    statusEl.textContent = '⏳ Generando...';
+    statusEl.style.color = '#60a5fa';
+    try {
+        const res = await authenticatedFetch('/api/v1/instant/admin/key', { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Error desconocido');
+
+        // Mostrar la key UNA sola vez en el modal
+        const rawKey = data.api_key;
+        document.getElementById('ipKeyDisplay').textContent = rawKey;
+        document.getElementById('ipKeyDisplayInline').textContent = rawKey;
+        document.getElementById('ipKeyModal').classList.remove('hidden');
+        // No guardar la key en ningún lugar del DOM persistente
+        statusEl.textContent = '';
+        await ipLoadApiKey();
+    } catch (err) {
+        statusEl.textContent = '❌ ' + err.message;
+        statusEl.style.color = '#ef4444';
+    }
+};
+
+window.ipRevokeApiKey = async () => {
+    const statusEl = document.getElementById('ipKeyStatus');
+    if (!confirm('¿Revocar la API Key? Todos los clientes externos que la usen recibirán 401 inmediatamente.')) return;
+    statusEl.textContent = '⏳ Revocando...';
+    statusEl.style.color = '#f59e0b';
+    try {
+        const res = await authenticatedFetch('/api/v1/instant/admin/key', { method: 'DELETE' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Error desconocido');
+        statusEl.textContent = '✅ API Key revocada. Los clientes externos recibirán 401.';
+        statusEl.style.color = '#4ade80';
+        await ipLoadApiKey();
+    } catch (err) {
+        statusEl.textContent = '❌ ' + err.message;
+        statusEl.style.color = '#ef4444';
+    }
+};
+
+window.ipCopyKey = () => {
+    const key = document.getElementById('ipKeyDisplay')?.textContent;
+    if (!key) return;
+    navigator.clipboard.writeText(key).then(() => {
+        const btn = document.getElementById('ipBtnCopyKey');
+        if (btn) { const orig = btn.textContent; btn.textContent = '✅ Copiado!'; setTimeout(() => btn.textContent = orig, 1500); }
+    }).catch(() => alert('Copiá manualmente: ' + key));
+};
+
+// Cierra el modal y LIMPIA el DOM de la key (nunca debe quedar en el DOM)
+window.ipCloseKeyModal = () => {
+    document.getElementById('ipKeyDisplay').textContent = '••••••••••••••••••••';
+    document.getElementById('ipKeyDisplayInline').textContent = '••••••••••••••••••••';
+    document.getElementById('ipKeyModal').classList.add('hidden');
+};
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // === CONTRACT ADMIN (SUPER_ADMIN only) — Direct Web3 via MetaMask ===
 // ═══════════════════════════════════════════════════════════════════════════════
+
 
 // ABI mínimo del contrato InstantPayment para las operaciones del owner
 const CAD_ABI = [

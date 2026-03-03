@@ -8,6 +8,7 @@ const xlsx = require('xlsx');
 const RelayerEngine = require('./services/relayerEngine');
 const RpcManager = require('./services/rpcManager');
 const fs = require('fs');
+const crypto = require('crypto');
 const session = require('express-session');
 const pgSession = require('connect-pg-simple')(session);
 const { generateNonce, SiweMessage } = require('siwe');
@@ -44,6 +45,12 @@ const CHAIN_ID = parseInt(process.env.CHAIN_ID || '137');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// ─── Global UTF-8 charset for all JSON/text responses ────────────────────────
+app.use((req, res, next) => {
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    next();
+});
 
 // Database Connection
 // Database Connection
@@ -95,14 +102,23 @@ const initSessionTable = async (maxRetries = 5, delayMs = 2000) => {
 
 // Vault integration removed - not in use
 
-// ─── Instant Payment Migration ───────────────────────────────────────────────
+// ─── Instant Payment Migrations ──────────────────────────────────────────────
 const initInstantPaymentTables = async () => {
+    // 004: core tables (instant_transfers, instant_policies, instant_relayer_nonces, instant_webhook_logs)
     try {
         const sql = fs.readFileSync(path.join(__dirname, 'migrations/004_instant_payment.sql'), 'utf8');
         await pool.query(sql);
-        console.log('[InstantPayment] ✅ DB tables verified/created');
+        console.log('[InstantPayment] ✅ Migration 004 verified/created');
     } catch (err) {
-        console.error('[InstantPayment] ⚠️ Migration error:', err.message);
+        console.error('[InstantPayment] ⚠️ Migration 004 error:', err.message);
+    }
+    // 005: API Keys table + webhook_default_url column
+    try {
+        const sql = fs.readFileSync(path.join(__dirname, 'migrations/005_instant_api_keys.sql'), 'utf8');
+        await pool.query(sql);
+        console.log('[InstantPayment] ✅ Migration 005 verified/created');
+    } catch (err) {
+        console.error('[InstantPayment] ⚠️ Migration 005 error:', err.message);
     }
 };
 
@@ -174,7 +190,39 @@ const authenticateToken = (req, res, next) => {
     });
 };
 
+// ─── API Key Auth Middleware (B2B / External Systems) ─────────────────────────
+// Authenticates via X-Api-Key header using SHA-256 hash lookup.
+// If no X-Api-Key header, passes through to the next middleware (JWT).
+const authenticateApiKey = async (req, res, next) => {
+    const apiKey = req.headers['x-api-key'];
+    // Min length check to avoid hashing garbage / empty strings
+    if (!apiKey || apiKey.length < 20) return next(); // fall through to JWT
 
+    const hash = crypto.createHash('sha256').update(apiKey).digest('hex');
+    try {
+        const { rows } = await pool.query(
+            `SELECT id, cold_wallet, is_active FROM instant_api_keys WHERE key_hash=$1`,
+            [hash]
+        );
+        if (rows.length === 0 || !rows[0].is_active) {
+            return res.status(401).json({ error: 'Invalid or revoked API Key' });
+        }
+        // Inject user context (same shape as JWT payload)
+        req.user = { address: rows[0].cold_wallet, role: 'OPERATOR', apiKeyId: rows[0].id };
+        // Non-blocking access tracking
+        pool.query(
+            `UPDATE instant_api_keys SET access_count=access_count+1, last_accessed=NOW(), updated_at=NOW() WHERE id=$1`,
+            [rows[0].id]
+        ).catch(e => console.warn('[ApiKey] access_count update failed:', e.message));
+        return next();
+    } catch (err) {
+        console.error('[ApiKey] Auth error:', err.message);
+        return res.status(500).json({ error: 'Auth error' });
+    }
+};
+
+// Combined auth: accepts X-Api-Key OR Bearer JWT (used on public B2B endpoints)
+const authApiKeyOrJWT = [authenticateApiKey, authenticateToken];
 
 const os = require('os');
 
@@ -2454,8 +2502,8 @@ app.post('/api/v1/instant/relayer/register', authenticateToken, async (req, res)
 });
 
 // ── POST /api/v1/instant/transfer ──────────────────────────────────────────────
-// Accepts a transfer order from external API clients
-app.post('/api/v1/instant/transfer', authenticateToken, async (req, res) => {
+// Accepts a transfer order from external clients. Auth: Bearer JWT or X-Api-Key.
+app.post('/api/v1/instant/transfer', authApiKeyOrJWT, async (req, res) => {
     try {
         const funderAddress = req.user.address.toLowerCase();
         const { transfer_id, destination_wallet, amount_usdc, webhook_url } = req.body;
@@ -2503,13 +2551,23 @@ app.post('/api/v1/instant/transfer', authenticateToken, async (req, res) => {
             return res.status(402).json({ error: 'Policy has expired. Please reactivate the permit.' });
         }
 
+        // Resolve webhook URL: body param → rbac_users default → null
+        let effectiveWebhookUrl = webhook_url || null;
+        if (!effectiveWebhookUrl) {
+            const userRow = await pool.query(
+                'SELECT webhook_default_url FROM rbac_users WHERE address=$1',
+                [funderAddress]
+            );
+            effectiveWebhookUrl = userRow.rows[0]?.webhook_default_url || null;
+        }
+
         // Insert transfer
         const result = await pool.query(`
             INSERT INTO instant_transfers
               (transfer_id, funder_address, destination_wallet, amount_usdc, status, webhook_url)
             VALUES ($1, $2, $3, $4, 'pending', $5)
             RETURNING *
-        `, [transfer_id, funderAddress, destination_wallet.toLowerCase(), amount, webhook_url || null]);
+        `, [transfer_id, funderAddress, destination_wallet.toLowerCase(), amount, effectiveWebhookUrl]);
 
         return res.status(201).json({
             success: true,
@@ -2524,7 +2582,7 @@ app.post('/api/v1/instant/transfer', authenticateToken, async (req, res) => {
 });
 
 // ── GET /api/v1/instant/transfers ──────────────────────────────────────────────
-app.get('/api/v1/instant/transfers', authenticateToken, async (req, res) => {
+app.get('/api/v1/instant/transfers', authApiKeyOrJWT, async (req, res) => {
     try {
         const funderAddress = req.user.address.toLowerCase();
         const isAdmin = req.user.role === 'SUPER_ADMIN';
@@ -2586,7 +2644,7 @@ app.get('/api/v1/instant/transfers', authenticateToken, async (req, res) => {
 });
 
 // ── GET /api/v1/instant/transfers/export ───────────────────────────────────────
-app.get('/api/v1/instant/transfers/export', authenticateToken, async (req, res) => {
+app.get('/api/v1/instant/transfers/export', authApiKeyOrJWT, async (req, res) => {
     try {
         const funderAddress = req.user.address.toLowerCase();
         const isAdmin = req.user.role === 'SUPER_ADMIN';
@@ -2895,23 +2953,27 @@ app.post('/api/v1/instant/admin/unpause', authenticateToken, async (req, res) =>
 });
 
 // ── POST /api/v1/instant/webhook/register ─────────────────────────────────────
-app.post('/api/v1/instant/webhook/register', authenticateToken, async (req, res) => {
+// Registers/updates the default webhook URL for this cold wallet.
+// Used as fallback when POST /transfer doesn't include webhook_url in body.
+app.post('/api/v1/instant/webhook/register', authApiKeyOrJWT, async (req, res) => {
     try {
         const funderAddress = req.user.address.toLowerCase();
         const { webhook_url } = req.body;
         if (!webhook_url) return res.status(400).json({ error: 'webhook_url is required' });
-        // Store webhook_url on all pending/future transfers for this funder via default
-        // (Stored per-transfer at creation time. This endpoint sets a preference.)
-        await pool.query(`
-            INSERT INTO instant_policies (cold_wallet, total_amount, deadline, is_active)
-            VALUES ($1, 0, NOW(), false)
-            ON CONFLICT (cold_wallet) DO UPDATE SET updated_at=NOW()
-        `, [funderAddress]);
-        // Update existing pending transfers to include webhook_url
+
+        // Persist default webhook URL in rbac_users (tenant profile table)
         await pool.query(
-            'UPDATE instant_transfers SET webhook_url=$1 WHERE funder_address=$2 AND status=\'pending\'',
+            `UPDATE rbac_users SET webhook_default_url=$1 WHERE address=$2`,
             [webhook_url, funderAddress]
         );
+
+        // Also update pending transfers that have no webhook_url
+        await pool.query(
+            `UPDATE instant_transfers SET webhook_url=$1
+             WHERE funder_address=$2 AND status='pending' AND (webhook_url IS NULL OR webhook_url='')`,
+            [webhook_url, funderAddress]
+        );
+
         res.json({ success: true, webhook_url });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -2919,7 +2981,7 @@ app.post('/api/v1/instant/webhook/register', authenticateToken, async (req, res)
 });
 
 // ── GET /api/v1/instant/webhook/logs ──────────────────────────────────────────
-app.get('/api/v1/instant/webhook/logs', authenticateToken, async (req, res) => {
+app.get('/api/v1/instant/webhook/logs', authApiKeyOrJWT, async (req, res) => {
     try {
         const funderAddress = req.user.address.toLowerCase();
         const isAdmin = req.user.role === 'SUPER_ADMIN';
@@ -3030,7 +3092,102 @@ app.post('/api/v1/instant/relayer/register', authenticateToken, async (req, res)
     }
 });
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// INSTANT PAYMENT API KEYS (B2B / Multitenant)
+// 1 API Key per cold_wallet. Key shown ONCE at generation time. Hash stored only.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ── POST /api/v1/instant/admin/key ─────────────────────────────────────────────
+// Generates (or rotates) the API Key for this cold wallet.
+// The full key is returned ONCE — cannot be retrieved again.
+// If a key already exists, it is replaced (access_count resets to 0).
+app.post('/api/v1/instant/admin/key', authenticateToken, async (req, res) => {
+    try {
+        const funderAddress = req.user.address.toLowerCase();
+
+        const rawKey = 'sk_live_' + crypto.randomBytes(32).toString('hex'); // 72 chars
+        const keyHash = crypto.createHash('sha256').update(rawKey).digest('hex');
+        const keyPrefix = rawKey.substring(0, 16); // "sk_live_XXXXXXXX"
+
+        // Upsert: 1 key per cold_wallet — rotating replaces the old key
+        await pool.query(`
+            INSERT INTO instant_api_keys (cold_wallet, key_hash, key_prefix, is_active, access_count, last_accessed)
+            VALUES ($1, $2, $3, true, 0, NULL)
+            ON CONFLICT (cold_wallet) DO UPDATE
+            SET key_hash=$2, key_prefix=$3, is_active=true, access_count=0,
+                last_accessed=NULL, updated_at=NOW()
+        `, [funderAddress, keyHash, keyPrefix]);
+
+        console.log(`[ApiKey] Key generated/rotated for ${funderAddress} | prefix: ${keyPrefix}`);
+
+        res.status(201).json({
+            success: true,
+            api_key: rawKey,       // ← shown ONCE — user must save this immediately
+            prefix: keyPrefix,
+            cold_wallet: funderAddress,
+            message: 'Save this API key securely — it will not be shown again'
+        });
+    } catch (err) {
+        console.error('[ApiKey] POST /admin/key error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ── GET /api/v1/instant/admin/key ──────────────────────────────────────────────
+// Returns status of the current API Key (prefix, usage stats). Never the key.
+app.get('/api/v1/instant/admin/key', authenticateToken, async (req, res) => {
+    try {
+        const funderAddress = req.user.address.toLowerCase();
+        const { rows } = await pool.query(
+            `SELECT key_prefix, is_active, access_count, last_accessed, created_at, updated_at
+             FROM instant_api_keys WHERE cold_wallet=$1`,
+            [funderAddress]
+        );
+        if (rows.length === 0) {
+            return res.json({ hasKey: false });
+        }
+        const k = rows[0];
+        res.json({
+            hasKey: true,
+            prefix: k.key_prefix,           // e.g. "sk_live_a3b4c5d6"
+            is_active: k.is_active,
+            access_count: parseInt(k.access_count),
+            last_accessed: k.last_accessed,
+            created_at: k.created_at,
+            updated_at: k.updated_at
+        });
+    } catch (err) {
+        console.error('[ApiKey] GET /admin/key error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ── DELETE /api/v1/instant/admin/key ───────────────────────────────────────────
+// Revokes the API Key. JWT auth still works after this.
+app.delete('/api/v1/instant/admin/key', authenticateToken, async (req, res) => {
+    try {
+        const funderAddress = req.user.address.toLowerCase();
+        const { rowCount } = await pool.query(
+            `UPDATE instant_api_keys SET is_active=false, updated_at=NOW() WHERE cold_wallet=$1`,
+            [funderAddress]
+        );
+        if (rowCount === 0) {
+            return res.status(404).json({ error: 'No API Key found for this cold wallet' });
+        }
+        console.log(`[ApiKey] Key revoked for ${funderAddress}`);
+        res.json({ success: true, message: 'API Key revoked. External integrations will receive 401.' });
+    } catch (err) {
+        console.error('[ApiKey] DELETE /admin/key error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// END API KEYS
+// ═══════════════════════════════════════════════════════════════════════════════
+
 // ─── Initialize Instant Relayer Engine ────────────────────────────────────────
+
 if (INSTANT_CONTRACT_ADDRESS) {
     const instantRelayer = new InstantRelayerEngine({
         pool,
