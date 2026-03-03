@@ -3848,42 +3848,37 @@ window.ipActivatePolicy = async () => {
             const usdcRead = new ethers.Contract(USDC_ADDRESS, USDC_READ_ABI, signer.provider || signer);
             const signerAddr = await signer.getAddress();
             const totalRaw = ethers.parseUnits(amount.toString(), 6);
-            const currentAllow = await usdcRead.allowance(signerAddr, contractAddress);
 
-            if (currentAllow < totalRaw) {
-                statusEl.textContent = '🦊 MetaMask: firmá el permiso USDC (sin costo de gas)...';
-                statusEl.style.color = '#f59e0b';
+            // V2: ALWAYS sign the permit — activatePolicyWithPermit resets the allowance
+            // to the exact new amount+deadline atomically. No need to check current allowance.
+            statusEl.textContent = '🦊 MetaMask: firmá el permiso USDC (sin costo de gas)...';
+            statusEl.style.color = '#f59e0b';
 
-                const permitNonce = await usdcRead.nonces(signerAddr);
-                // V2: permitDeadline = deadlineUnix (same deadline for permit AND policy)
-                // activatePolicyWithPermit uses ONE deadline for both.
-                const permitDeadline = deadlineUnix;
+            const permitNonce = await usdcRead.nonces(signerAddr);
+            // V2: permitDeadline = deadlineUnix (same deadline for permit AND policy)
+            const permitDeadline = deadlineUnix;
 
-                const rawSig = await signer.signTypedData(
-                    { name: 'USD Coin', version: '2', chainId: 137, verifyingContract: USDC_ADDRESS },
-                    {
-                        Permit: [
-                            { name: 'owner', type: 'address' },
-                            { name: 'spender', type: 'address' },
-                            { name: 'value', type: 'uint256' },
-                            { name: 'nonce', type: 'uint256' },
-                            { name: 'deadline', type: 'uint256' },
-                        ]
-                    },
-                    {
-                        owner: signerAddr, spender: contractAddress, value: totalRaw,
-                        nonce: permitNonce, deadline: permitDeadline
-                    }
-                );
-                const { v, r, s } = ethers.Signature.from(rawSig);
-                permitSigData = { v, r, s, deadline: permitDeadline, owner: signerAddr, value: totalRaw.toString() };
-                statusEl.textContent = '✅ Permiso USDC firmado. El faucet lo ejecutará on-chain...';
-                statusEl.style.color = '#10b981';
-                await new Promise(r2 => setTimeout(r2, 800));
-            } else {
-                statusEl.textContent = `✅ Allowance ya suficiente (${ethers.formatUnits(currentAllow, 6)} USDC)`;
-                await new Promise(r2 => setTimeout(r2, 600));
-            }
+            const rawSig = await signer.signTypedData(
+                { name: 'USD Coin', version: '2', chainId: 137, verifyingContract: USDC_ADDRESS },
+                {
+                    Permit: [
+                        { name: 'owner', type: 'address' },
+                        { name: 'spender', type: 'address' },
+                        { name: 'value', type: 'uint256' },
+                        { name: 'nonce', type: 'uint256' },
+                        { name: 'deadline', type: 'uint256' },
+                    ]
+                },
+                {
+                    owner: signerAddr, spender: contractAddress, value: totalRaw,
+                    nonce: permitNonce, deadline: permitDeadline
+                }
+            );
+            const { v, r, s } = ethers.Signature.from(rawSig);
+            permitSigData = { v, r, s, deadline: permitDeadline, owner: signerAddr, value: totalRaw.toString() };
+            statusEl.textContent = '✅ Permiso USDC firmado. El faucet activará todo en 1 TX...';
+            statusEl.style.color = '#10b981';
+            await new Promise(r2 => setTimeout(r2, 800));
         } catch (permitErr) {
             statusEl.textContent = '❌ Error firmando permiso USDC: ' + permitErr.message;
             statusEl.style.color = '#ef4444';
