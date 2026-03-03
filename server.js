@@ -46,12 +46,7 @@ const CHAIN_ID = parseInt(process.env.CHAIN_ID || '137');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ─── UTF-8 charset for all API JSON responses ─────────────────────────────────
-// Only applied to /api/* routes — static HTML files keep their own Content-Type
-app.use('/api', (req, res, next) => {
-    res.setHeader('Content-Type', 'application/json; charset=utf-8');
-    next();
-});
+
 
 // Database Connection
 // Database Connection
