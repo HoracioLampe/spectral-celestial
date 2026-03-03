@@ -217,8 +217,22 @@ const authenticateApiKey = async (req, res, next) => {
     }
 };
 
-// Combined auth: accepts X-Api-Key OR Bearer JWT (used on public B2B endpoints)
-const authApiKeyOrJWT = [authenticateApiKey, authenticateToken];
+// Combined auth: X-Api-Key OR Bearer JWT — true OR logic, not chained.
+// If X-Api-Key is present and valid → proceed without touching JWT.
+// If X-Api-Key absent → fall through to JWT.
+const authApiKeyOrJWT = async (req, res, next) => {
+    const apiKey = req.headers['x-api-key'];
+    if (apiKey && apiKey.length >= 20) {
+        // API Key path — validate and short-circuit (never reach JWT check)
+        return authenticateApiKey(req, res, (err) => {
+            if (err) return next(err);
+            if (req.user) return next(); // API Key valid → done
+            return res.status(401).json({ error: 'Invalid or revoked API Key' });
+        });
+    }
+    // No API Key → JWT path
+    return authenticateToken(req, res, next);
+};
 
 const os = require('os');
 
