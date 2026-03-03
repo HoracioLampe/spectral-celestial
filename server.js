@@ -2603,7 +2603,10 @@ app.get('/api/v1/instant/transfers', authApiKeyOrJWT, async (req, res) => {
         let where = 'WHERE 1=1';
         const params = [];
 
-        if (!isAdmin) {
+        // Always filter by funder in Instant Payments (each cold wallet sees only its own).
+        // SUPER_ADMIN can pass ?all=true to see all funders (for debugging).
+        const showAll = isAdmin && req.query.all === 'true';
+        if (!showAll) {
             params.push(funderAddress);
             where += ` AND funder_address=$${params.length}`;
         }
@@ -2664,7 +2667,9 @@ app.get('/api/v1/instant/transfers/export', authApiKeyOrJWT, async (req, res) =>
 
         let where = 'WHERE 1=1';
         const params = [];
-        if (!isAdmin) { params.push(funderAddress); where += ` AND funder_address=$${params.length}`; }
+        // Same rule for export: always filter by funder unless ?all=true (admin only)
+        const showAll = isAdmin && req.query.all === 'true';
+        if (!showAll) { params.push(funderAddress); where += ` AND funder_address=$${params.length}`; }
         if (status && status !== 'ALL') { params.push(status); where += ` AND status=$${params.length}`; }
         if (date_from) { params.push(date_from); where += ` AND created_at >= $${params.length}::date`; }
         if (date_to) { params.push(date_to); where += ` AND created_at < ($${params.length}::date + INTERVAL '1 day')`; }
