@@ -27,12 +27,12 @@ const INSTANT_PAYMENT_ABI = [
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const POLL_INTERVAL_MS = 3000;   // How often to check for pending transfers
-const MAX_RETRIES = 10;
+const MAX_RETRIES = parseInt(process.env.IP_MAX_RETRIES || '10', 10); // configurable via env
 const MIN_PRIORITY_GWEI = 25n;    // Polygon PoS minimum (absolute requirement)
 const MAX_FEE_GWEI_FALLBACK = 500n;
 const PRIORITY_GWEI_FALLBACK = 50n;
 const GAS_BUMP_PERCENT = 20;     // +20% per retry
-const GAS_LIMIT_INSTANT = 120000n; // Estimated for executeTransfer
+const GAS_LIMIT_INSTANT = 250000n; // V2: increased from 120k (allowance check + consumedAmount write + transferFrom)
 const WEBHOOK_MAX_RETRIES = 5;
 const WEBHOOK_BASE_DELAY_MS = 1000;
 
