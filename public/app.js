@@ -3627,8 +3627,8 @@ function showInstantPaymentSection() {
     });
 }
 
-
 function showBatchSection() {
+    ipStopTransferPolling();
     showSection('batchSection', 'navTransacciones', () => fetchBatches(currentBatchPage || 1));
 }
 
@@ -4006,6 +4006,29 @@ window.ipRevokeAllowance = async (btn) => {
 
 // ── Transfers Table ───────────────────────────────────────────────────────────
 
+let ipTransfersPollInterval = null;
+
+function ipStartTransferPolling() {
+    ipStopTransferPolling();
+    ipTransfersPollInterval = setInterval(async () => {
+        // Solo refresca si hay transfers activas en la tabla
+        const rows = document.querySelectorAll('#ipTransfersBody tr');
+        const hasActive = Array.from(rows).some(r => r.textContent.includes('PROCESSING') || r.textContent.includes('PENDING'));
+        if (hasActive) {
+            await ipLoadTransfers(ipCurrentPage);
+        } else {
+            ipStopTransferPolling(); // Todas confirmadas — para el polling
+        }
+    }, 8000);
+}
+
+function ipStopTransferPolling() {
+    if (ipTransfersPollInterval) {
+        clearInterval(ipTransfersPollInterval);
+        ipTransfersPollInterval = null;
+    }
+}
+
 async function ipLoadTransfers(page) {
     ipCurrentPage = page || 1;
 
@@ -4076,6 +4099,10 @@ async function ipLoadTransfers(page) {
         if (tbody) tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color:#ef4444;">Error: ${err.message}</td></tr>`;
         console.error('[IP] ipLoadTransfers error:', err);
     }
+    // Auto-start polling if any transfer is in active state
+    const rows = document.querySelectorAll('#ipTransfersBody tr');
+    const hasActive = Array.from(rows).some(r => r.textContent.includes('PROCESSING') || r.textContent.includes('PENDING'));
+    if (hasActive && !ipTransfersPollInterval) ipStartTransferPolling();
 }
 
 function ipStatusBadge(status) {
