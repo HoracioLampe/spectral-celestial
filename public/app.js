@@ -4475,6 +4475,10 @@ window.ipLoadLogs = async function ipLoadLogs(page) {
 
         window._ipLogsData = data.logs;
 
+        // Helpers to prevent XSS / attribute injection from server data
+        const escHtml = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const escAttr = s => String(s).replace(/'/g, "&#39;").replace(/"/g, '&quot;');
+
         tbody.innerHTML = data.logs.map((log, idx) => {
             const dt = log.created_at ? new Date(log.created_at) : null;
             const date = dt
@@ -4486,7 +4490,7 @@ window.ipLoadLogs = async function ipLoadLogs(page) {
                 ? '<span class="badge badge-info">API Req</span>'
                 : '<span class="badge badge-warning">Webhook</span>';
 
-            const rawEv = (log.event_type || '—').toLowerCase();
+            const rawEv = escHtml((log.event_type || '—').toLowerCase());
             const evShort = rawEv
                 .replace('transfer.received', 'tr.<br><small>received</small>')
                 .replace('transfer.confirmed', 'tr.<br><small>confirmed</small>')
@@ -4503,17 +4507,18 @@ window.ipLoadLogs = async function ipLoadLogs(page) {
                 style="font-size:0.65rem; white-space:normal; line-height:1.25; text-align:center; display:inline-block;"
                 >${evShort}</span>`;
 
-            const tidEl = log.transfer_id
-                ? `<span style="font-family:monospace; font-size:0.75rem;" title="${log.transfer_id}">${log.transfer_id.slice(0, 14)}…</span>
-                   <button class="btn-icon" onclick="event.stopPropagation(); copyToClipboard('${log.transfer_id}')" title="Copiar">📋</button>`
+            const tid = log.transfer_id || '';
+            const tidEl = tid
+                ? `<span style="font-family:monospace; font-size:0.75rem;" title="${escAttr(tid)}">${escHtml(tid.slice(0, 14))}…</span>
+                   <button class="btn-icon" onclick="event.stopPropagation(); copyToClipboard('${escAttr(tid)}')" title="Copiar">📋</button>`
                 : '—';
 
-            const cw = log.cold_wallet;
+            const cw = log.cold_wallet || '';
             const cwEl = cw
-                ? `<a href="https://polygonscan.com/address/${cw}" target="_blank" class="hash-link"
-                      title="${cw}" style="font-family:monospace; font-size:0.75rem;" onclick="event.stopPropagation()">
-                       ${cw.slice(0, 6)}…${cw.slice(-4)}</a>
-                   <button class="btn-icon" onclick="event.stopPropagation(); copyToClipboard('${cw}')" title="Copiar">📋</button>`
+                ? `<a href="https://polygonscan.com/address/${encodeURIComponent(cw)}" target="_blank" class="hash-link"
+                      title="${escAttr(cw)}" style="font-family:monospace; font-size:0.75rem;" onclick="event.stopPropagation()">
+                       ${escHtml(cw.slice(0, 6))}…${escHtml(cw.slice(-4))}</a>
+                   <button class="btn-icon" onclick="event.stopPropagation(); copyToClipboard('${escAttr(cw)}')" title="Copiar">📋</button>`
                 : '—';
 
             let dw = null;
@@ -4521,10 +4526,10 @@ window.ipLoadLogs = async function ipLoadLogs(page) {
                 dw = log.log_type === 'api_request' ? log.request_body?.destination_wallet : log.webhook_payload?.to;
             } catch { }
             const dwEl = dw
-                ? `<a href="https://polygonscan.com/address/${dw}" target="_blank" class="hash-link"
-                      title="${dw}" style="font-family:monospace; font-size:0.75rem;" onclick="event.stopPropagation()">
-                       ${dw.slice(0, 6)}…${dw.slice(-4)}</a>
-                   <button class="btn-icon" onclick="event.stopPropagation(); copyToClipboard('${dw}')" title="Copiar">📋</button>`
+                ? `<a href="https://polygonscan.com/address/${encodeURIComponent(dw)}" target="_blank" class="hash-link"
+                      title="${escAttr(dw)}" style="font-family:monospace; font-size:0.75rem;" onclick="event.stopPropagation()">
+                       ${escHtml(dw.slice(0, 6))}…${escHtml(dw.slice(-4))}</a>
+                   <button class="btn-icon" onclick="event.stopPropagation(); copyToClipboard('${escAttr(dw)}')" title="Copiar">📋</button>`
                 : '—';
 
             let amtEl = '—';

@@ -1,3 +1,13 @@
 node_modules
 .env
 .DS_Store
+
+# Hardhat build outputs — not needed in Railway deployment
+artifacts/
+cache/
+
+# Temp/diagnostic scripts
+_temp_*.mjs
+_temp_*.cjs
+_fix_*.mjs
+diag-*.js

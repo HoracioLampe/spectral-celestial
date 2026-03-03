@@ -2692,7 +2692,7 @@ app.post('/api/v1/instant/transfer', authApiKeyOrJWT, async (req, res) => {
         Object.entries(req.headers).filter(([k]) => !SENSITIVE.includes(k.toLowerCase()))
     );
     const requestBody = req.body || {};
-    const coldWalletForLog = (req.user?.address || req.body?.cold_wallet_address || null);
+    const coldWalletForLog = (req.user?.address || requestBody.cold_wallet_address || null);
 
     // ── B. Helper: log + respond (used for ALL exit paths) ─────────────────────
     const logAndRespond = (statusCode, responseJson, eventType = 'transfer.received', errorMsg = null) => {
@@ -3465,7 +3465,8 @@ app.get('/api/v1/instant/logs', authenticateToken, async (req, res) => {
         if (only_errors === 'true') { conditions.push(`(http_status >= 400 OR delivered = false)`); }
 
         const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-        const offset = (Math.max(1, parseInt(page)) - 1) * parseInt(limit);
+        const safeLimit = Math.min(parseInt(limit) || 50, 200); // cap at 200 to prevent full-table extraction
+        const offset = (Math.max(1, parseInt(page)) - 1) * safeLimit;
 
         const countRes = await pool.query(
             `SELECT COUNT(*) FROM instant_api_logs ${where}`, params
