@@ -3618,6 +3618,7 @@ function showSection(sectionId, navId, onShow = null) {
 
 function showInstantPaymentSection() {
     showSection('instantPaymentSection', 'navInstantPayment', () => {
+        document.getElementById('ipApiKeyPanel')?.classList.remove('hidden');
         ipLoadPolicy(); ipLoadTransfers(1); ipLoadApiKey();
     });
 }
@@ -4556,6 +4557,57 @@ window.cadResetPolicyAdmin = async () => {
         statusEl.textContent = `✅ Policy reseteada. TX: ${tx.hash.slice(0, 10)}...`; statusEl.style.color = '#4ade80';
     } catch (err) {
         statusEl.textContent = '❌ ' + err.message; statusEl.style.color = '#ef4444';
+    }
+};
+
+/**
+ * Upgradea el proxy UUPS a InstantPaymentV2.
+ * Solo puede ejecutarlo el owner del proxy (0x9795E3A0D7824C651adF3880f976EbfdB0121E62).
+ * La nueva implementación agrega activatePolicyWithPermit (atómica, sin double-deadline).
+ */
+window.cadUpgradeToV2 = async () => {
+    const statusEl = document.getElementById('cadUpgradeStatus');
+    const NEW_IMPL = document.getElementById('cadUpgradeImplAddr')?.textContent?.trim()
+        || '0xbfc16912aE0b3DAb4e43fC4D4FcF33CF5ddb23C0';
+
+    if (!confirm(
+        `⬆️ Upgrade del contrato InstantPayment a V2\n\n` +
+        `Nueva implementación:\n${NEW_IMPL}\n\n` +
+        `Esta operación es irreversible hasta un nuevo upgrade.\n` +
+        `¿Confirmar? Solo el owner puede ejecutar esto.`
+    )) return;
+
+    statusEl.textContent = '🦊 Abriendo MetaMask...'; statusEl.style.color = '#f59e0b';
+
+    try {
+        if (!signer) throw new Error('Conectá MetaMask primero');
+
+        const PROXY_ADDRESS = '0x971da9d642C94f6B5E3867EC891FBA7ef8287d29';
+        const UUPS_ABI = [
+            'function upgradeToAndCall(address newImplementation, bytes calldata data) external payable',
+            'function owner() view returns (address)',
+        ];
+
+        const proxy = new ethers.Contract(PROXY_ADDRESS, UUPS_ABI, signer);
+
+        // Verify caller is owner
+        const owner = await proxy.owner();
+        const callerAddr = await signer.getAddress();
+        if (owner.toLowerCase() !== callerAddr.toLowerCase()) {
+            throw new Error(`Solo el owner puede hacer el upgrade.\nOwner: ${owner}\nConectado: ${callerAddr}`);
+        }
+
+        statusEl.textContent = '⏳ Enviando upgrade TX...'; statusEl.style.color = '#60a5fa';
+        const tx = await proxy.upgradeToAndCall(NEW_IMPL, '0x', { gasLimit: 300000 });
+        statusEl.textContent = '⏳ Confirmando en Polygon...'; statusEl.style.color = '#60a5fa';
+        await tx.wait(1);
+
+        statusEl.textContent = `✅ Upgrade a V2 exitoso! TX: ${tx.hash.slice(0, 10)}... Reload para ver cambios.`;
+        statusEl.style.color = '#4ade80';
+        console.log('[CAD] Upgrade V2 TX:', tx.hash);
+    } catch (err) {
+        statusEl.textContent = '❌ ' + err.message;
+        statusEl.style.color = '#ef4444';
     }
 };
 

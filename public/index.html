@@ -743,8 +743,9 @@
                 </div>
 
                 <!-- API KEY PANEL (B2B Integration) -->
-                <div class="ip-panel"
+                <div id="ipApiKeyPanel" class="ip-panel hidden"
                     style="margin-top:1.5rem; border:1px solid rgba(99,102,241,0.3); border-radius:12px; padding:1.25rem; background:rgba(99,102,241,0.05);">
+
                     <div class="top-bar" style="margin-bottom:1rem;">
                         <div>
                             <h3 style="margin:0; color:#a5b4fc;">🔑 API Key — Integración B2B</h3>
@@ -974,7 +975,34 @@
                         </div>
                     </div>
                 </div>
+                <!-- ── PANEL 5: Upgrade de Contrato ── -->
+                <div class="ip-policy-card" style="padding:1.25rem; border-color:rgba(168,85,247,0.2);">
+                    <div
+                        style="font-size:0.7rem; color:#a855f7; text-transform:uppercase; letter-spacing:1px; margin-bottom:0.75rem;">
+                        ⬆️ Upgrade de Contrato (UUPS)
+                    </div>
+                    <div
+                        style="background:rgba(168,85,247,0.05); border:1px solid rgba(168,85,247,0.15); border-radius:8px; padding:0.75rem; margin-bottom:0.75rem; font-size:0.82rem; color:#94a3b8;">
+                        <div>Proxy: <span
+                                style="font-family:monospace; color:#c4b5fd;">0x971da9d642C94f6B5E3867EC891FBA7ef8287d29</span>
+                        </div>
+                        <div style="margin-top:0.35rem;">Nueva impl: <span id="cadUpgradeImplAddr"
+                                style="font-family:monospace; color:#4ade80;">0xbfc16912aE0b3DAb4e43fC4D4FcF33CF5ddb23C0</span>
+                        </div>
+                    </div>
+                    <p style="font-size:0.82rem; color:#94a3b8; margin-bottom:0.75rem;">
+                        Upgradea el proxy al contrato V2 (EIP-2612 permit atómico). Solo el owner puede ejecutar esto
+                        desde MetaMask.
+                    </p>
+                    <button class="btn btn-glass" style="width:100%; border-color:rgba(168,85,247,0.4); color:#a855f7;"
+                        onclick="cadUpgradeToV2()">
+                        🦊 upgradeToAndCall(V2)
+                    </button>
+                    <p id="cadUpgradeStatus" style="margin-top:0.5rem; font-size:0.82rem;"></p>
+                </div>
+
             </div> <!-- END CONTRACT ADMIN SECTION -->
+
 
             <!-- RECOVERY SECTION (Admin only) -->
             <div id="recoverySection" class="glass-panel hidden">
