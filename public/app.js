@@ -3605,16 +3605,20 @@ function showSection(sectionId, navId, onShow = null) {
     // 1. Ocultar todas las secciones
     ALL_MAIN_SECTIONS.forEach(id => document.getElementById(id)?.classList.add('hidden'));
 
-    // 2. Mostrar sección destino
+    // 2. Ocultar paneles flotantes que no están dentro de sections
+    document.getElementById('ipApiKeyPanel')?.classList.add('hidden');
+
+    // 3. Mostrar sección destino
     document.getElementById(sectionId)?.classList.remove('hidden');
 
-    // 3. Actualizar nav activo
+    // 4. Actualizar nav activo
     document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
     if (navId) document.getElementById(navId)?.classList.add('active');
 
-    // 4. Ejecutar lógica específica de la sección
+    // 5. Ejecutar lógica específica de la sección
     if (onShow) onShow();
 }
+
 
 function showInstantPaymentSection() {
     showSection('instantPaymentSection', 'navInstantPayment', () => {
