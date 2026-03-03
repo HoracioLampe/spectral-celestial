@@ -1,0 +1,17 @@
+node_modules
+dist
+.git
+.env
+.idea
+.vscode
+.DS_Store
+*.log
+npm-debug.log*
+yarn-error.log*
+uploads
+.agent
+.agents
+artifacts
+cache
+typechain-types
+coverage

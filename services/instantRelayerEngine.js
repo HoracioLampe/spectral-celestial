@@ -37,7 +37,7 @@ const WEBHOOK_MAX_RETRIES = 5;
 const WEBHOOK_BASE_DELAY_MS = 1000;
 
 class InstantRelayerEngine {
-    constructor({ pool, rpcManager, contractAddress, faucetService, encryption }) {
+    constructor({ pool, rpcManager, contractAddress, faucetService, encryption, notifyInstantEvent }) {
         this.pool = pool;
         this.rpcManager = rpcManager;
         this.contractAddress = contractAddress;
@@ -45,6 +45,10 @@ class InstantRelayerEngine {
         this.encryption = encryption;
         this.running = false;
         this._timer = null;
+        // SSE notifier injected from server.js — optional, no-op if not provided
+        this._notify = typeof notifyInstantEvent === 'function'
+            ? notifyInstantEvent
+            : () => { };
     }
 
     // ─── Lifecycle ────────────────────────────────────────────────────────────
@@ -322,6 +326,18 @@ class InstantRelayerEngine {
     // ─── Webhook Delivery ─────────────────────────────────────────────────────
 
     async _sendWebhook(transfer, eventType, data) {
+        const coldWallet = transfer.funder_address;
+
+        // ── SSE push FIRST (always, regardless of webhook) ──────────────────
+        this._notify(coldWallet, eventType, {
+            transfer_id: transfer.transfer_id,
+            amount_usdc: transfer.amount_usdc,
+            destination_wallet: transfer.destination_wallet,
+            status: transfer.status,
+            ...data
+        });
+
+        // ── Webhook delivery ─────────────────────────────────────────────────
         if (!transfer.webhook_url) return;
 
         const payload = {
@@ -378,7 +394,7 @@ class InstantRelayerEngine {
             }
         }
 
-        // Log result
+        // ── Log to instant_webhook_logs (existing) ───────────────────────────
         await this.pool.query(`
             INSERT INTO instant_webhook_logs
               (transfer_id, event_type, payload, webhook_url, delivered, attempt_count, last_error)
@@ -392,6 +408,22 @@ class InstantRelayerEngine {
             attempt,
             delivered ? null : lastError
         ]);
+
+        // ── Log to instant_api_logs (new unified log) ────────────────────────
+        this.pool.query(`
+            INSERT INTO instant_api_logs
+              (log_type, cold_wallet, transfer_id, event_type,
+               webhook_url, webhook_payload, delivered, error_message)
+            VALUES ('webhook_sent', $1, $2, $3, $4, $5, $6, $7)
+        `, [
+            coldWallet,
+            transfer.transfer_id,
+            eventType,
+            transfer.webhook_url,
+            JSON.stringify(payload),
+            delivered,
+            delivered ? null : lastError
+        ]).catch(e => console.warn('[InstantRelayer] api_log insert failed:', e.message));
     }
 }
 

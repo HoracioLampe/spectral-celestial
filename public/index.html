@@ -132,6 +132,10 @@
                         title="Administración del Contrato (Owner)">
                         <span class="nav-icon">🔐</span> Contract Admin
                     </a>
+                    <a href="#" id="navInstantLogs" class="nav-link hidden"
+                        title="Logs de API y Webhooks (SUPER_ADMIN)">
+                        <span class="nav-icon">📋</span> IP Logs
+                    </a>
                 </nav>
             </div>
 
@@ -719,12 +723,13 @@
                                         <th>Estado</th>
                                         <th>TX Hash</th>
                                         <th>Fecha</th>
+                                        <th>⏱ Tiempo</th>
                                         <th>Intentos</th>
                                     </tr>
                                 </thead>
                                 <tbody id="ipTransfersBody">
                                     <tr>
-                                        <td colspan="7" style="text-align:center; opacity:0.6;">Cargando...</td>
+                                        <td colspan="8" style="text-align:center; opacity:0.6;">Cargando...</td>
                                     </tr>
                                 </tbody>
                             </table>
@@ -740,367 +745,489 @@
                                 onclick="ipLoadTransfers(ipCurrentPage+1)">▶</button>
                         </div>
                     </div>
-                </div>
 
-                <!-- API KEY PANEL (B2B Integration) -->
-                <div id="ipApiKeyPanel" class="ip-panel hidden"
-                    style="margin-top:1.5rem; border:1px solid rgba(99,102,241,0.3); border-radius:12px; padding:1.25rem; background:rgba(99,102,241,0.05);">
+                    <!-- API KEY PANEL (B2B Integration) -->
+                    <div id="ipApiKeyPanel" class="ip-panel hidden"
+                        style="margin-top:1.5rem; border:1px solid rgba(99,102,241,0.3); border-radius:12px; padding:1.25rem; background:rgba(99,102,241,0.05);">
 
-                    <div class="top-bar" style="margin-bottom:1rem;">
-                        <div>
-                            <h3 style="margin:0; color:#a5b4fc;">🔑 API Key — Integración B2B</h3>
-                            <p style="margin:0.25rem 0 0; font-size:0.82rem; color:#64748b;">1 API Key por cold wallet.
-                                Enviá <code
-                                    style="background:rgba(0,0,0,0.3); padding:2px 6px; border-radius:4px;">X-Api-Key: &lt;key&gt;</code>
-                                en cada request externo.</p>
+                        <div class="top-bar" style="margin-bottom:1rem;">
+                            <div>
+                                <h3 style="margin:0; color:#a5b4fc;">🔑 API Key — Integración B2B</h3>
+                                <p style="margin:0.25rem 0 0; font-size:0.82rem; color:#64748b;">1 API Key por cold
+                                    wallet.
+                                    Enviá <code
+                                        style="background:rgba(0,0,0,0.3); padding:2px 6px; border-radius:4px;">X-Api-Key: &lt;key&gt;</code>
+                                    en cada request externo.</p>
+                            </div>
+                            <div style="display:flex; gap:0.5rem;">
+                                <button class="btn btn-glass"
+                                    style="border-color:rgba(99,102,241,0.5); color:#a5b4fc; font-size:0.85rem;"
+                                    onclick="ipGenerateApiKey()">⚡ Generar / Rotar Key</button>
+                                <button class="btn btn-glass"
+                                    style="border-color:rgba(239,68,68,0.4); color:#f87171; font-size:0.85rem;"
+                                    onclick="ipRevokeApiKey()">🗑 Revocar</button>
+                            </div>
                         </div>
-                        <div style="display:flex; gap:0.5rem;">
-                            <button class="btn btn-glass"
-                                style="border-color:rgba(99,102,241,0.5); color:#a5b4fc; font-size:0.85rem;"
-                                onclick="ipGenerateApiKey()">⚡ Generar / Rotar Key</button>
-                            <button class="btn btn-glass"
-                                style="border-color:rgba(239,68,68,0.4); color:#f87171; font-size:0.85rem;"
-                                onclick="ipRevokeApiKey()">🗑 Revocar</button>
-                        </div>
-                    </div>
 
-                    <!-- Key status card -->
-                    <div id="ipKeyStatusCard"
-                        style="background:rgba(0,0,0,0.2); border-radius:8px; padding:1rem; font-size:0.88rem;">
-                        <div id="ipKeyNoKey" class="hidden" style="text-align:center; opacity:0.6; padding:1rem 0;">
-                            ⚠️ No hay API Key configurada. Generá una para habilitar la integración externa.
-                        </div>
-                        <div id="ipKeyInfo" class="hidden">
-                            <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:1rem;">
-                                <div>
-                                    <div
-                                        style="color:#64748b; font-size:0.75rem; text-transform:uppercase; letter-spacing:1px;">
-                                        Prefijo (ID visual)</div>
-                                    <div id="ipKeyPrefix"
-                                        style="font-family:monospace; color:#a5b4fc; font-size:1rem; font-weight:700;">
-                                        sk_live_...</div>
-                                </div>
-                                <div>
-                                    <div
-                                        style="color:#64748b; font-size:0.75rem; text-transform:uppercase; letter-spacing:1px;">
-                                        Accesos totales</div>
-                                    <div id="ipKeyAccessCount" style="color:#4ade80; font-size:1rem; font-weight:700;">0
+                        <!-- Key status card -->
+                        <div id="ipKeyStatusCard"
+                            style="background:rgba(0,0,0,0.2); border-radius:8px; padding:1rem; font-size:0.88rem;">
+                            <div id="ipKeyNoKey" class="hidden" style="text-align:center; opacity:0.6; padding:1rem 0;">
+                                ⚠️ No hay API Key configurada. Generá una para habilitar la integración externa.
+                            </div>
+                            <div id="ipKeyInfo" class="hidden">
+                                <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:1rem;">
+                                    <div>
+                                        <div
+                                            style="color:#64748b; font-size:0.75rem; text-transform:uppercase; letter-spacing:1px;">
+                                            Prefijo (ID visual)</div>
+                                        <div id="ipKeyPrefix"
+                                            style="font-family:monospace; color:#a5b4fc; font-size:1rem; font-weight:700;">
+                                            sk_live_...</div>
+                                    </div>
+                                    <div>
+                                        <div
+                                            style="color:#64748b; font-size:0.75rem; text-transform:uppercase; letter-spacing:1px;">
+                                            Accesos totales</div>
+                                        <div id="ipKeyAccessCount"
+                                            style="color:#4ade80; font-size:1rem; font-weight:700;">0
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <div
+                                            style="color:#64748b; font-size:0.75rem; text-transform:uppercase; letter-spacing:1px;">
+                                            Último acceso</div>
+                                        <div id="ipKeyLastAccess" style="color:#94a3b8; font-size:0.9rem;">—</div>
                                     </div>
                                 </div>
-                                <div>
-                                    <div
-                                        style="color:#64748b; font-size:0.75rem; text-transform:uppercase; letter-spacing:1px;">
-                                        Último acceso</div>
-                                    <div id="ipKeyLastAccess" style="color:#94a3b8; font-size:0.9rem;">—</div>
+                                <div id="ipKeyRevoked" class="hidden"
+                                    style="margin-top:0.75rem; background:rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.3); border-radius:6px; padding:0.5rem; color:#f87171; font-size:0.85rem; text-align:center;">
+                                    🔴 API Key REVOCADA — Los clientes externos recibirán 401
                                 </div>
                             </div>
-                            <div id="ipKeyRevoked" class="hidden"
-                                style="margin-top:0.75rem; background:rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.3); border-radius:6px; padding:0.5rem; color:#f87171; font-size:0.85rem; text-align:center;">
-                                🔴 API Key REVOCADA — Los clientes externos recibirán 401
-                            </div>
                         </div>
-                    </div>
-                    <p id="ipKeyStatus" style="margin-top:0.5rem; font-size:0.82rem; min-height:1.2em;"></p>
-                </div>
-
-                <!-- Modal: API Key generada (mostrada UNA sola vez) -->
-                <div id="ipKeyModal" class="hidden"
-                    style="position:fixed; inset:0; background:rgba(0,0,0,0.75); z-index:9999; display:flex; align-items:center; justify-content:center;">
-                    <div class="glass-panel"
-                        style="max-width:560px; width:90%; padding:2rem; border:1px solid rgba(99,102,241,0.5); border-radius:16px;">
-                        <h3 style="color:#a5b4fc; margin-top:0;">✅ API Key generada</h3>
-                        <div
-                            style="background:rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.4); border-radius:8px; padding:0.75rem 1rem; margin-bottom:1rem;">
-                            <p style="margin:0; font-size:0.85rem; color:#fca5a5;">⚠️ <strong>Esta es la ÚNICA vez que
-                                    podés ver esta key.</strong> Copiala ahora y guardala en un lugar seguro.</p>
-                        </div>
-                        <div style="display:flex; gap:0.5rem; align-items:center;">
-                            <code id="ipKeyDisplay"
-                                style="flex:1; background:rgba(0,0,0,0.4); padding:0.75rem; border-radius:6px; font-family:monospace; font-size:0.85rem; word-break:break-all; color:#a5b4fc; border:1px solid rgba(99,102,241,0.3);">sk_live_...</code>
-                            <button class="btn btn-glass"
-                                style="white-space:nowrap; border-color:rgba(99,102,241,0.5); color:#a5b4fc;"
-                                onclick="ipCopyKey()">📋 Copiar</button>
-                        </div>
-                        <div style="margin-top:1rem; font-size:0.82rem; color:#64748b;">
-                            <strong style="color:#94a3b8;">Uso en client:</strong>
-                            <code
-                                style="display:block; margin-top:0.5rem; background:rgba(0,0,0,0.3); padding:0.5rem; border-radius:4px; color:#7dd3fc;">X-Api-Key: <span id="ipKeyDisplayInline">sk_live_...</span></code>
-                        </div>
-                        <div style="display:flex; gap:0.75rem; margin-top:1.5rem; justify-content:flex-end;">
-                            <button class="btn btn-primary" id="ipBtnCopyKey" onclick="ipCopyKey()">📋 Copiar</button>
-                            <button class="btn btn-primary" onclick="ipCloseKeyModal()">Entendido, la guardé ✓</button>
-                        </div>
-                    </div>
-                </div>
-
-            </div> <!-- Fin instantPaymentSection -->
-
-
-            <!-- CONTRACT ADMIN SECTION (SUPER_ADMIN only) -->
-            <div id="contractAdminSection" class="glass-panel hidden">
-                <div class="top-bar">
-                    <h2>🔐 Contract Admin</h2>
-                    <div id="cadLoadStatus" style="font-size:0.85rem; color:#94a3b8;">Conectá MetaMask para
-                        interactuar
-                    </div>
-                </div>
-
-                <!-- ── PANEL 1: Info del Contrato ── -->
-                <div style="display:grid; grid-template-columns:1fr 1fr; gap:1.5rem; margin-bottom:1.5rem;">
-                    <div class="ip-policy-card" style="padding:1.25rem;">
-                        <div
-                            style="font-size:0.7rem; color:#64748b; text-transform:uppercase; letter-spacing:1px; margin-bottom:0.75rem;">
-                            📋 Info On-Chain</div>
-                        <div style="display:flex; flex-direction:column; gap:0.5rem; font-size:0.88rem;">
-                            <div style="display:flex; justify-content:space-between; align-items:center;">
-                                <span style="color:#94a3b8;">Contrato Proxy</span>
-                                <a id="cadContractLink" href="#" target="_blank" class="hash-link"
-                                    style="font-family:monospace; font-size:0.8rem;">—</a>
-                            </div>
-                            <div style="display:flex; justify-content:space-between; align-items:center;">
-                                <span style="color:#94a3b8;">Owner actual</span>
-                                <a id="cadOwnerLink" href="#" target="_blank" class="hash-link"
-                                    style="font-family:monospace; font-size:0.8rem;">—</a>
-                            </div>
-                            <div style="display:flex; justify-content:space-between; align-items:center;">
-                                <span style="color:#94a3b8;">Pending owner</span>
-                                <a id="cadPendingOwnerLink" href="#" target="_blank" class="hash-link"
-                                    style="font-family:monospace; font-size:0.8rem;">—</a>
-                            </div>
-                            <div style="display:flex; justify-content:space-between; align-items:center;">
-                                <span style="color:#94a3b8;">Estado</span>
-                                <span id="cadPauseBadge" style="font-family:monospace; font-size:0.85rem;">—</span>
-                            </div>
-                            <div style="display:flex; justify-content:space-between; align-items:center;">
-                                <span style="color:#94a3b8;">Max Policy Amount</span>
-                                <span id="cadMaxPolicyDisplay" style="color:#4ade80; font-weight:bold;">—</span>
-                            </div>
-                        </div>
-                        <button class="btn btn-glass" style="width:100%; margin-top:1rem; font-size:0.82rem;"
-                            onclick="cadLoadContractStatus()">🔄 Refrescar</button>
+                        <p id="ipKeyStatus" style="margin-top:0.5rem; font-size:0.82rem; min-height:1.2em;"></p>
                     </div>
 
-                    <!-- ── PANEL 2: Política Máxima ── -->
-                    <div class="ip-policy-card" style="padding:1.25rem;">
-                        <div
-                            style="font-size:0.7rem; color:#64748b; text-transform:uppercase; letter-spacing:1px; margin-bottom:0.75rem;">
-                            💰 Política Máxima de Retiros</div>
-                        <p style="font-size:0.82rem; color:#94a3b8; margin-bottom:1rem;">El owner puede cambiar
-                            el
-                            límite máximo de USDC por policy. El frontend y el contrato lo verifican al activar
-                            un
-                            permit.</p>
-                        <div class="form-group" style="margin-bottom:0.75rem;">
-                            <label style="font-size:0.82rem;">Nuevo límite (USDC)</label>
-                            <input id="cadMaxPolicyInput" type="number" class="input-glass" placeholder="Ej: 50000"
-                                min="1" step="1">
-                        </div>
-                        <button class="btn btn-primary" style="width:100%;" onclick="cadSetMaxPolicy()">
-                            🦊 Setear vía MetaMask
-                        </button>
-                        <p id="cadMaxPolicyStatus" style="margin-top:0.5rem; font-size:0.82rem;"></p>
-                    </div>
-                </div>
-
-                <!-- ── PANEL 3: Ownership (Ownable2Step) ── -->
-                <div class="ip-policy-card" style="padding:1.25rem; margin-bottom:1.5rem;">
-                    <div
-                        style="font-size:0.7rem; color:#64748b; text-transform:uppercase; letter-spacing:1px; margin-bottom:0.75rem;">
-                        🔑 Transferencia de Ownership (2-step)</div>
-                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
-                        <div>
-                            <p style="font-size:0.82rem; color:#94a3b8; margin-bottom:0.75rem;">Paso 1: Proponer
-                                nuevo
-                                owner. El nuevo owner debe aceptar.</p>
-                            <div class="form-group" style="margin-bottom:0.75rem;">
-                                <label style="font-size:0.82rem;">Nueva dirección owner</label>
-                                <input id="cadNewOwnerInput" type="text" class="input-glass" placeholder="0x...">
-                            </div>
-                            <button class="btn btn-glass"
-                                style="width:100%; border-color:rgba(251,191,36,0.4); color:#fbbf24;"
-                                onclick="cadTransferOwnership()">
-                                🦊 Paso 1: transferOwnership()
-                            </button>
-                            <p id="cadTransferStatus" style="margin-top:0.5rem; font-size:0.82rem;"></p>
-                        </div>
-                        <div>
-                            <p style="font-size:0.82rem; color:#94a3b8; margin-bottom:0.75rem;">Paso 2: Si esta
-                                wallet
-                                es el pending owner, aceptar la transferencia.</p>
+                    <!-- Modal: API Key generada (mostrada UNA sola vez) -->
+                    <div id="ipKeyModal" class="hidden"
+                        style="position:fixed; inset:0; background:rgba(0,0,0,0.75); z-index:9999; display:flex; align-items:center; justify-content:center;">
+                        <div class="glass-panel"
+                            style="max-width:560px; width:90%; padding:2rem; border:1px solid rgba(99,102,241,0.5); border-radius:16px;">
+                            <h3 style="color:#a5b4fc; margin-top:0;">✅ API Key generada</h3>
                             <div
-                                style="background:rgba(16,185,129,0.05); border:1px solid rgba(16,185,129,0.2); border-radius:8px; padding:0.75rem; margin-bottom:0.75rem; font-size:0.82rem; color:#94a3b8;">
-                                <span>Pending owner: </span><span id="cadPendingOwnerInline"
-                                    style="font-family:monospace; color:#4ade80;">—</span>
+                                style="background:rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.4); border-radius:8px; padding:0.75rem 1rem; margin-bottom:1rem;">
+                                <p style="margin:0; font-size:0.85rem; color:#fca5a5;">⚠️ <strong>Esta es la ÚNICA vez
+                                        que
+                                        podés ver esta key.</strong> Copiala ahora y guardala en un lugar seguro.</p>
                             </div>
-                            <button class="btn btn-primary"
-                                style="width:100%; background:linear-gradient(135deg,#10b981,#059669);"
-                                onclick="cadAcceptOwnership()">
-                                🦊 Paso 2: acceptOwnership()
-                            </button>
-                            <p id="cadAcceptStatus" style="margin-top:0.5rem; font-size:0.82rem;"></p>
+                            <div style="display:flex; gap:0.5rem; align-items:center;">
+                                <code id="ipKeyDisplay"
+                                    style="flex:1; background:rgba(0,0,0,0.4); padding:0.75rem; border-radius:6px; font-family:monospace; font-size:0.85rem; word-break:break-all; color:#a5b4fc; border:1px solid rgba(99,102,241,0.3);">sk_live_...</code>
+                                <button class="btn btn-glass"
+                                    style="white-space:nowrap; border-color:rgba(99,102,241,0.5); color:#a5b4fc;"
+                                    onclick="ipCopyKey()">📋 Copiar</button>
+                            </div>
+                            <div style="margin-top:1rem; font-size:0.82rem; color:#64748b;">
+                                <strong style="color:#94a3b8;">Uso en client:</strong>
+                                <code
+                                    style="display:block; margin-top:0.5rem; background:rgba(0,0,0,0.3); padding:0.5rem; border-radius:4px; color:#7dd3fc;">X-Api-Key: <span id="ipKeyDisplayInline">sk_live_...</span></code>
+                            </div>
+                            <div style="display:flex; gap:0.75rem; margin-top:1.5rem; justify-content:flex-end;">
+                                <button class="btn btn-primary" id="ipBtnCopyKey" onclick="ipCopyKey()">📋
+                                    Copiar</button>
+                                <button class="btn btn-primary" onclick="ipCloseKeyModal()">Entendido, la guardé
+                                    ✓</button>
+                            </div>
                         </div>
                     </div>
-                </div>
 
-                <!-- ── PANEL 4: Emergencia ── -->
-                <div class="ip-policy-card" style="padding:1.25rem; border-color:rgba(239,68,68,0.2);">
-                    <div
-                        style="font-size:0.7rem; color:#ef4444; text-transform:uppercase; letter-spacing:1px; margin-bottom:0.75rem;">
-                        🚨 Operaciones de Emergencia</div>
-                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
+                </div> <!-- Fin instantPaymentSection -->
+
+
+                <!-- INSTANT LOGS SECTION (SUPER_ADMIN only) -->
+                <div id="instantLogsSection" class="glass-panel hidden">
+                    <div class="top-bar">
                         <div>
-                            <p style="font-size:0.82rem; color:#94a3b8; margin-bottom:0.75rem;">Pausa/reanuda
-                                todas las
-                                transferencias e activaciones de policy del contrato.</p>
-                            <button id="cadPauseBtn" class="btn btn-glass"
-                                style="width:100%; border-color:rgba(239,68,68,0.4); color:#f87171;"
-                                onclick="cadTogglePause()">
-                                🦊 Pausar Contrato
-                            </button>
-                            <p id="cadPauseStatus" style="margin-top:0.5rem; font-size:0.82rem;"></p>
+                            <h2>📋 IP Logs</h2>
+                            <p style="margin:0; font-size:0.82rem; color:#94a3b8;">
+                                Historial unificado de API requests y webhooks · Solo SUPER_ADMIN
+                            </p>
                         </div>
-                        <div>
-                            <p style="font-size:0.82rem; color:#94a3b8; margin-bottom:0.75rem;">Como owner, el
-                                SUPER_ADMIN puede resetear la policy de cualquier cold wallet.</p>
+                        <span class="badge badge-danger" style="align-self:center;">🔒 SUPER_ADMIN</span>
+                    </div>
+
+                    <!-- Filtros -->
+                    <div class="filter-bar" style="margin-top:1.25rem; margin-bottom:1rem;">
+                        <select id="ipLogTypeFilter" class="input-glass" style="min-width:130px;">
+                            <option value="all">Todos los tipos</option>
+                            <option value="api_request">API Request</option>
+                            <option value="webhook_sent">Webhook</option>
+                        </select>
+                        <input id="ipLogDateFrom" type="date" class="input-glass" style="min-width:140px;"
+                            title="Desde">
+                        <input id="ipLogDateTo" type="date" class="input-glass" style="min-width:140px;" title="Hasta">
+                        <input id="ipLogWallet" type="text" class="input-glass" placeholder="Cold wallet..."
+                            style="min-width:160px; flex:1; font-family:monospace; font-size:0.83rem;">
+                        <input id="ipLogTransferId" type="text" class="input-glass" placeholder="Transfer ID..."
+                            style="min-width:160px; font-family:monospace; font-size:0.78rem;">
+                        <select id="ipLogHttpStatus" class="input-glass" style="min-width:100px;">
+                            <option value="">HTTP Status</option>
+                            <option value="2">2xx OK</option>
+                            <option value="4">4xx Error</option>
+                            <option value="5">5xx Error</option>
+                        </select>
+                        <label style="display:flex; align-items:center; gap:0.4rem; white-space:nowrap;
+                                  font-size:0.84rem; color:#94a3b8; cursor:pointer;">
+                            <input type="checkbox" id="ipLogOnlyErrors" style="accent-color:#ef4444;"> Solo errores
+                        </label>
+                        <button class="btn btn-glass" onclick="ipLoadLogs(1)" style="white-space:nowrap;">🔍
+                            Filtrar</button>
+                        <button class="btn btn-glass" onclick="ipClearLogFilters()" title="Limpiar filtros">✖</button>
+                        <button class="btn btn-glass" onclick="ipLoadLogs(1)"
+                            style="border-color:rgba(99,102,241,0.4); color:#a5b4fc;" title="Refrescar">🔄</button>
+                    </div>
+
+                    <!-- Tabla -->
+                    <div class="table-container">
+                        <table id="ipLogsTable" style="table-layout:fixed; width:100%;">
+                            <colgroup>
+                                <col style="width:8%"> <!-- Fecha -->
+                                <col style="width:6%"> <!-- Tipo -->
+                                <col style="width:7%"> <!-- Evento -->
+                                <col style="width:12%"> <!-- Transfer ID -->
+                                <col style="width:11%"> <!-- Cold Wallet -->
+                                <col style="width:11%"> <!-- Destino -->
+                                <col style="width:11%"> <!-- Monto -->
+                                <col style="width:6%"> <!-- HTTP -->
+                                <col style="width:9%"> <!-- IP -->
+                                <col style="width:12%"> <!-- Error -->
+                                <col style="width:7%"> <!-- Acción -->
+                            </colgroup>
+                            <thead>
+                                <tr>
+                                    <th>Fecha</th>
+                                    <th>Tipo</th>
+                                    <th>Evento</th>
+                                    <th>Transfer ID</th>
+                                    <th>Cold Wallet</th>
+                                    <th>Destino</th>
+                                    <th>Monto USDC</th>
+                                    <th>HTTP</th>
+                                    <th>IP</th>
+                                    <th>Error</th>
+                                    <th>JSON</th>
+                                </tr>
+                            </thead>
+                            <tbody id="ipLogsBody">
+                                <tr>
+                                    <td colspan="11" style="text-align:center; opacity:0.6;">Cargando...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Paginación -->
+                    <div style="display:flex; justify-content:flex-end; align-items:center;
+                            margin-top:1rem; gap:0.5rem; color:#94a3b8; font-size:0.9rem;">
+                        <span id="ipLogsCount" style="margin-right:auto; font-size:0.8rem;"></span>
+                        <button class="btn-icon" id="ipLogsPrevPage"
+                            onclick="ipLoadLogs(Math.max(1, ipLogsCurrentPage-1))">◀</button>
+                        <span id="ipLogsPageIndicator">Página 1 de 1</span>
+                        <button class="btn-icon" id="ipLogsNextPage"
+                            onclick="ipLoadLogs(ipLogsCurrentPage+1)">▶</button>
+                    </div>
+
+                    <!-- JSON Detail Panel -->
+                    <div id="ipLogDetailPanel" class="hidden" style="margin-top:1.5rem; background:rgba(0,0,0,0.4);
+                            border:1px solid rgba(99,102,241,0.3); border-radius:10px; padding:1.25rem;">
+                        <div
+                            style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem;">
+                            <h4 style="margin:0; color:#a5b4fc;">📄 Detalle JSON</h4>
+                            <div style="display:flex; gap:0.5rem;">
+                                <button class="btn btn-glass" id="ipLogCopyBtn" onclick="ipCopyLogJson()"
+                                    style="font-size:0.8rem;">📋 Copiar</button>
+                                <button class="btn btn-glass"
+                                    onclick="document.getElementById('ipLogDetailPanel').classList.add('hidden')"
+                                    style="font-size:0.8rem;">✖ Cerrar</button>
+                            </div>
+                        </div>
+                        <pre id="ipLogDetailPre" style="background:rgba(0,0,0,0.3); padding:1rem; border-radius:6px;
+                                font-size:0.78rem; color:#a5f3fc; overflow-x:auto;
+                                margin:0; white-space:pre-wrap; word-break:break-all;"></pre>
+                    </div>
+                </div> <!-- END INSTANT LOGS SECTION -->
+
+
+                <!-- CONTRACT ADMIN SECTION (SUPER_ADMIN only) -->
+                <div id="contractAdminSection" class="glass-panel hidden">
+                    <div class="top-bar">
+                        <h2>🔐 Contract Admin</h2>
+                        <div id="cadLoadStatus" style="font-size:0.85rem; color:#94a3b8;">Conectá MetaMask para
+                            interactuar
+                        </div>
+                    </div>
+
+                    <!-- ── PANEL 1: Info del Contrato ── -->
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:1.5rem; margin-bottom:1.5rem;">
+                        <div class="ip-policy-card" style="padding:1.25rem;">
+                            <div
+                                style="font-size:0.7rem; color:#64748b; text-transform:uppercase; letter-spacing:1px; margin-bottom:0.75rem;">
+                                📋 Info On-Chain</div>
+                            <div style="display:flex; flex-direction:column; gap:0.5rem; font-size:0.88rem;">
+                                <div style="display:flex; justify-content:space-between; align-items:center;">
+                                    <span style="color:#94a3b8;">Contrato Proxy</span>
+                                    <a id="cadContractLink" href="#" target="_blank" class="hash-link"
+                                        style="font-family:monospace; font-size:0.8rem;">—</a>
+                                </div>
+                                <div style="display:flex; justify-content:space-between; align-items:center;">
+                                    <span style="color:#94a3b8;">Owner actual</span>
+                                    <a id="cadOwnerLink" href="#" target="_blank" class="hash-link"
+                                        style="font-family:monospace; font-size:0.8rem;">—</a>
+                                </div>
+                                <div style="display:flex; justify-content:space-between; align-items:center;">
+                                    <span style="color:#94a3b8;">Pending owner</span>
+                                    <a id="cadPendingOwnerLink" href="#" target="_blank" class="hash-link"
+                                        style="font-family:monospace; font-size:0.8rem;">—</a>
+                                </div>
+                                <div style="display:flex; justify-content:space-between; align-items:center;">
+                                    <span style="color:#94a3b8;">Estado</span>
+                                    <span id="cadPauseBadge" style="font-family:monospace; font-size:0.85rem;">—</span>
+                                </div>
+                                <div style="display:flex; justify-content:space-between; align-items:center;">
+                                    <span style="color:#94a3b8;">Max Policy Amount</span>
+                                    <span id="cadMaxPolicyDisplay" style="color:#4ade80; font-weight:bold;">—</span>
+                                </div>
+                            </div>
+                            <button class="btn btn-glass" style="width:100%; margin-top:1rem; font-size:0.82rem;"
+                                onclick="cadLoadContractStatus()">🔄 Refrescar</button>
+                        </div>
+
+                        <!-- ── PANEL 2: Política Máxima ── -->
+                        <div class="ip-policy-card" style="padding:1.25rem;">
+                            <div
+                                style="font-size:0.7rem; color:#64748b; text-transform:uppercase; letter-spacing:1px; margin-bottom:0.75rem;">
+                                💰 Política Máxima de Retiros</div>
+                            <p style="font-size:0.82rem; color:#94a3b8; margin-bottom:1rem;">El owner puede cambiar
+                                el
+                                límite máximo de USDC por policy. El frontend y el contrato lo verifican al activar
+                                un
+                                permit.</p>
                             <div class="form-group" style="margin-bottom:0.75rem;">
-                                <label style="font-size:0.82rem;">Dirección cold wallet</label>
-                                <input id="cadResetPolicyInput" type="text" class="input-glass" placeholder="0x...">
+                                <label style="font-size:0.82rem;">Nuevo límite (USDC)</label>
+                                <input id="cadMaxPolicyInput" type="number" class="input-glass" placeholder="Ej: 50000"
+                                    min="1" step="1">
                             </div>
-                            <button class="btn btn-glass"
-                                style="width:100%; border-color:rgba(239,68,68,0.4); color:#f87171;"
-                                onclick="cadResetPolicyAdmin()">
-                                🦊 resetPolicy(wallet)
+                            <button class="btn btn-primary" style="width:100%;" onclick="cadSetMaxPolicy()">
+                                🦊 Setear vía MetaMask
                             </button>
-                            <p id="cadResetPolicyStatus" style="margin-top:0.5rem; font-size:0.82rem;"></p>
+                            <p id="cadMaxPolicyStatus" style="margin-top:0.5rem; font-size:0.82rem;"></p>
                         </div>
                     </div>
-                </div>
-                <!-- ── PANEL 5: Upgrade de Contrato ── -->
-                <div class="ip-policy-card" style="padding:1.25rem; border-color:rgba(168,85,247,0.2);">
-                    <div
-                        style="font-size:0.7rem; color:#a855f7; text-transform:uppercase; letter-spacing:1px; margin-bottom:0.75rem;">
-                        ⬆️ Upgrade de Contrato (UUPS)
-                    </div>
-                    <div
-                        style="background:rgba(168,85,247,0.05); border:1px solid rgba(168,85,247,0.15); border-radius:8px; padding:0.75rem; margin-bottom:0.75rem; font-size:0.82rem; color:#94a3b8;">
-                        <div>Proxy: <span
-                                style="font-family:monospace; color:#c4b5fd;">0x971da9d642C94f6B5E3867EC891FBA7ef8287d29</span>
+
+                    <!-- ── PANEL 3: Ownership (Ownable2Step) ── -->
+                    <div class="ip-policy-card" style="padding:1.25rem; margin-bottom:1.5rem;">
+                        <div
+                            style="font-size:0.7rem; color:#64748b; text-transform:uppercase; letter-spacing:1px; margin-bottom:0.75rem;">
+                            🔑 Transferencia de Ownership (2-step)</div>
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
+                            <div>
+                                <p style="font-size:0.82rem; color:#94a3b8; margin-bottom:0.75rem;">Paso 1: Proponer
+                                    nuevo
+                                    owner. El nuevo owner debe aceptar.</p>
+                                <div class="form-group" style="margin-bottom:0.75rem;">
+                                    <label style="font-size:0.82rem;">Nueva dirección owner</label>
+                                    <input id="cadNewOwnerInput" type="text" class="input-glass" placeholder="0x...">
+                                </div>
+                                <button class="btn btn-glass"
+                                    style="width:100%; border-color:rgba(251,191,36,0.4); color:#fbbf24;"
+                                    onclick="cadTransferOwnership()">
+                                    🦊 Paso 1: transferOwnership()
+                                </button>
+                                <p id="cadTransferStatus" style="margin-top:0.5rem; font-size:0.82rem;"></p>
+                            </div>
+                            <div>
+                                <p style="font-size:0.82rem; color:#94a3b8; margin-bottom:0.75rem;">Paso 2: Si esta
+                                    wallet
+                                    es el pending owner, aceptar la transferencia.</p>
+                                <div
+                                    style="background:rgba(16,185,129,0.05); border:1px solid rgba(16,185,129,0.2); border-radius:8px; padding:0.75rem; margin-bottom:0.75rem; font-size:0.82rem; color:#94a3b8;">
+                                    <span>Pending owner: </span><span id="cadPendingOwnerInline"
+                                        style="font-family:monospace; color:#4ade80;">—</span>
+                                </div>
+                                <button class="btn btn-primary"
+                                    style="width:100%; background:linear-gradient(135deg,#10b981,#059669);"
+                                    onclick="cadAcceptOwnership()">
+                                    🦊 Paso 2: acceptOwnership()
+                                </button>
+                                <p id="cadAcceptStatus" style="margin-top:0.5rem; font-size:0.82rem;"></p>
+                            </div>
                         </div>
-                        <div style="margin-top:0.35rem;">Nueva impl: <span id="cadUpgradeImplAddr"
-                                style="font-family:monospace; color:#4ade80;">0xbfc16912aE0b3DAb4e43fC4D4FcF33CF5ddb23C0</span>
+                    </div>
+
+                    <!-- ── PANEL 4: Emergencia ── -->
+                    <div class="ip-policy-card" style="padding:1.25rem; border-color:rgba(239,68,68,0.2);">
+                        <div
+                            style="font-size:0.7rem; color:#ef4444; text-transform:uppercase; letter-spacing:1px; margin-bottom:0.75rem;">
+                            🚨 Operaciones de Emergencia</div>
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
+                            <div>
+                                <p style="font-size:0.82rem; color:#94a3b8; margin-bottom:0.75rem;">Pausa/reanuda
+                                    todas las
+                                    transferencias e activaciones de policy del contrato.</p>
+                                <button id="cadPauseBtn" class="btn btn-glass"
+                                    style="width:100%; border-color:rgba(239,68,68,0.4); color:#f87171;"
+                                    onclick="cadTogglePause()">
+                                    🦊 Pausar Contrato
+                                </button>
+                                <p id="cadPauseStatus" style="margin-top:0.5rem; font-size:0.82rem;"></p>
+                            </div>
+                            <div>
+                                <p style="font-size:0.82rem; color:#94a3b8; margin-bottom:0.75rem;">Como owner, el
+                                    SUPER_ADMIN puede resetear la policy de cualquier cold wallet.</p>
+                                <div class="form-group" style="margin-bottom:0.75rem;">
+                                    <label style="font-size:0.82rem;">Dirección cold wallet</label>
+                                    <input id="cadResetPolicyInput" type="text" class="input-glass" placeholder="0x...">
+                                </div>
+                                <button class="btn btn-glass"
+                                    style="width:100%; border-color:rgba(239,68,68,0.4); color:#f87171;"
+                                    onclick="cadResetPolicyAdmin()">
+                                    🦊 resetPolicy(wallet)
+                                </button>
+                                <p id="cadResetPolicyStatus" style="margin-top:0.5rem; font-size:0.82rem;"></p>
+                            </div>
                         </div>
                     </div>
-                    <p style="font-size:0.82rem; color:#94a3b8; margin-bottom:0.75rem;">
-                        Upgradea el proxy al contrato V2 (EIP-2612 permit atómico). Solo el owner puede ejecutar esto
-                        desde MetaMask.
-                    </p>
-                    <button class="btn btn-glass" style="width:100%; border-color:rgba(168,85,247,0.4); color:#a855f7;"
-                        onclick="cadUpgradeToV2()">
-                        🦊 upgradeToAndCall(V2)
-                    </button>
-                    <p id="cadUpgradeStatus" style="margin-top:0.5rem; font-size:0.82rem;"></p>
-                </div>
-
-            </div> <!-- END CONTRACT ADMIN SECTION -->
-
-
-            <!-- RECOVERY SECTION (Admin only) -->
-            <div id="recoverySection" class="glass-panel hidden">
-                <div class="top-bar">
-                    <h2>💰 Recuperación de Fondos</h2>
-                    <div id="recoveryLoadStatus" style="font-size:0.85rem; color:#94a3b8;">
-                        Gestiona el retorno de MATIC/POL desde los relayers al Faucet correspondiente.
-                    </div>
-                </div>
-
-                <div id="recoveryStats" class="recovery-grid"
-                    style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1.5rem; margin-top: 1.5rem;">
-                    <!-- Cards will be injected here -->
-                    <div class="loading-state" style="grid-column: 1/-1; text-align: center; padding: 4rem;">
-                        <div class="loading-spinner" style="margin: 0 auto 1rem; width: 40px; height: 40px;">
+                    <!-- ── PANEL 5: Upgrade de Contrato ── -->
+                    <div class="ip-policy-card" style="padding:1.25rem; border-color:rgba(168,85,247,0.2);">
+                        <div
+                            style="font-size:0.7rem; color:#a855f7; text-transform:uppercase; letter-spacing:1px; margin-bottom:0.75rem;">
+                            ⬆️ Upgrade de Contrato (UUPS)
                         </div>
-                        <p>Cargando lotes con saldos pendientes...</p>
+                        <div
+                            style="background:rgba(168,85,247,0.05); border:1px solid rgba(168,85,247,0.15); border-radius:8px; padding:0.75rem; margin-bottom:0.75rem; font-size:0.82rem; color:#94a3b8;">
+                            <div>Proxy: <span
+                                    style="font-family:monospace; color:#c4b5fd;">0x971da9d642C94f6B5E3867EC891FBA7ef8287d29</span>
+                            </div>
+                            <div style="margin-top:0.35rem;">Nueva impl: <span id="cadUpgradeImplAddr"
+                                    style="font-family:monospace; color:#4ade80;">0xbfc16912aE0b3DAb4e43fC4D4FcF33CF5ddb23C0</span>
+                            </div>
+                        </div>
+                        <p style="font-size:0.82rem; color:#94a3b8; margin-bottom:0.75rem;">
+                            Upgradea el proxy al contrato V2 (EIP-2612 permit atómico). Solo el owner puede ejecutar
+                            esto
+                            desde MetaMask.
+                        </p>
+                        <button class="btn btn-glass"
+                            style="width:100%; border-color:rgba(168,85,247,0.4); color:#a855f7;"
+                            onclick="cadUpgradeToV2()">
+                            🦊 upgradeToAndCall(V2)
+                        </button>
+                        <p id="cadUpgradeStatus" style="margin-top:0.5rem; font-size:0.82rem;"></p>
                     </div>
-                </div>
-            </div> <!-- END RECOVERY SECTION -->
 
-        </div> <!-- END mainBatchPanel -->
+                </div> <!-- END CONTRACT ADMIN SECTION -->
 
 
-        <!-- MODAL CREAR LOTE -->
-        <div id="batchModal" class="modal">
-            <div class="modal-content">
-                <span class="close-modal" onclick="closeBatchModal()">&times;</span>
-                <h2>📦 Nuevo Lote</h2>
-                <div class="grid-form" style="display: block;"> <!-- Override grid for simple stack -->
-                    <div class="form-group" style="margin-bottom: 1rem;">
-                        <label>Número de Lote *</label>
-                        <input type="text" id="newBatchNumber" class="input-glass" placeholder="Ej: LOTE-2024-001">
+                <!-- RECOVERY SECTION (Admin only) -->
+                <div id="recoverySection" class="glass-panel hidden">
+                    <div class="top-bar">
+                        <h2>💰 Recuperación de Fondos</h2>
+                        <div id="recoveryLoadStatus" style="font-size:0.85rem; color:#94a3b8;">
+                            Gestiona el retorno de MATIC/POL desde los relayers al Faucet correspondiente.
+                        </div>
                     </div>
-                    <div class="form-group" style="margin-bottom: 1rem;">
-                        <label>Detalle Corto *</label>
-                        <input type="text" id="newBatchDetail" class="input-glass" placeholder="Ej: Pago Nómina Enero">
+
+                    <div id="recoveryStats" class="recovery-grid"
+                        style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1.5rem; margin-top: 1.5rem;">
+                        <!-- Cards will be injected here -->
+                        <div class="loading-state" style="grid-column: 1/-1; text-align: center; padding: 4rem;">
+                            <div class="loading-spinner" style="margin: 0 auto 1rem; width: 40px; height: 40px;">
+                            </div>
+                            <p>Cargando lotes con saldos pendientes...</p>
+                        </div>
                     </div>
-                    <div class="form-group" style="margin-bottom: 1.5rem;">
-                        <label>Descripción</label>
-                        <textarea id="newBatchDesc" class="input-glass" rows="3"
-                            placeholder="Notas internas..."></textarea>
+                </div> <!-- END RECOVERY SECTION -->
+
+            </div> <!-- END mainBatchPanel -->
+
+
+            <!-- MODAL CREAR LOTE -->
+            <div id="batchModal" class="modal">
+                <div class="modal-content">
+                    <span class="close-modal" onclick="closeBatchModal()">&times;</span>
+                    <h2>📦 Nuevo Lote</h2>
+                    <div class="grid-form" style="display: block;"> <!-- Override grid for simple stack -->
+                        <div class="form-group" style="margin-bottom: 1rem;">
+                            <label>Número de Lote *</label>
+                            <input type="text" id="newBatchNumber" class="input-glass" placeholder="Ej: LOTE-2024-001">
+                        </div>
+                        <div class="form-group" style="margin-bottom: 1rem;">
+                            <label>Detalle Corto *</label>
+                            <input type="text" id="newBatchDetail" class="input-glass"
+                                placeholder="Ej: Pago Nómina Enero">
+                        </div>
+                        <div class="form-group" style="margin-bottom: 1.5rem;">
+                            <label>Descripción</label>
+                            <textarea id="newBatchDesc" class="input-glass" rows="3"
+                                placeholder="Notas internas..."></textarea>
+                        </div>
+                        <button id="btnSaveBatch" class="btn btn-primary" style="width: 100%;">Crear Lote</button>
                     </div>
-                    <button id="btnSaveBatch" class="btn btn-primary" style="width: 100%;">Crear Lote</button>
                 </div>
             </div>
-        </div>
 
 
-        <footer style="text-align: center; padding: 1rem; opacity: 0.6; font-size: 0.8rem; color: #fff;">
-            Spectral Celestial Wallet - v3.0.0 (STRICT 100 RELAYERS)
-        </footer>
-        <!-- Faucet Management Modal -->
-        <div id="faucetModal" class="modal hidden">
-            <div class="modal-content glass">
-                <span class="close" onclick="closeFaucetModal()">&times;</span>
-                <h2>Gestión de Faucet para Lote</h2>
-                <div
-                    style="background: rgba(255,255,255,0.05); padding: 0.75rem; border-radius: 8px; margin-bottom: 1rem;">
-                    <p
-                        style="font-size: 0.8rem; color: #94a3b8; margin: 0; display: flex; align-items: center; gap: 0.5rem;">
-                        Address: <a id="faucetModalLink" href="#" target="_blank" class="hash-link"
-                            style="color: #60a5fa; font-family: monospace; word-break: break-all;">---</a>
-                        <button onclick="copyFaucetAddress()" class="btn-icon" style="font-size: 0.7rem;">📋</button>
-                    </p>
-                    <p
-                        style="font-size: 0.8rem; color: #94a3b8; margin: 0.25rem 0 0 0; display: flex; align-items: center; gap: 0.5rem;">
-                        Private Key: <span id="faucetKey"
-                            style="color: #ef4444; font-family: monospace; word-break: break-all;">---</span>
-                        <button onclick="copyFaucetKey()" class="btn-icon" style="font-size: 0.7rem;">📋</button>
-                    </p>
-                    <p style="font-size: 0.8rem; color: #94a3b8; margin: 0.25rem 0 0 0;">Balance: <span
-                            id="faucetBalance" style="color: #4ade80; font-weight: bold;">---</span></p>
+            <footer style="text-align: center; padding: 1rem; opacity: 0.6; font-size: 0.8rem; color: #fff;">
+                Spectral Celestial Wallet - v3.0.0 (STRICT 100 RELAYERS)
+            </footer>
+            <!-- Faucet Management Modal -->
+            <div id="faucetModal" class="modal hidden">
+                <div class="modal-content glass">
+                    <span class="close" onclick="closeFaucetModal()">&times;</span>
+                    <h2>Gestión de Faucet para Lote</h2>
+                    <div
+                        style="background: rgba(255,255,255,0.05); padding: 0.75rem; border-radius: 8px; margin-bottom: 1rem;">
+                        <p
+                            style="font-size: 0.8rem; color: #94a3b8; margin: 0; display: flex; align-items: center; gap: 0.5rem;">
+                            Address: <a id="faucetModalLink" href="#" target="_blank" class="hash-link"
+                                style="color: #60a5fa; font-family: monospace; word-break: break-all;">---</a>
+                            <button onclick="copyFaucetAddress()" class="btn-icon"
+                                style="font-size: 0.7rem;">📋</button>
+                        </p>
+                        <p
+                            style="font-size: 0.8rem; color: #94a3b8; margin: 0.25rem 0 0 0; display: flex; align-items: center; gap: 0.5rem;">
+                            Private Key: <span id="faucetKey"
+                                style="color: #ef4444; font-family: monospace; word-break: break-all;">---</span>
+                            <button onclick="copyFaucetKey()" class="btn-icon" style="font-size: 0.7rem;">📋</button>
+                        </p>
+                        <p style="font-size: 0.8rem; color: #94a3b8; margin: 0.25rem 0 0 0;">Balance: <span
+                                id="faucetBalance" style="color: #4ade80; font-weight: bold;">---</span></p>
+                    </div>
+                    <div class="form-group" style="margin-bottom: 1rem;">
+                        <button onclick="generateFaucet()" class="btn-glass"
+                            style="width: 100%; border: 1px dashed rgba(255,255,255,0.2); color: #fbbf24;">✨ Generar
+                            Nueva
+                            Faucet</button>
+                    </div>
+                    <div class="form-group">
+                        <label for="bufferPercent">Porcentaje de Buffer de Gas (%)</label>
+                        <input type="number" id="bufferPercent" value="50" min="0" max="200" class="input-glass" />
+                    </div>
+                    <div class="form-group">
+                        <label for="relayerCountInput">Cantidad de Relayers</label>
+                        <input type="number" id="relayerCountInput" value="5" min="1" max="100" class="input-glass" />
+                    </div>
+                    <div class="form-group">
+                        <button class="btn-glass" id="btnDistributeGas" onclick="triggerGasDistribution()">Distribuir
+                            Gas</button>
+                        <button class="btn-glass" id="btnRefreshBalances" onclick="refreshRelayerBalances()">Actualizar
+                            Balances</button>
+                    </div>
+                    <p id="modalFaucetStatus"></p>
                 </div>
-                <div class="form-group" style="margin-bottom: 1rem;">
-                    <button onclick="generateFaucet()" class="btn-glass"
-                        style="width: 100%; border: 1px dashed rgba(255,255,255,0.2); color: #fbbf24;">✨ Generar
-                        Nueva
-                        Faucet</button>
-                </div>
-                <div class="form-group">
-                    <label for="bufferPercent">Porcentaje de Buffer de Gas (%)</label>
-                    <input type="number" id="bufferPercent" value="50" min="0" max="200" class="input-glass" />
-                </div>
-                <div class="form-group">
-                    <label for="relayerCountInput">Cantidad de Relayers</label>
-                    <input type="number" id="relayerCountInput" value="5" min="1" max="100" class="input-glass" />
-                </div>
-                <div class="form-group">
-                    <button class="btn-glass" id="btnDistributeGas" onclick="triggerGasDistribution()">Distribuir
-                        Gas</button>
-                    <button class="btn-glass" id="btnRefreshBalances" onclick="refreshRelayerBalances()">Actualizar
-                        Balances</button>
-                </div>
-                <p id="modalFaucetStatus"></p>
             </div>
-        </div>
-    </div> <!-- content-wrapper -->
+        </div> <!-- content-wrapper -->
     </div> <!-- app-layout -->
 
     <!-- SEND POL MODAL -->

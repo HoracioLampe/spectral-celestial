@@ -354,7 +354,8 @@ body {
 /* Wrapper estructural de paneles — cada sección tiene su propio glass-panel */
 #mainBatchPanel {
     width: 100%;
-    max-width: 1100px;ok, vamsoi a especificar una api para instant payment : es una api backennd backend, mi un suitema mnaster slave, nosotros somos el slave, que a pedido de un sistema previamente autenticado, nos envía una orden de trealzar una transferencia en polygon pro orden de una colad wlalet que le dio el permit al contrato a una Address destinatario de esos USDC 
+    max-width: 1100px;
+
 }
 
 .sidebar {
@@ -609,6 +610,20 @@ select:focus {
     box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
 }
 
+/* Filter bars — overrides the global width:100% so inputs size to their content */
+.filter-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.filter-bar input,
+.filter-bar select {
+    width: auto;
+}
+
+
 /* Tables */
 .table-container {
     overflow-x: auto;
@@ -616,13 +631,37 @@ select:focus {
     background: rgba(0, 0, 0, 0.2);
     border: 1px solid rgba(255, 255, 255, 0.05);
     margin-top: 1.5rem;
+    /* Hide scrollbar — content still scrollable via trackpad/touch */
+    scrollbar-width: none;
+    /* Firefox */
+    -ms-overflow-style: none;
+    /* IE/Edge */
 }
+
+.table-container::-webkit-scrollbar {
+    display: none;
+    /* Chrome, Safari, Opera */
+}
+
 
 table {
     width: 100%;
     border-collapse: separate;
     border-spacing: 0;
     color: var(--text-primary);
+}
+
+/* Overflow control for fixed-layout IP Logs table only */
+#ipLogsTable td {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 0;
+}
+
+/* Action column must not clip its content */
+#ipLogsTable td:last-child {
+    overflow: visible;
+    text-align: center;
 }
 
 th {

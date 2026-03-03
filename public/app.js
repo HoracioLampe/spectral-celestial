@@ -354,6 +354,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (navAdmin) navAdmin.classList.remove('hidden');
                 document.getElementById('navContractAdmin')?.classList.remove('hidden');
                 document.getElementById('navRecovery')?.classList.remove('hidden');
+                document.getElementById('navInstantLogs')?.classList.remove('hidden');
             }
 
             if (payload.role === 'REGISTERED') {
@@ -675,6 +676,7 @@ async function connectWallet() {
                         if (role === 'SUPER_ADMIN') {
                             if (navAdmin) navAdmin.classList.remove('hidden');
                             document.getElementById('navContractAdmin')?.classList.remove('hidden');
+                            document.getElementById('navInstantLogs')?.classList.remove('hidden');
                             if (adminRescueFunds) {
                                 adminRescueFunds.classList.remove('hidden');
                                 adminRescueFunds.onclick = async (e) => {
@@ -3590,9 +3592,16 @@ document.addEventListener('DOMContentLoaded', () => {
             showInstantPaymentSection();
         });
     }
+    const navLogs = document.getElementById('navInstantLogs');
+    if (navLogs) {
+        navLogs.addEventListener('click', (e) => {
+            e.preventDefault();
+            showInstantLogsSection();
+        });
+    }
 });
 
-const ALL_MAIN_SECTIONS = ['batchSection', 'instantPaymentSection', 'contractAdminSection', 'recoverySection', 'restrictedView'];
+const ALL_MAIN_SECTIONS = ['batchSection', 'instantPaymentSection', 'instantLogsSection', 'contractAdminSection', 'recoverySection', 'restrictedView'];
 
 /**
  * Función genérica de navegación entre secciones del panel principal.
@@ -3624,16 +3633,23 @@ function showInstantPaymentSection() {
     showSection('instantPaymentSection', 'navInstantPayment', () => {
         document.getElementById('ipApiKeyPanel')?.classList.remove('hidden');
         ipLoadPolicy(); ipLoadTransfers(1); ipLoadApiKey();
+        ipConnectSSE(); // connect SSE for real-time updates
     });
 }
 
 function showBatchSection() {
-    ipStopTransferPolling();
+    ipDisconnectSSE(); // leave IP section — stop SSE
     showSection('batchSection', 'navTransacciones', () => fetchBatches(currentBatchPage || 1));
 }
 
 function showRecoverySection() {
+    ipDisconnectSSE();
     showSection('recoverySection', 'navRecovery', () => loadRecoveryBatches());
+}
+
+function showInstantLogsSection() {
+    ipDisconnectSSE();
+    showSection('instantLogsSection', 'navInstantLogs', () => ipLoadLogs(1));
 }
 
 // ── Policy ───────────────────────────────────────────────────────────────────
@@ -4006,18 +4022,171 @@ window.ipRevokeAllowance = async (btn) => {
 
 // ── Transfers Table ───────────────────────────────────────────────────────────
 
+// ─── SSE Client ───────────────────────────────────────────────────────────────
+// Connects to /api/v1/instant/events for real-time push updates.
+// Falls back to polling if SSE is unavailable.
+
+let ipEventSource = null;
+
+function ipConnectSSE() {
+    if (ipEventSource) return;
+    const token = localStorage.getItem('authToken') || '';
+    if (!token) return;
+    const url = `/api/v1/instant/events?token=${encodeURIComponent(token)}`;
+    try {
+        ipEventSource = new EventSource(url);
+        ipEventSource.onopen = () => {
+            console.log('[SSE] Connected — live DB subscription active');
+            ipStopTransferPolling();
+        };
+        ipEventSource.onmessage = (e) => {
+            try {
+                const ev = JSON.parse(e.data);
+                if (ev.type === 'heartbeat') return;
+                console.log('[SSE]', ev.type, ev.transfer_id?.slice(0, 12));
+
+                // ── Smart update: patch row in-place, prepend if new ──────────
+                if (ev.transfer_id) {
+                    const updated = ipPatchTransferRow(ev);
+                    // New transfer not in current view → prepend it silently
+                    if (!updated && ev.type === 'transfer.received') {
+                        ipPrependTransferRow(ev);
+                    }
+                }
+            } catch (err) { console.warn('[SSE] parse error:', err); }
+        };
+        ipEventSource.onerror = () => {
+            console.warn('[SSE] disconnected — reconnecting in 5s');
+            ipEventSource?.close();
+            ipEventSource = null;
+            ipStartTransferPolling(); // fallback during outage
+            setTimeout(ipConnectSSE, 5000);
+        };
+    } catch (err) {
+        console.warn('[SSE] not available:', err.message);
+        ipStartTransferPolling();
+    }
+}
+
+function ipDisconnectSSE() {
+    if (ipEventSource) { ipEventSource.close(); ipEventSource = null; }
+    ipStopTransferPolling();
+}
+
+// ── ipPatchTransferRow — updates badge + tiempo + tx_hash cells in-place ──────
+// Returns true if the row was found and patched.
+function ipPatchTransferRow(ev) {
+    const rows = document.querySelectorAll('#ipTransfersBody tr[data-tid]');
+    for (const row of rows) {
+        if (row.dataset.tid !== ev.transfer_id) continue;
+        // col 3 = badge, col 5 = txhash, col 6 = fecha (skip), col 7 = tiempo, col 8 = intentos
+        const cells = row.querySelectorAll('td');
+        if (cells[3]) cells[3].innerHTML = ipStatusBadge(ev.status);
+        if (cells[6]) {
+            // Patch processing time cell
+            const created = row.dataset.createdAt;
+            const confirmed = ev.confirmed_at || null;
+            cells[6].innerHTML = ipProcessingTime(created, confirmed, ev.status);
+        }
+        if (ev.tx_hash && cells[4]) {
+            cells[4].innerHTML = `<a href="https://polygonscan.com/tx/${ev.tx_hash}"
+                target="_blank" class="hash-link" title="${ev.tx_hash}">
+                ${ev.tx_hash.slice(0, 10)}...↗</a>`;
+        }
+        // Smooth highlight
+        row.style.transition = 'background 0.3s ease';
+        row.style.background = 'rgba(99,102,241,0.2)';
+        setTimeout(() => { row.style.background = ''; }, 1500);
+        return true;
+    }
+    return false;
+}
+
+// ── ipPrependTransferRow — adds new row at top with slide-in ──────────────────
+function ipPrependTransferRow(ev) {
+    const tbody = document.getElementById('ipTransfersBody');
+    if (!tbody) return;
+    // Remove placeholder if present
+    const placeholder = tbody.querySelector('td[colspan]');
+    if (placeholder) tbody.innerHTML = '';
+
+    const row = document.createElement('tr');
+    row.dataset.tid = ev.transfer_id;
+    row.dataset.createdAt = ev.created_at || new Date().toISOString();
+    const tidShort = ev.transfer_id.slice(0, 18) + '...';
+    const shortDst = ev.destination_wallet
+        ? `${ev.destination_wallet.slice(0, 6)}...${ev.destination_wallet.slice(-4)}` : '—';
+    const date = ev.created_at ? new Date(ev.created_at).toLocaleString() : new Date().toLocaleString();
+    row.innerHTML = `
+        <td style="font-family:monospace; font-size:0.8rem; white-space:nowrap;" title="${ev.transfer_id}">
+            ${tidShort}
+            <button class="btn-icon" onclick="copyToClipboard('${ev.transfer_id}')" title="Copiar ID">📋</button>
+        </td>
+        <td style="font-family:monospace; font-size:0.85rem; display:flex; align-items:center; gap:0.4rem;">
+            <a href="https://polygonscan.com/address/${ev.destination_wallet}" target="_blank"
+               class="hash-link" title="${ev.destination_wallet}">${shortDst}</a>
+            <button class="btn-icon" onclick="copyToClipboard('${ev.destination_wallet}')" title="Copiar">📋</button>
+        </td>
+        <td style="font-weight:600; color:#4ade80;">$${parseFloat(ev.amount_usdc || 0).toFixed(6)}</td>
+        <td>${ipStatusBadge(ev.status || 'pending')}</td>
+        <td style="font-family:monospace; font-size:0.8rem;">—</td>
+        <td style="font-size:0.8rem; color:#94a3b8;">${date}</td>
+        <td style="text-align:center;">${ipProcessingTime(row.dataset.createdAt, null, 'pending')}</td>
+        <td style="text-align:center; color:#94a3b8;">0</td>
+    `;
+    // Slide in from top
+    row.style.opacity = '0';
+    row.style.transform = 'translateY(-8px)';
+    row.style.transition = 'opacity 0.4s ease, transform 0.4s ease, background 0.3s ease';
+    tbody.prepend(row);
+    requestAnimationFrame(() => {
+        row.style.opacity = '1';
+        row.style.transform = 'translateY(0)';
+        row.style.background = 'rgba(16,185,129,0.12)';
+        setTimeout(() => { row.style.background = ''; }, 2000);
+    });
+}
+
+
+function ipFlashRow(transferId) {
+    if (!transferId) return;
+    const rows = document.querySelectorAll('#ipTransfersBody tr');
+    rows.forEach(row => {
+        if (row.textContent.includes(transferId.slice(0, 16))) {
+            row.style.transition = 'background 0.3s';
+            row.style.background = 'rgba(99, 102, 241, 0.25)';
+            setTimeout(() => { row.style.background = ''; }, 1200);
+        }
+    });
+}
+
+// ─── Processing Time ──────────────────────────────────────────────────────────
+// Returns a human-readable duration between two timestamps.
+function ipProcessingTime(createdAt, confirmedAt, status) {
+    if (!createdAt) return '—';
+    if (status === 'pending') return '<span style="color:#64748b">—</span>';
+    const end = confirmedAt ? new Date(confirmedAt) : new Date();
+    const ms = end - new Date(createdAt);
+    if (ms < 0) return '—';
+    const color = confirmedAt ? '#4ade80' : '#f59e0b';
+    let label;
+    if (ms < 60000) label = `${(ms / 1000).toFixed(1)}s`;
+    else label = `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000) / 1000)}s`;
+    return `<span style="color:${color}; font-weight:600;">${label}</span>`;
+}
+
+// ─── Polling fallback ─────────────────────────────────────────────────────────
 let ipTransfersPollInterval = null;
 
 function ipStartTransferPolling() {
     ipStopTransferPolling();
     ipTransfersPollInterval = setInterval(async () => {
-        // Solo refresca si hay transfers activas en la tabla
         const rows = document.querySelectorAll('#ipTransfersBody tr');
-        const hasActive = Array.from(rows).some(r => r.textContent.includes('PROCESSING') || r.textContent.includes('PENDING'));
+        const hasActive = Array.from(rows).some(r => r.textContent.includes('Processing') || r.textContent.includes('Pending'));
         if (hasActive) {
             await ipLoadTransfers(ipCurrentPage);
         } else {
-            ipStopTransferPolling(); // Todas confirmadas — para el polling
+            ipStopTransferPolling();
         }
     }, 8000);
 }
@@ -4046,7 +4215,7 @@ async function ipLoadTransfers(page) {
     if (amount) params.append('amount', amount);
 
     const tbody = document.getElementById('ipTransfersBody');
-    if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; opacity:0.6;">Cargando...</td></tr>';
+    if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; opacity:0.6;">Cargando...</td></tr>';
 
     try {
         const res = await authenticatedFetch(`/api/v1/instant/transfers?${params.toString()}`);
@@ -4062,13 +4231,12 @@ async function ipLoadTransfers(page) {
         if (nextBtn) nextBtn.disabled = ipCurrentPage >= ipTotalPages;
 
         if (!data.transfers || data.transfers.length === 0) {
-            if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; opacity:0.6;">No hay transferencias.</td></tr>';
+            if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; opacity:0.6;">No hay transferencias.</td></tr>';
             return;
         }
 
         if (tbody) {
             tbody.innerHTML = data.transfers.map(t => {
-                // Transfer ID — completo, con botón copiar
                 const txIdShort = t.transfer_id.slice(0, 18) + '...';
                 const shortDst = t.destination_wallet
                     ? `${t.destination_wallet.slice(0, 6)}...${t.destination_wallet.slice(-4)}` : '—';
@@ -4078,7 +4246,8 @@ async function ipLoadTransfers(page) {
                     : '—';
                 const date = t.created_at ? new Date(t.created_at).toLocaleString() : '—';
                 const badge = ipStatusBadge(t.status);
-                return `<tr>
+                const tiempo = ipProcessingTime(t.created_at, t.confirmed_at, t.status);
+                return `<tr data-tid="${t.transfer_id}">
                     <td style="font-family:monospace; font-size:0.8rem; white-space:nowrap;" title="${t.transfer_id}">
                         ${txIdShort}
                         <button class="btn-icon" onclick="copyToClipboard('${t.transfer_id}')" title="Copiar ID">📋</button>
@@ -4091,19 +4260,23 @@ async function ipLoadTransfers(page) {
                     <td>${badge}</td>
                     <td style="font-family:monospace; font-size:0.8rem;">${txLink}</td>
                     <td style="font-size:0.8rem; color:#94a3b8;">${date}</td>
+                    <td style="text-align:center;">${tiempo}</td>
                     <td style="text-align:center; color:#94a3b8;">${t.attempt_count}</td>
                 </tr>`;
             }).join('');
         }
     } catch (err) {
-        if (tbody) tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color:#ef4444;">Error: ${err.message}</td></tr>`;
+        if (tbody) tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color:#ef4444;">Error: ${err.message}</td></tr>`;
         console.error('[IP] ipLoadTransfers error:', err);
     }
-    // Auto-start polling if any transfer is in active state
-    const rows = document.querySelectorAll('#ipTransfersBody tr');
-    const hasActive = Array.from(rows).some(r => r.textContent.includes('PROCESSING') || r.textContent.includes('PENDING'));
-    if (hasActive && !ipTransfersPollInterval) ipStartTransferPolling();
+    // Start polling as fallback only if SSE is not connected and there are active transfers
+    if (!ipEventSource) {
+        const rows = document.querySelectorAll('#ipTransfersBody tr');
+        const hasActive = Array.from(rows).some(r => r.textContent.includes('Processing') || r.textContent.includes('Pending'));
+        if (hasActive && !ipTransfersPollInterval) ipStartTransferPolling();
+    }
 }
+
 
 function ipStatusBadge(status) {
     // Same color system as batch transactions (badge with background color)
@@ -4247,6 +4420,223 @@ window.ipCloseKeyModal = () => {
     document.getElementById('ipKeyDisplayInline').textContent = '••••••••••••••••••••';
     document.getElementById('ipKeyModal').classList.add('hidden');
 };
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// === IP LOGS (SUPER_ADMIN) ===
+// ═══════════════════════════════════════════════════════════════════════════════
+
+let ipLogsCurrentPage = 1;
+let ipLogsTotalPages = 1;
+
+window.ipLoadLogs = async function ipLoadLogs(page) {
+    ipLogsCurrentPage = Math.max(1, page || 1);
+
+    const type = document.getElementById('ipLogTypeFilter')?.value || 'all';
+    const dateFrom = document.getElementById('ipLogDateFrom')?.value || '';
+    const dateTo = document.getElementById('ipLogDateTo')?.value || '';
+    const wallet = document.getElementById('ipLogWallet')?.value || '';
+    const transferId = document.getElementById('ipLogTransferId')?.value || '';
+    const httpStatus = document.getElementById('ipLogHttpStatus')?.value || '';
+    const onlyErrors = document.getElementById('ipLogOnlyErrors')?.checked ? 'true' : '';
+
+    const params = new URLSearchParams({ page: ipLogsCurrentPage, limit: 50 });
+    if (type && type !== 'all') params.append('type', type);
+    if (dateFrom) params.append('date_from', dateFrom);
+    if (dateTo) params.append('date_to', dateTo);
+    if (wallet) params.append('cold_wallet', wallet);
+    if (transferId) params.append('transfer_id', transferId);
+    if (httpStatus) params.append('http_status', httpStatus);
+    if (onlyErrors) params.append('only_errors', onlyErrors);
+
+    const tbody = document.getElementById('ipLogsBody');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="11" style="text-align:center; opacity:0.6;">Cargando...</td></tr>';
+    document.getElementById('ipLogDetailPanel')?.classList.add('hidden');
+
+    try {
+        const res = await authenticatedFetch(`/api/v1/instant/logs?${params.toString()}`);
+        if (!res.ok) {
+            const err = await res.json();
+            if (tbody) tbody.innerHTML = `<tr><td colspan="11" style="text-align:center; color:#ef4444;">Error: ${err.error}</td></tr>`;
+            return;
+        }
+        const data = await res.json();
+
+        ipLogsTotalPages = data.pagination?.totalPages || 1;
+        const total = data.pagination?.total || 0;
+        document.getElementById('ipLogsPageIndicator').textContent = `Página ${ipLogsCurrentPage} de ${ipLogsTotalPages}`;
+        document.getElementById('ipLogsCount').textContent = `${total} registros`;
+        document.getElementById('ipLogsPrevPage').disabled = ipLogsCurrentPage <= 1;
+        document.getElementById('ipLogsNextPage').disabled = ipLogsCurrentPage >= ipLogsTotalPages;
+
+        if (!data.logs?.length) {
+            if (tbody) tbody.innerHTML = '<tr><td colspan="11" style="text-align:center; opacity:0.6;">Sin resultados para los filtros aplicados.</td></tr>';
+            return;
+        }
+
+        window._ipLogsData = data.logs;
+
+        tbody.innerHTML = data.logs.map((log, idx) => {
+            const dt = log.created_at ? new Date(log.created_at) : null;
+            const date = dt
+                ? `<span style="font-size:0.75rem;color:#94a3b8;">${dt.toLocaleDateString()}</span><br>
+                   <span style="font-size:0.7rem;color:#64748b;">${dt.toLocaleTimeString()}</span>`
+                : '—';
+
+            const typeBadge = log.log_type === 'api_request'
+                ? '<span class="badge badge-info">API Req</span>'
+                : '<span class="badge badge-warning">Webhook</span>';
+
+            const rawEv = (log.event_type || '—').toLowerCase();
+            const evShort = rawEv
+                .replace('transfer.received', 'tr.<br><small>received</small>')
+                .replace('transfer.confirmed', 'tr.<br><small>confirmed</small>')
+                .replace('transfer.failed', 'tr.<br><small>failed</small>')
+                .replace('transfer.duplicate', 'tr.<br><small>duplicate</small>')
+                .replace('transfer.rejected', 'tr.<br><small>rejected</small>')
+                .replace('transfer.error', 'tr.<br><small>error</small>')
+                .replace('webhook_sent', 'wh.<br><small>sent</small>')
+                .replace('api_request', 'api<br><small>request</small>');
+            const evClass = rawEv.includes('fail') || rawEv.includes('error') || rawEv.includes('reject') ? 'badge-danger'
+                : rawEv.includes('confirm') || rawEv.includes('received') ? 'badge-success'
+                    : rawEv.includes('duplicate') ? 'badge-warning' : '';
+            const eventBadge = `<span class="badge ${evClass}"
+                style="font-size:0.65rem; white-space:normal; line-height:1.25; text-align:center; display:inline-block;"
+                >${evShort}</span>`;
+
+            const tidEl = log.transfer_id
+                ? `<span style="font-family:monospace; font-size:0.75rem;" title="${log.transfer_id}">${log.transfer_id.slice(0, 14)}…</span>
+                   <button class="btn-icon" onclick="event.stopPropagation(); copyToClipboard('${log.transfer_id}')" title="Copiar">📋</button>`
+                : '—';
+
+            const cw = log.cold_wallet;
+            const cwEl = cw
+                ? `<a href="https://polygonscan.com/address/${cw}" target="_blank" class="hash-link"
+                      title="${cw}" style="font-family:monospace; font-size:0.75rem;" onclick="event.stopPropagation()">
+                       ${cw.slice(0, 6)}…${cw.slice(-4)}</a>
+                   <button class="btn-icon" onclick="event.stopPropagation(); copyToClipboard('${cw}')" title="Copiar">📋</button>`
+                : '—';
+
+            let dw = null;
+            try {
+                dw = log.log_type === 'api_request' ? log.request_body?.destination_wallet : log.webhook_payload?.to;
+            } catch { }
+            const dwEl = dw
+                ? `<a href="https://polygonscan.com/address/${dw}" target="_blank" class="hash-link"
+                      title="${dw}" style="font-family:monospace; font-size:0.75rem;" onclick="event.stopPropagation()">
+                       ${dw.slice(0, 6)}…${dw.slice(-4)}</a>
+                   <button class="btn-icon" onclick="event.stopPropagation(); copyToClipboard('${dw}')" title="Copiar">📋</button>`
+                : '—';
+
+            let amtEl = '—';
+            try {
+                const amt = log.request_body?.amount_usdc || log.webhook_payload?.amount;
+                if (amt) amtEl = `<span style="font-weight:600; color:#4ade80;">${parseFloat(amt).toFixed(6)} USDC</span>`;
+            } catch { }
+
+            let httpEl = '—';
+            if (log.http_status) {
+                const hCls = log.http_status < 300 ? 'badge-success' : log.http_status < 400 ? 'badge-warning' : 'badge-danger';
+                httpEl = `<span class="badge ${hCls}">${log.http_status}</span>`;
+            } else if (log.delivered === false) {
+                httpEl = '<span class="badge badge-danger">Failed</span>';
+            }
+
+            const ipEl = log.client_ip
+                ? `<span style="font-family:monospace; font-size:0.74rem; color:#94a3b8;">${log.client_ip}</span>`
+                : '—';
+
+            const errEl = log.error_message
+                ? `<span class="badge badge-danger" title="${log.error_message}"
+                       style="font-size:0.6rem; line-height:1.3; white-space:normal;
+                              display:inline-block; max-width:100%; word-break:break-word;">
+                       ${log.error_message.slice(0, 50)}</span>`
+                : '';
+
+            return `<tr onclick="ipShowLogDetail(${idx})" style="cursor:pointer;" title="Click para ver detalle">
+                <td style="line-height:1.3;">${date}</td>
+                <td>${typeBadge}</td>
+                <td>${eventBadge}</td>
+                <td style="font-size:0.8rem;">${tidEl}</td>
+                <td style="font-size:0.8rem;">${cwEl}</td>
+                <td style="font-size:0.8rem;">${dwEl}</td>
+                <td>${amtEl}</td>
+                <td style="text-align:center;">${httpEl}</td>
+                <td>${ipEl}</td>
+                <td>${errEl}</td>
+                <td><button class="btn btn-glass" onclick="event.stopPropagation(); ipShowLogDetail(${idx})"
+                    style="font-size:0.65rem; padding:0.15rem 0.35rem; line-height:1.3; text-align:center; white-space:normal;">📋<br>JSON</button></td>
+            </tr>`;
+        }).join('');
+
+    } catch (err) {
+        if (tbody) tbody.innerHTML = `<tr><td colspan="11" style="text-align:center; color:#ef4444;">Error: ${err.message}</td></tr>`;
+        console.error('[IP Logs] error:', err);
+    }
+};
+
+window.ipShowLogDetail = function (idx) {
+    const log = window._ipLogsData?.[idx];
+    if (!log) return;
+    const panel = document.getElementById('ipLogDetailPanel');
+    const pre = document.getElementById('ipLogDetailPre');
+    if (!panel || !pre) return;
+
+    // Build structured content — include headers for api_request
+    let content;
+    if (log.log_type === 'api_request') {
+        content = {
+            client_ip: log.client_ip,
+            request_headers: log.request_headers,
+            request_body: log.request_body,
+            response_body: log.response_body,
+            http_status: log.http_status,
+        };
+    } else {
+        content = {
+            webhook_url: log.webhook_url,
+            webhook_payload: log.webhook_payload,
+            delivered: log.delivered,
+            http_status: log.http_status,
+            error_message: log.error_message,
+        };
+    }
+
+    // Syntax highlight (no deps)
+    const json = JSON.stringify(content, null, 2);
+    pre.innerHTML = json
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"([^"]+)":/g, '<span style="color:#93c5fd;">"$1"</span>:')
+        .replace(/: "([^"]*)"/g, ': <span style="color:#86efac;">"$1"</span>')
+        .replace(/: (\d+\.?\d*)/g, ': <span style="color:#fde68a;">$1</span>')
+        .replace(/: (true|false|null)/g, ': <span style="color:#f9a8d4;">$1</span>');
+
+    panel.classList.remove('hidden');
+    panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+};
+
+window.ipCopyLogJson = function () {
+    const pre = document.getElementById('ipLogDetailPre');
+    if (!pre) return;
+    navigator.clipboard.writeText(pre.innerText || pre.textContent).then(() => {
+        const btn = document.getElementById('ipLogCopyBtn');
+        if (btn) { const t = btn.textContent; btn.textContent = '✅ Copiado!'; setTimeout(() => btn.textContent = t, 1800); }
+    }).catch(() => alert('Copiá manualmente desde el panel.'));
+};
+
+window.ipClearLogFilters = function () {
+    ['ipLogTypeFilter', 'ipLogDateFrom', 'ipLogDateTo', 'ipLogWallet', 'ipLogTransferId', 'ipLogHttpStatus'].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.value = el.tagName === 'SELECT' ? el.options[0]?.value ?? '' : '';
+    });
+    const cb = document.getElementById('ipLogOnlyErrors');
+    if (cb) cb.checked = false;
+    ipLoadLogs(1);
+};
+
+
+
+
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // === CONTRACT ADMIN (SUPER_ADMIN only) — Direct Web3 via MetaMask ===

@@ -1,7 +1,7 @@
 // Deployment Trigger: 2026-01-08 18:50 - Excel Export Feature
 const express = require('express');
 const path = require('path');
-const { Pool } = require('pg');
+const { Pool, Client: PgClient } = require('pg');
 const ethers = require('ethers');
 const multer = require('multer');
 const xlsx = require('xlsx');
@@ -116,6 +116,30 @@ const initInstantPaymentTables = async () => {
     } catch (err) {
         console.error('[InstantPayment] ⚠️ Migration 005 error:', err.message);
     }
+    // 006: instant_api_logs unified log table
+    try {
+        const sql = fs.readFileSync(path.join(__dirname, 'migrations/006_instant_api_logs.sql'), 'utf8');
+        await pool.query(sql);
+        console.log('[InstantPayment] ✅ Migration 006 verified/created');
+    } catch (err) {
+        console.error('[InstantPayment] ⚠️ Migration 006 error:', err.message);
+    }
+    // 007: pg_notify trigger on instant_transfers
+    try {
+        const sql = fs.readFileSync(path.join(__dirname, 'migrations/007_instant_transfers_notify.sql'), 'utf8');
+        await pool.query(sql);
+        console.log('[InstantPayment] ✅ Migration 007 verified/created');
+    } catch (err) {
+        console.error('[InstantPayment] ⚠️ Migration 007 error:', err.message);
+    }
+    // 008: client_ip + request_headers columns on instant_api_logs
+    try {
+        const sql = fs.readFileSync(path.join(__dirname, 'migrations/008_instant_api_logs_ip.sql'), 'utf8');
+        await pool.query(sql);
+        console.log('[InstantPayment] ✅ Migration 008 verified/created');
+    } catch (err) {
+        console.error('[InstantPayment] ⚠️ Migration 008 error:', err.message);
+    }
 };
 
 // Warm up the connection (don't block server start)
@@ -125,6 +149,7 @@ initSessionTable().then(async ready => {
     if (ready) {
         console.log('🔥 Database connection warmed up successfully');
         await initInstantPaymentTables();
+        startPgListener(); // subscribe to DB change notifications
     }
 });
 
@@ -2367,6 +2392,147 @@ console.log("🔄 Transaction Monitor: Enabled (checks every 60s)");
 // === INSTANT PAYMENT API ===
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// ─── SSE Manager ──────────────────────────────────────────────────────────────
+// Maintains an in-process map of open SSE connections per cold_wallet.
+// Primary update path: PostgreSQL LISTEN/NOTIFY (startPgListener below).
+// Fallback: direct notifyInstantEvent calls from POST /transfer + relayer.
+
+const sseClients = new Map(); // cold_wallet (lowercase) → Set<res>
+// Super-admin broadcast set (for IP Logs page updates)
+const sseAdminClients = new Set();
+
+function notifyInstantEvent(coldWallet, eventType, data = {}) {
+    if (!coldWallet) return;
+    const key = coldWallet.toLowerCase();
+    const clients = sseClients.get(key);
+    const payload = JSON.stringify({ type: eventType, ...data, ts: Date.now() });
+    if (clients && clients.size > 0) {
+        clients.forEach(res => {
+            try { res.write(`data: ${payload}\n\n`); } catch (e) { /* disconnected */ }
+        });
+        console.log(`[SSE] → ${clients.size} client(s): ${eventType} (${key.slice(0, 10)}...)`);
+    }
+    // Also broadcast to admin log page subscribers
+    sseAdminClients.forEach(res => {
+        try { res.write(`data: ${payload}\n\n`); } catch (e) { /* disconnected */ }
+    });
+}
+
+// ─── PG LISTEN/NOTIFY — Real-time DB subscription ─────────────────────────────
+// Maintains a single dedicated PgClient that listens to the channel fired by
+// the trigger in migration 007. When instant_transfers is INSERT'd or UPDATE'd,
+// PG calls our trigger → pg_notify → this listener fires → SSE push to browser.
+// Auto-reconnects on error with exponential back-off.
+
+async function startPgListener() {
+    const rawUrl = (process.env.DATABASE_URL || '').replace(/^['"]|['"]$/g, '').trim();
+    let retryDelay = 2000;
+
+    const connect = async () => {
+        const client = new PgClient({
+            connectionString: rawUrl,
+            ssl: { rejectUnauthorized: false },
+            connectionTimeoutMillis: 15000,
+            keepAlive: true,
+        });
+        try {
+            await client.connect();
+            await client.query('LISTEN instant_transfers_changed');
+            retryDelay = 2000; // reset on success
+            console.log('[PgListener] ✅ Listening on instant_transfers_changed');
+
+            client.on('notification', (msg) => {
+                try {
+                    const row = JSON.parse(msg.payload);
+                    const coldWallet = row.funder_address;
+                    // Map DB status → event type
+                    const typeMap = {
+                        pending: 'transfer.received',
+                        processing: 'transfer.processing',
+                        confirmed: 'transfer.confirmed',
+                        failed: 'transfer.failed',
+                    };
+                    const eventType = typeMap[row.status] || `transfer.${row.status}`;
+                    notifyInstantEvent(coldWallet, eventType, {
+                        transfer_id: row.transfer_id,
+                        amount_usdc: row.amount_usdc,
+                        destination_wallet: row.destination_wallet,
+                        status: row.status,
+                        tx_hash: row.tx_hash,
+                        attempt_count: row.attempt_count,
+                        created_at: row.created_at,
+                        confirmed_at: row.confirmed_at,
+                        error_message: row.error_message,
+                    });
+                } catch (e) {
+                    console.warn('[PgListener] parse error:', e.message);
+                }
+            });
+
+            client.on('error', (err) => {
+                console.error('[PgListener] connection error:', err.message);
+                client.end().catch(() => { });
+                scheduleReconnect();
+            });
+
+        } catch (err) {
+            console.error('[PgListener] connect failed:', err.message);
+            scheduleReconnect();
+        }
+    };
+
+    const scheduleReconnect = () => {
+        console.log(`[PgListener] Reconnecting in ${retryDelay}ms...`);
+        setTimeout(() => { retryDelay = Math.min(retryDelay * 2, 30000); connect(); }, retryDelay);
+    };
+
+    connect();
+}
+
+
+// ── GET /api/v1/instant/events ─────────────────────────────────────────────────
+// SSE endpoint — browser connects here to receive real-time transfer updates.
+// Auth: JWT Bearer OR X-Api-Key OR ?token= query param (EventSource cannot set headers).
+app.get('/api/v1/instant/events', async (req, res) => {
+    // Auth: support token in query string for EventSource compatibility
+    if (!req.headers['x-api-key'] && !req.headers['authorization'] && req.query.token) {
+        req.headers['authorization'] = `Bearer ${req.query.token}`;
+    }
+    // Use combined auth middleware inline
+    await new Promise((resolve, reject) => {
+        authApiKeyOrJWT(req, res, (err) => err ? reject(err) : resolve());
+    }).catch(() => { }); // if auth fails, res already has 401 sent
+
+    if (!req.user) return; // auth failed, already responded
+
+    const coldWallet = req.user.address.toLowerCase();
+
+    // SSE headers
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no'); // disable Nginx buffering if present
+    res.flushHeaders();
+
+    // Register client
+    if (!sseClients.has(coldWallet)) sseClients.set(coldWallet, new Set());
+    sseClients.get(coldWallet).add(res);
+    console.log(`[SSE] Client connected: ${coldWallet.slice(0, 10)}... (total: ${sseClients.get(coldWallet).size})`);
+
+    // Heartbeat every 25s to keep connection alive through proxies
+    const heartbeat = setInterval(() => {
+        try { res.write(': heartbeat\n\n'); } catch (e) { clearInterval(heartbeat); }
+    }, 25000);
+
+    // Cleanup on disconnect
+    req.on('close', () => {
+        clearInterval(heartbeat);
+        const set = sseClients.get(coldWallet);
+        if (set) { set.delete(res); if (set.size === 0) sseClients.delete(coldWallet); }
+        console.log(`[SSE] Client disconnected: ${coldWallet.slice(0, 10)}...`);
+    });
+});
+
 const xlsx_ip = require('xlsx');
 const INSTANT_CONTRACT_ADDRESS = process.env.INSTANT_PAYMENT_CONTRACT_ADDRESS
     || '0x971da9d642C94f6B5E3867EC891FBA7ef8287d29'; // Polygon Mainnet proxy (public address)
@@ -2515,55 +2681,104 @@ app.post('/api/v1/instant/relayer/register', authenticateToken, async (req, res)
 
 // ── POST /api/v1/instant/transfer ──────────────────────────────────────────────
 // Accepts a transfer order from external clients. Auth: Bearer JWT or X-Api-Key.
+// Body MUST include cold_wallet_address — verified against the API key owner.
 app.post('/api/v1/instant/transfer', authApiKeyOrJWT, async (req, res) => {
+
+    // ── A. Capture request context immediately (before any early return) ────────
+    const clientIp = (req.headers['x-forwarded-for']?.split(',')[0]?.trim())
+        || req.ip || req.socket?.remoteAddress || 'unknown';
+    const SENSITIVE = ['authorization', 'x-api-key', 'cookie', 'x-api-secret'];
+    const safeHeaders = Object.fromEntries(
+        Object.entries(req.headers).filter(([k]) => !SENSITIVE.includes(k.toLowerCase()))
+    );
+    const requestBody = req.body || {};
+    const coldWalletForLog = (req.user?.address || req.body?.cold_wallet_address || null);
+
+    // ── B. Helper: log + respond (used for ALL exit paths) ─────────────────────
+    const logAndRespond = (statusCode, responseJson, eventType = 'transfer.received', errorMsg = null) => {
+        // Non-blocking insert — never delays the HTTP response
+        pool.query(`
+            INSERT INTO instant_api_logs
+              (log_type, cold_wallet, transfer_id, event_type,
+               request_body, response_body, http_status, error_message, client_ip, request_headers)
+            VALUES ('api_request', $1, $2, $3, $4, $5, $6, $7, $8, $9)
+        `, [
+            coldWalletForLog?.toLowerCase() || null,
+            requestBody.transfer_id || null,
+            eventType,
+            JSON.stringify(requestBody),
+            JSON.stringify(responseJson),
+            statusCode,
+            errorMsg,
+            clientIp,
+            JSON.stringify(safeHeaders)
+        ]).catch(e => console.warn('[IP] api_log insert failed:', e.message));
+
+        return res.status(statusCode).json(responseJson);
+    };
+
     try {
         const funderAddress = req.user.address.toLowerCase();
-        const { transfer_id, destination_wallet, amount_usdc, webhook_url } = req.body;
+        const { transfer_id, cold_wallet_address, destination_wallet, amount_usdc, webhook_url } = requestBody;
 
+        // ── 1. cold_wallet_address is required ────────────────────────────────
+        if (!cold_wallet_address) {
+            return logAndRespond(400, { error: 'cold_wallet_address is required' }, 'transfer.rejected', 'cold_wallet_address missing');
+        }
+        if (!ethers.isAddress(cold_wallet_address)) {
+            return logAndRespond(400, { error: 'Invalid cold_wallet_address format' }, 'transfer.rejected', 'Invalid cold_wallet_address format');
+        }
+
+        // ── 2. Cross-check: cold_wallet_address must match the API key owner ─
+        if (cold_wallet_address.toLowerCase() !== funderAddress) {
+            console.warn(`[IP] cold_wallet_address mismatch: body=${cold_wallet_address} apiKey=${funderAddress}`);
+            return logAndRespond(403,
+                { error: 'cold_wallet_address does not match the API key owner', expected: funderAddress },
+                'transfer.rejected', 'cold_wallet_address mismatch');
+        }
+
+        // ── 3. Validate remaining required fields ─────────────────────────────
         if (!transfer_id || !destination_wallet || !amount_usdc) {
-            return res.status(400).json({ error: 'transfer_id, destination_wallet and amount_usdc are required' });
+            return logAndRespond(400, { error: 'transfer_id, destination_wallet and amount_usdc are required' }, 'transfer.rejected', 'Missing required fields');
         }
         if (!ethers.isAddress(destination_wallet)) {
-            return res.status(400).json({ error: 'Invalid destination_wallet address' });
+            return logAndRespond(400, { error: 'Invalid destination_wallet address' }, 'transfer.rejected', 'Invalid destination_wallet');
         }
         const amount = parseFloat(amount_usdc);
         if (isNaN(amount) || amount <= 0) {
-            return res.status(400).json({ error: 'amount_usdc must be a positive number' });
+            return logAndRespond(400, { error: 'amount_usdc must be a positive number' }, 'transfer.rejected', 'Invalid amount_usdc');
         }
 
-        // Check idempotency
+        // ── 4. Idempotency check ──────────────────────────────────────────────
         const existing = await pool.query(
             'SELECT transfer_id, status, tx_hash FROM instant_transfers WHERE transfer_id=$1',
             [transfer_id]
         );
         if (existing.rows.length > 0) {
             const ex = existing.rows[0];
-            return res.status(409).json({
-                error: 'Transfer already exists',
-                transfer_id: ex.transfer_id,
-                status: ex.status,
-                tx_hash: ex.tx_hash
-            });
+            return logAndRespond(409,
+                { error: 'Transfer already exists', transfer_id: ex.transfer_id, status: ex.status, tx_hash: ex.tx_hash },
+                'transfer.duplicate', `Duplicate transfer_id: ${transfer_id}`);
         }
 
-        // Check active policy
+        // ── 5. Check active policy ────────────────────────────────────────────
         const policy = await pool.query(
             'SELECT * FROM instant_policies WHERE cold_wallet=$1 AND is_active=true',
             [funderAddress]
         );
         if (policy.rows.length === 0) {
-            return res.status(402).json({ error: 'No active policy for this funder. Please activate a permit first.' });
+            return logAndRespond(402, { error: 'No active policy for this funder. Please activate a permit first.' }, 'transfer.rejected', 'No active policy');
         }
         const pol = policy.rows[0];
         const remaining = parseFloat(pol.total_amount) - parseFloat(pol.consumed_amount);
         if (amount > remaining) {
-            return res.status(402).json({ error: `Insufficient policy balance. Available: ${remaining.toFixed(6)} USDC` });
+            return logAndRespond(402, { error: `Insufficient policy balance. Available: ${remaining.toFixed(6)} USDC` }, 'transfer.rejected', 'Insufficient balance');
         }
         if (new Date(pol.deadline) < new Date()) {
-            return res.status(402).json({ error: 'Policy has expired. Please reactivate the permit.' });
+            return logAndRespond(402, { error: 'Policy has expired. Please reactivate the permit.' }, 'transfer.rejected', 'Policy expired');
         }
 
-        // Resolve webhook URL: body param → rbac_users default → null
+        // ── 6. Resolve webhook URL ────────────────────────────────────────────
         let effectiveWebhookUrl = webhook_url || null;
         if (!effectiveWebhookUrl) {
             const userRow = await pool.query(
@@ -2573,25 +2788,26 @@ app.post('/api/v1/instant/transfer', authApiKeyOrJWT, async (req, res) => {
             effectiveWebhookUrl = userRow.rows[0]?.webhook_default_url || null;
         }
 
-        // Insert transfer
-        const result = await pool.query(`
+        // ── 7. Insert transfer ────────────────────────────────────────────────
+        await pool.query(`
             INSERT INTO instant_transfers
               (transfer_id, funder_address, destination_wallet, amount_usdc, status, webhook_url)
             VALUES ($1, $2, $3, $4, 'pending', $5)
             RETURNING *
         `, [transfer_id, funderAddress, destination_wallet.toLowerCase(), amount, effectiveWebhookUrl]);
 
-        return res.status(201).json({
-            success: true,
-            transfer_id,
-            status: 'pending',
-            message: 'Transfer queued successfully'
-        });
+        const responseBody = { success: true, transfer_id, status: 'pending', message: 'Transfer queued successfully' };
+
+        console.log(`[IP] Transfer queued: id=${transfer_id} cold_wallet=${funderAddress} dest=${destination_wallet} amount=${amount} ip=${clientIp}`);
+        return logAndRespond(201, responseBody, 'transfer.received');
+
     } catch (err) {
         console.error('[IP] POST /transfer error:', err);
-        res.status(500).json({ error: err.message });
+        return logAndRespond(500, { error: err.message }, 'transfer.error', err.message);
     }
 });
+
+
 
 // ── GET /api/v1/instant/transfers ──────────────────────────────────────────────
 app.get('/api/v1/instant/transfers', authApiKeyOrJWT, async (req, res) => {
@@ -3217,6 +3433,72 @@ app.delete('/api/v1/instant/admin/key', authenticateToken, async (req, res) => {
 // END API KEYS
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// ── GET /api/v1/instant/logs — SUPER_ADMIN only ────────────────────────────────
+// Returns paginated, filterable unified log of API requests + webhook deliveries.
+app.get('/api/v1/instant/logs', authenticateToken, async (req, res) => {
+    if (req.user.role !== 'SUPER_ADMIN') {
+        return res.status(403).json({ error: 'Access denied. SUPER_ADMIN only.' });
+    }
+    try {
+        const {
+            type,         // 'api_request' | 'webhook_sent' | undefined (all)
+            date_from,
+            date_to,
+            cold_wallet,
+            transfer_id,
+            http_status,
+            only_errors,
+            page = 1,
+            limit = 50
+        } = req.query;
+
+        const conditions = [];
+        const params = [];
+        let i = 1;
+
+        if (type && type !== 'all') { conditions.push(`log_type = $${i++}`); params.push(type); }
+        if (date_from) { conditions.push(`created_at >= $${i++}`); params.push(date_from); }
+        if (date_to) { conditions.push(`created_at < ($${i++}::date + interval '1 day')`); params.push(date_to); }
+        if (cold_wallet) { conditions.push(`LOWER(cold_wallet) LIKE $${i++}`); params.push(`%${cold_wallet.toLowerCase()}%`); }
+        if (transfer_id) { conditions.push(`transfer_id = $${i++}`); params.push(transfer_id); }
+        if (http_status) { conditions.push(`http_status::text LIKE $${i++}`); params.push(`${http_status}%`); }
+        if (only_errors === 'true') { conditions.push(`(http_status >= 400 OR delivered = false)`); }
+
+        const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+        const offset = (Math.max(1, parseInt(page)) - 1) * parseInt(limit);
+
+        const countRes = await pool.query(
+            `SELECT COUNT(*) FROM instant_api_logs ${where}`, params
+        );
+        const total = parseInt(countRes.rows[0].count);
+
+        const logsRes = await pool.query(
+            `SELECT id, log_type, cold_wallet, transfer_id, event_type,
+                    request_body, response_body, webhook_url, webhook_payload,
+                    http_status, delivered, error_message, created_at,
+                    client_ip, request_headers
+             FROM instant_api_logs
+             ${where}
+             ORDER BY created_at DESC
+             LIMIT $${i++} OFFSET $${i++}`,
+            [...params, parseInt(limit), offset]
+        );
+
+        return res.json({
+            logs: logsRes.rows,
+            pagination: {
+                total,
+                page: parseInt(page),
+                limit: parseInt(limit),
+                totalPages: Math.ceil(total / parseInt(limit))
+            }
+        });
+    } catch (err) {
+        console.error('[IP] GET /logs error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // ─── Initialize Instant Relayer Engine ────────────────────────────────────────
 
 if (INSTANT_CONTRACT_ADDRESS) {
@@ -3225,7 +3507,8 @@ if (INSTANT_CONTRACT_ADDRESS) {
         rpcManager: globalRpcManager,
         contractAddress: INSTANT_CONTRACT_ADDRESS,
         faucetService,
-        encryption: null
+        encryption: null,
+        notifyInstantEvent // inject SSE notifier so relayer can push live updates
     });
     // Start after DB is ready
     setTimeout(() => instantRelayer.start(), 8000);
@@ -3236,6 +3519,7 @@ if (INSTANT_CONTRACT_ADDRESS) {
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // END INSTANT PAYMENT API
+
 // ═══════════════════════════════════════════════════════════════════════════════
 
 app.listen(PORT_LISTEN, () => {
