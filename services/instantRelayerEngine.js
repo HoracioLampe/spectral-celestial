@@ -149,13 +149,26 @@ class InstantRelayerEngine {
 
             console.log(`[InstantRelayer] Sending transfer ${transfer_id} | ${amount_usdc} USDC → ${destination_wallet} | Nonce: ${nonce} | Attempt: ${attempt_count}`);
 
+            // Dynamic gas estimation (+30% buffer). If estimateGas fails the TX would revert anyway.
+            let gasLimit = GAS_LIMIT_INSTANT; // fallback
+            try {
+                const estimated = await contract.executeTransfer.estimateGas(
+                    transferIdBytes, funder_address, destination_wallet, amountRaw
+                );
+                gasLimit = (estimated * 130n) / 100n; // +30% safety buffer
+                console.log(`[InstantRelayer] Estimated gas: ${estimated} → using ${gasLimit}`);
+            } catch (estimateErr) {
+                console.warn(`[InstantRelayer] estimateGas failed (TX will likely revert): ${estimateErr.message}`);
+                throw estimateErr; // surface immediately — don't waste faucet gas on a doomed TX
+            }
+
             const tx = await contract.executeTransfer(
                 transferIdBytes,
                 funder_address,
                 destination_wallet,
                 amountRaw,
                 {
-                    gasLimit: GAS_LIMIT_INSTANT,
+                    gasLimit,
                     maxFeePerGas,
                     maxPriorityFeePerGas,
                     nonce,
