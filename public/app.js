@@ -4037,6 +4037,7 @@ function ipConnectSSE() {
         ipEventSource = new EventSource(url);
         ipEventSource.onopen = () => {
             console.log('[SSE] Connected — live DB subscription active');
+            ipSetLiveBadge(true);
             ipStopTransferPolling();
         };
         ipEventSource.onmessage = (e) => {
@@ -4059,12 +4060,29 @@ function ipConnectSSE() {
             console.warn('[SSE] disconnected — reconnecting in 5s');
             ipEventSource?.close();
             ipEventSource = null;
+            ipSetLiveBadge(false);
             ipStartTransferPolling(); // fallback during outage
             setTimeout(ipConnectSSE, 5000);
         };
     } catch (err) {
         console.warn('[SSE] not available:', err.message);
+        ipSetLiveBadge(false);
         ipStartTransferPolling();
+    }
+}
+
+// Badge indicator: 🟢 LIVE when SSE ok, 🔴 Polling when fallback
+function ipSetLiveBadge(live) {
+    let badge = document.getElementById('ipLiveBadge');
+    if (!badge) return;
+    if (live) {
+        badge.textContent = '🟢 LIVE';
+        badge.style.color = '#4ade80';
+        badge.title = 'Actualiza en tiempo real vía DB subscription';
+    } else {
+        badge.textContent = '🔴 Polling';
+        badge.style.color = '#f59e0b';
+        badge.title = 'SSE desconectado — actualizando cada 8s';
     }
 }
 
@@ -4184,7 +4202,7 @@ function ipStartTransferPolling() {
         const rows = document.querySelectorAll('#ipTransfersBody tr');
         const hasActive = Array.from(rows).some(r => r.textContent.includes('Processing') || r.textContent.includes('Pending'));
         if (hasActive) {
-            await ipLoadTransfers(ipCurrentPage);
+            await ipLoadTransfers(ipCurrentPage, true); // silent: no 'Cargando...' flash
         } else {
             ipStopTransferPolling();
         }
@@ -4198,7 +4216,7 @@ function ipStopTransferPolling() {
     }
 }
 
-async function ipLoadTransfers(page) {
+async function ipLoadTransfers(page, silent = false) {
     ipCurrentPage = page || 1;
 
     const status = document.getElementById('ipFilterStatus')?.value || 'ALL';
@@ -4215,7 +4233,8 @@ async function ipLoadTransfers(page) {
     if (amount) params.append('amount', amount);
 
     const tbody = document.getElementById('ipTransfersBody');
-    if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; opacity:0.6;">Cargando...</td></tr>';
+    // Only show loading spinner on explicit (non-silent) loads
+    if (!silent && tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; opacity:0.6;">Cargando...</td></tr>';
 
     try {
         const res = await authenticatedFetch(`/api/v1/instant/transfers?${params.toString()}`);
