@@ -79,6 +79,13 @@ class InstantRelayerEngine {
         try {
             await client.query('BEGIN');
 
+            // Clean up any 'pending' transfers that already hit max retries (e.g. after server restart)
+            await client.query(`
+                UPDATE instant_transfers
+                SET status='failed', error_message=COALESCE(error_message, 'Max retries exceeded'), updated_at=NOW()
+                WHERE status = 'pending' AND attempt_count >= $1
+            `, [MAX_RETRIES]);
+
             // Take one pending transfer with row lock (SKIP LOCKED = no blocking)
             const { rows } = await client.query(`
                 SELECT * FROM instant_transfers
@@ -89,7 +96,7 @@ class InstantRelayerEngine {
             `, [MAX_RETRIES]);
 
             if (rows.length === 0) {
-                await client.query('ROLLBACK');
+                await client.query('COMMIT');
                 return;
             }
 
