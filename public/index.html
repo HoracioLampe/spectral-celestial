@@ -686,23 +686,27 @@
                                 Excel</button>
                         </div>
 
-                        <!-- Filters -->
-                        <div style="display:flex; flex-wrap:wrap; gap:0.75rem; margin-bottom:1rem;">
-                            <select id="ipFilterStatus" class="input-glass" style="width:160px;">
+                        <!-- Filters — horizontal, same order as batch detail grid -->
+                        <div
+                            style="display:flex; flex-wrap:nowrap; align-items:center; gap:0.5rem; margin-bottom:1rem; overflow-x:auto; padding-bottom:2px;">
+                            <select id="ipFilterStatus" class="input-glass" style="min-width:140px;">
                                 <option value="ALL">Todos los estados</option>
                                 <option value="pending">Pending</option>
                                 <option value="processing">Processing</option>
                                 <option value="confirmed">Confirmed</option>
                                 <option value="failed">Failed</option>
                             </select>
-                            <input id="ipFilterDateFrom" type="date" class="input-glass" placeholder="Desde">
-                            <input id="ipFilterDateTo" type="date" class="input-glass" placeholder="Hasta">
+                            <input id="ipFilterDateFrom" type="date" class="input-glass" placeholder="Desde"
+                                style="min-width:140px;">
+                            <input id="ipFilterDateTo" type="date" class="input-glass" placeholder="Hasta"
+                                style="min-width:140px;">
                             <input id="ipFilterWallet" type="text" class="input-glass" placeholder="Wallet destino..."
-                                style="width:200px;">
+                                style="min-width:180px; flex:1;">
                             <input id="ipFilterAmount" type="number" class="input-glass" placeholder="Monto USDC"
-                                style="width:130px;">
-                            <button class="btn btn-glass" onclick="ipLoadTransfers(1)">🔍 Filtrar</button>
-                            <button class="btn btn-glass" onclick="ipClearFilters()">✖</button>
+                                style="min-width:110px;">
+                            <button class="btn btn-glass" onclick="ipLoadTransfers(1)" style="white-space:nowrap;">🔍
+                                Filtrar</button>
+                            <button class="btn btn-glass" onclick="ipClearFilters()" title="Limpiar filtros">✖</button>
                         </div>
 
                         <div class="table-container">

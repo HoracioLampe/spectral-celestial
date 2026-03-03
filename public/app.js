@@ -3825,14 +3825,72 @@ window.ipActivatePolicy = async () => {
             await new Promise(r => setTimeout(r, 1200));
         }
 
-        // ── PASO 2: Activar política (llamado desde el faucet, no MetaMask) ──
-        statusEl.textContent = '⏳ Activando política de pago...';
+        // ── PASO 2: EIP-2612 Permit — cold wallet firma off-chain (NO paga gas) ──
+        // El faucet llama USDC.permit() on-chain con esta firma, pagando él el gas.
+        statusEl.textContent = '⏳ Verificando allowance de USDC...';
+        statusEl.style.color = '#60a5fa';
+
+        const contractAddress = statusData.contractAddress;
+        const USDC_ADDRESS = '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359';
+        const USDC_READ_ABI = [
+            'function nonces(address owner) view returns (uint256)',
+            'function allowance(address owner, address spender) view returns (uint256)',
+        ];
+
+        let permitSigData = null;
+        try {
+            if (!signer) throw new Error('Conectá MetaMask primero');
+            const usdcRead = new ethers.Contract(USDC_ADDRESS, USDC_READ_ABI, signer.provider || signer);
+            const signerAddr = await signer.getAddress();
+            const totalRaw = ethers.parseUnits(amount.toString(), 6);
+            const currentAllow = await usdcRead.allowance(signerAddr, contractAddress);
+
+            if (currentAllow < totalRaw) {
+                statusEl.textContent = '🦊 MetaMask: firmá el permiso USDC (sin costo de gas)...';
+                statusEl.style.color = '#f59e0b';
+
+                const permitNonce = await usdcRead.nonces(signerAddr);
+                const permitDeadline = deadlineUnix + 86400;
+
+                const rawSig = await signer.signTypedData(
+                    { name: 'USD Coin', version: '2', chainId: 137, verifyingContract: USDC_ADDRESS },
+                    {
+                        Permit: [
+                            { name: 'owner', type: 'address' },
+                            { name: 'spender', type: 'address' },
+                            { name: 'value', type: 'uint256' },
+                            { name: 'nonce', type: 'uint256' },
+                            { name: 'deadline', type: 'uint256' },
+                        ]
+                    },
+                    {
+                        owner: signerAddr, spender: contractAddress, value: totalRaw,
+                        nonce: permitNonce, deadline: permitDeadline
+                    }
+                );
+                const { v, r, s } = ethers.Signature.from(rawSig);
+                permitSigData = { v, r, s, deadline: permitDeadline, owner: signerAddr, value: totalRaw.toString() };
+                statusEl.textContent = '✅ Permiso USDC firmado. El faucet lo ejecutará on-chain...';
+                statusEl.style.color = '#10b981';
+                await new Promise(r2 => setTimeout(r2, 800));
+            } else {
+                statusEl.textContent = `✅ Allowance ya suficiente (${ethers.formatUnits(currentAllow, 6)} USDC)`;
+                await new Promise(r2 => setTimeout(r2, 600));
+            }
+        } catch (permitErr) {
+            statusEl.textContent = '❌ Error firmando permiso USDC: ' + permitErr.message;
+            statusEl.style.color = '#ef4444';
+            return;
+        }
+
+        // ── PASO 3: Backend activa política + ejecuta USDC.permit() desde el faucet ──
+        statusEl.textContent = '⏳ Activando política (el faucet paga el gas)...';
         statusEl.style.color = '#60a5fa';
 
         const res = await authenticatedFetch('/api/v1/instant/policy/activate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ totalAmountUsdc: amount, deadlineUnix })
+            body: JSON.stringify({ totalAmountUsdc: amount, deadlineUnix, permitSig: permitSigData })
         });
         const data = await res.json();
 
@@ -3852,6 +3910,7 @@ window.ipActivatePolicy = async () => {
         statusEl.style.color = '#ef4444';
     }
 };
+
 
 window.ipResetPolicy = async (btn) => {
     if (!confirm('¿Estás seguro de desactivar la política? Se detendrán los pagos instantáneos inmediatamente (vía Servidor/Faucet).')) return;
@@ -3983,17 +4042,26 @@ async function ipLoadTransfers(page) {
 
         if (tbody) {
             tbody.innerHTML = data.transfers.map(t => {
-                const shortId = t.transfer_id.slice(0, 8) + '...';
-                const shortDst = t.destination_wallet ? `${t.destination_wallet.slice(0, 6)}...${t.destination_wallet.slice(-4)}` : '—';
+                // Transfer ID — completo, con botón copiar
+                const txIdShort = t.transfer_id.slice(0, 18) + '...';
+                const shortDst = t.destination_wallet
+                    ? `${t.destination_wallet.slice(0, 6)}...${t.destination_wallet.slice(-4)}` : '—';
+                const scanUrl = `https://polygonscan.com/address/${t.destination_wallet}`;
                 const txLink = t.tx_hash
-                    ? `<a href="https://polygonscan.com/tx/${t.tx_hash}" target="_blank" class="hash-link">${t.tx_hash.slice(0, 8)}...↗</a>`
+                    ? `<a href="https://polygonscan.com/tx/${t.tx_hash}" target="_blank" class="hash-link" title="${t.tx_hash}">${t.tx_hash.slice(0, 10)}...↗</a>`
                     : '—';
                 const date = t.created_at ? new Date(t.created_at).toLocaleString() : '—';
                 const badge = ipStatusBadge(t.status);
                 return `<tr>
-                    <td style="font-family:monospace; font-size:0.8rem;" title="${t.transfer_id}">${shortId}</td>
-                    <td style="font-family:monospace; font-size:0.85rem;" title="${t.destination_wallet}">${shortDst}</td>
-                    <td style="font-weight:600; color:#4ade80;">${parseFloat(t.amount_usdc).toFixed(6)}</td>
+                    <td style="font-family:monospace; font-size:0.8rem; white-space:nowrap;" title="${t.transfer_id}">
+                        ${txIdShort}
+                        <button class="btn-icon" onclick="copyToClipboard('${t.transfer_id}')" title="Copiar ID">📋</button>
+                    </td>
+                    <td style="font-family:monospace; font-size:0.85rem; display:flex; align-items:center; gap:0.4rem;">
+                        <a href="${scanUrl}" target="_blank" class="hash-link" title="${t.destination_wallet}">${shortDst}</a>
+                        <button class="btn-icon" onclick="copyToClipboard('${t.destination_wallet}')" title="Copiar Dirección">📋</button>
+                    </td>
+                    <td style="font-weight:600; color:#4ade80;">$${parseFloat(t.amount_usdc).toFixed(6)}</td>
                     <td>${badge}</td>
                     <td style="font-family:monospace; font-size:0.8rem;">${txLink}</td>
                     <td style="font-size:0.8rem; color:#94a3b8;">${date}</td>
@@ -4008,14 +4076,22 @@ async function ipLoadTransfers(page) {
 }
 
 function ipStatusBadge(status) {
-    const map = {
-        pending: { label: 'Pending', cls: 'ip-badge-pending' },
-        processing: { label: 'Processing', cls: 'ip-badge-processing' },
-        confirmed: { label: 'Confirmed', cls: 'ip-badge-confirmed' },
-        failed: { label: 'Failed', cls: 'ip-badge-failed' },
+    // Same color system as batch transactions (badge with background color)
+    const colors = {
+        pending: '#3b82f6', // Blue
+        processing: '#8b5cf6', // Purple
+        confirmed: '#059669', // Green
+        failed: '#ef4444', // Red
     };
-    const s = map[status] || { label: status, cls: 'ip-badge-pending' };
-    return `<span class="ip-badge ${s.cls}">${s.label}</span>`;
+    const labels = {
+        pending: 'Pending',
+        processing: 'Processing',
+        confirmed: 'Confirmed',
+        failed: 'Failed',
+    };
+    const color = colors[status] || '#3b82f6';
+    const label = labels[status] || status;
+    return `<span class="badge" style="background:${color};">${label}</span>`;
 }
 
 window.ipClearFilters = () => {
