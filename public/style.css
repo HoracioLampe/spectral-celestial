@@ -354,7 +354,7 @@ body {
 /* Wrapper estructural de paneles — cada sección tiene su propio glass-panel */
 #mainBatchPanel {
     width: 100%;
-    max-width: 1100px;
+    max-width: 1100px;ok, vamsoi a especificar una api para instant payment : es una api backennd backend, mi un suitema mnaster slave, nosotros somos el slave, que a pedido de un sistema previamente autenticado, nos envía una orden de trealzar una transferencia en polygon pro orden de una colad wlalet que le dio el permit al contrato a una Address destinatario de esos USDC 
 }
 
 .sidebar {
