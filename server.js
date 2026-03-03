@@ -2378,7 +2378,8 @@ function getInstantContract(signerOrProvider) {
         'function registerRelayer(address coldWallet, address relayer, uint256 deadline, bytes calldata signature) external',
         'function coldWalletRelayer(address coldWallet) external view returns (address)',
         'function getRelayerNonce(address coldWallet) external view returns (uint256)',
-        // Policy
+        // Policy — V2: atomic permit + policy in one TX
+        'function activatePolicyWithPermit(address coldWallet, uint256 amount, uint256 deadline, uint8 v, bytes32 r, bytes32 s) external',
         'function activatePolicy(address coldWallet, uint256 totalAmount, uint256 deadline) external',
         'function resetPolicy(address coldWallet) external',
         'function getPolicyBalance(address coldWallet) external view returns (uint256, uint256, uint256, uint256, bool, bool)',
@@ -2391,8 +2392,9 @@ function getInstantContract(signerOrProvider) {
         // Admin
         'function pause() external',
         'function unpause() external',
-        // EIP-712 domain separator (for frontend)
+        // Version + EIP-712
         'function domainSeparator() external view returns (bytes32)',
+        'function version() external pure returns (string)',
     ];
     return new ethers.Contract(INSTANT_CONTRACT_ADDRESS, abi, signerOrProvider);
 }
@@ -2736,7 +2738,7 @@ app.post('/api/v1/instant/policy/activate', authenticateToken, async (req, res) 
             return res.status(400).json({ error: 'totalAmountUsdc and deadlineUnix are required' });
         }
         if (!INSTANT_CONTRACT_ADDRESS) {
-            return res.status(503).json({ error: 'Instant Payment contract not configured (INSTANT_PAYMENT_CONTRACT_ADDRESS)' });
+            return res.status(503).json({ error: 'Instant Payment contract not configured' });
         }
 
         const totalAmountRaw = ethers.parseUnits(totalAmountUsdc.toString(), 6);
@@ -2744,42 +2746,31 @@ app.post('/api/v1/instant/policy/activate', authenticateToken, async (req, res) 
 
         const provider = globalRpcManager.getProvider();
         const faucetWallet = await faucetService.getFaucetWallet(pool, provider, funderAddress);
+        const contract = getInstantContract(faucetWallet.connect(provider));
 
-        // ── Step 1: If permitSig provided, faucet calls USDC.permit() to set allowance ──
-        // This avoids the cold wallet paying gas for ERC-20 approve.
-        let permitTxHash = null;
+        let tx;
         if (permitSig && permitSig.v && permitSig.r && permitSig.s) {
-            const USDC_ADDRESS = '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359';
-            const USDC_PERMIT_ABI = [
-                'function permit(address owner, address spender, uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s) external',
-            ];
-            const usdcContract = new ethers.Contract(USDC_ADDRESS, USDC_PERMIT_ABI, faucetWallet.connect(provider));
-            try {
-                const permitTx = await usdcContract.permit(
-                    permitSig.owner,
-                    INSTANT_CONTRACT_ADDRESS,
-                    BigInt(permitSig.value),
-                    BigInt(permitSig.deadline),
-                    permitSig.v,
-                    permitSig.r,
-                    permitSig.s,
-                    { gasLimit: 100000 }
-                );
-                await permitTx.wait(1);
-                permitTxHash = permitTx.hash;
-                console.log(`[IP] USDC.permit() executed by faucet. TX: ${permitTxHash}`);
-            } catch (permitErr) {
-                console.error('[IP] USDC.permit() failed:', permitErr.message);
-                return res.status(500).json({ error: 'USDC permit failed: ' + permitErr.message });
-            }
+            // ── V2: atomic — USDC.permit() + activatePolicy in ONE TX ──────────
+            // The contract calls usdcToken.permit() internally, then sets the policy.
+            // No separate USDC.permit() TX needed. Faucet pays gas for everything.
+            console.log(`[IP] activatePolicyWithPermit (V2 atomic): funder=${funderAddress}, amount=${totalAmountUsdc} USDC, deadline=${deadline}`);
+            tx = await contract.activatePolicyWithPermit(
+                funderAddress,
+                totalAmountRaw,
+                BigInt(deadline),
+                permitSig.v,
+                permitSig.r,
+                permitSig.s,
+                { gasLimit: 350000 }
+            );
+        } else {
+            // ── Legacy: no permit sig — allowance must already be set ────────
+            console.log(`[IP] activatePolicy (legacy): funder=${funderAddress}, amount=${totalAmountUsdc} USDC`);
+            tx = await contract.activatePolicy(funderAddress, totalAmountRaw, BigInt(deadline), { gasLimit: 250000 });
         }
 
-        // ── Step 2: Faucet calls activatePolicy() on InstantPayment contract ──
-        const contract = getInstantContract(faucetWallet.connect(provider));
-        const tx = await contract.activatePolicy(funderAddress, totalAmountRaw, deadline, {
-            gasLimit: 250000,
-        });
         await tx.wait(1);
+        console.log(`[IP] Policy activated. TX: ${tx.hash}`);
 
         // Upsert in DB
         await pool.query(`
@@ -2789,7 +2780,7 @@ app.post('/api/v1/instant/policy/activate', authenticateToken, async (req, res) 
             SET total_amount=$2, consumed_amount=0, deadline=to_timestamp($3), is_active=true, updated_at=NOW()
         `, [funderAddress, parseFloat(totalAmountUsdc), deadline, INSTANT_CONTRACT_ADDRESS]);
 
-        res.json({ success: true, tx_hash: tx.hash, permit_tx_hash: permitTxHash, message: 'Policy activated successfully' });
+        res.json({ success: true, tx_hash: tx.hash, message: 'Policy activated successfully (V2 atomic)' });
     } catch (err) {
         console.error('[IP] POST /policy/activate error:', err);
         res.status(500).json({ error: err.message });

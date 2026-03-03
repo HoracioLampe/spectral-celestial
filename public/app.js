@@ -3855,7 +3855,9 @@ window.ipActivatePolicy = async () => {
                 statusEl.style.color = '#f59e0b';
 
                 const permitNonce = await usdcRead.nonces(signerAddr);
-                const permitDeadline = deadlineUnix + 86400;
+                // V2: permitDeadline = deadlineUnix (same deadline for permit AND policy)
+                // activatePolicyWithPermit uses ONE deadline for both.
+                const permitDeadline = deadlineUnix;
 
                 const rawSig = await signer.signTypedData(
                     { name: 'USD Coin', version: '2', chainId: 137, verifyingContract: USDC_ADDRESS },
@@ -3888,8 +3890,9 @@ window.ipActivatePolicy = async () => {
             return;
         }
 
-        // ── PASO 3: Backend activa política + ejecuta USDC.permit() desde el faucet ──
-        statusEl.textContent = '⏳ Activando política (el faucet paga el gas)...';
+        // ── PASO 3: Backend llama activatePolicyWithPermit (V2 atómica) ──
+        // Una sola TX del faucet: USDC.permit() + activatePolicy en un solo call.
+        statusEl.textContent = '⏳ Activando política (1 TX atómica — el faucet paga el gas)...';
         statusEl.style.color = '#60a5fa';
 
         const res = await authenticatedFetch('/api/v1/instant/policy/activate', {
