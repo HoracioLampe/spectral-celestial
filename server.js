@@ -2977,20 +2977,30 @@ app.get('/api/v1/instant/transfers/export', authApiKeyOrJWT, async (req, res) =>
     try {
         const funderAddress = req.user.address.toLowerCase();
         const isAdmin = req.user.role === 'SUPER_ADMIN';
-        const { status, date_from, date_to, wallet } = req.query;
+        const { status, date_from, date_to, wallet, tz } = req.query;
+        // Timezone for date display (user's IANA timezone, e.g. 'America/Argentina/Buenos_Aires')
+        const userTz = (tz && tz.length < 60) ? tz : 'UTC';
 
         let where = 'WHERE 1=1';
         const params = [];
         if (!isAdmin) { params.push(funderAddress); where += ` AND funder_address=$${params.length}`; }
         if (status && status !== 'ALL') { params.push(status); where += ` AND status=$${params.length}`; }
-        if (date_from) { params.push(date_from); where += ` AND created_at >= $${params.length}::date`; }
-        if (date_to) { params.push(date_to); where += ` AND created_at < ($${params.length}::date + INTERVAL '1 day')`; }
+        if (date_from) { params.push(date_from); where += ` AND created_at >= $${params.length}::timestamptz`; }
+        if (date_to) { params.push(date_to); where += ` AND created_at <= $${params.length}::timestamptz`; }
         if (wallet) { params.push(`%${wallet.toLowerCase()}%`); where += ` AND destination_wallet LIKE $${params.length}`; }
 
         const { rows } = await pool.query(
             `SELECT transfer_id, funder_address, destination_wallet, amount_usdc, status, tx_hash, attempt_count, created_at, confirmed_at, error_message FROM instant_transfers ${where} ORDER BY created_at DESC`,
             params
         );
+
+        // Format date in user's timezone (24h clock, es-AR locale)
+        const fmtDate = (d) => {
+            if (!d) return '';
+            try {
+                return new Date(d).toLocaleString('es-AR', { timeZone: userTz, hour12: false });
+            } catch { return new Date(d).toISOString(); }
+        };
 
         const ws = xlsx_ip.utils.json_to_sheet(rows.map(r => ({
             'Transfer ID': r.transfer_id,
@@ -3000,8 +3010,8 @@ app.get('/api/v1/instant/transfers/export', authApiKeyOrJWT, async (req, res) =>
             'Estado': r.status,
             'TX Hash': r.tx_hash || '',
             'Intentos': r.attempt_count,
-            'Creado': r.created_at ? new Date(r.created_at).toISOString() : '',
-            'Confirmado': r.confirmed_at ? new Date(r.confirmed_at).toISOString() : '',
+            'Creado': fmtDate(r.created_at),
+            'Confirmado': fmtDate(r.confirmed_at),
             'Error': r.error_message || ''
         })));
         const wb = xlsx_ip.utils.book_new();

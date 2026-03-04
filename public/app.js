@@ -4410,9 +4410,11 @@ window.ipExportExcel = async () => {
 
     const params = new URLSearchParams();
     if (status && status !== 'ALL') params.append('status', status);
-    if (dateFrom) params.append('date_from', dateFrom);
-    if (dateTo) params.append('date_to', dateTo);
+    if (dateFrom) params.append('date_from', toUTCBounds(dateFrom, false));
+    if (dateTo) params.append('date_to', toUTCBounds(dateTo, true));
     if (wallet) params.append('wallet', wallet);
+    // Pass user timezone so the server formats dates correctly in the Excel file
+    params.append('tz', USER_TIMEZONE || 'UTC');
 
     try {
         const res = await authenticatedFetch(`/api/v1/instant/transfers/export?${params.toString()}`);
