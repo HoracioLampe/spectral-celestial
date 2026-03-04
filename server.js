@@ -67,6 +67,17 @@ pool.on('error', (err, client) => {
     console.error('❌ Unexpected Error on Idle DB Client:', err.message);
 });
 
+// ── Global crash guard ────────────────────────────────────────────────────────
+// pg (and connect-pg-simple's internal pool) emit 'error' events on idle
+// clients when Railway's load-balancer resets a TCP connection. Without these
+// handlers, Node exits with code 1. We log and keep running instead.
+process.on('uncaughtException', (err) => {
+    console.error('[Process] ⚠️ uncaughtException — keeping server alive:', err.message);
+});
+process.on('unhandledRejection', (reason) => {
+    console.error('[Process] ⚠️ unhandledRejection — keeping server alive:', reason?.message || reason);
+});
+
 // AUTO-CREATE SESSION TABLE (Resilient with Retry for Railway Private Network)
 const initSessionTable = async (maxRetries = 5, delayMs = 2000) => {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
