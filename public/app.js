@@ -4038,6 +4038,11 @@ function ipConnectSSE() {
         ipEventSource.onopen = () => {
             console.log('[SSE] Connected — live DB subscription active');
             ipSetLiveBadge(true);
+            // Delayed sync: catches PG NOTIFY events that fired while the SSE
+            // HTTP connection was still being established (before client was in sseClients).
+            // The STATUS_RANK guard in ipPatchTransferRow prevents this from
+            // ever downgrading a row already advanced by a live SSE event.
+            setTimeout(() => ipLoadTransfers(ipCurrentPage, true), 800);
         };
         ipEventSource.onmessage = (e) => {
             try {
