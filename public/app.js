@@ -4055,6 +4055,10 @@ function ipConnectSSE() {
                     if (!updated && ev.type === 'transfer.received') {
                         ipPrependTransferRow(ev);
                     }
+                    // Refresh policy stats (Consumido / Disponible) when transfer settles
+                    if (ev.type === 'transfer.confirmed' || ev.type === 'transfer.failed') {
+                        ipLoadPolicy();
+                    }
                 }
             } catch (err) { console.warn('[SSE] parse error:', err); }
         };
