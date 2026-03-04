@@ -4038,9 +4038,6 @@ function ipConnectSSE() {
         ipEventSource.onopen = () => {
             console.log('[SSE] Connected — live DB subscription active');
             ipSetLiveBadge(true);
-            ipStopTransferPolling(); // kill any leftover polling
-            // Sync table with current DB state (catches transfers that arrived before SSE connected)
-            ipLoadTransfers(ipCurrentPage, true);
         };
         ipEventSource.onmessage = (e) => {
             try {
@@ -4093,7 +4090,7 @@ function ipSetLiveBadge(live) {
 
 function ipDisconnectSSE() {
     if (ipEventSource) { ipEventSource.close(); ipEventSource = null; }
-    ipStopTransferPolling();
+    ipSetLiveBadge(false);
 }
 
 // ── ipPatchTransferRow — updates badge + tiempo + tx_hash + intentos in-place
@@ -4208,27 +4205,11 @@ function ipProcessingTime(createdAt, confirmedAt, status) {
     return `<span style="color:${color}; font-weight:600;">${label}</span>`;
 }
 
-// ─── Polling fallback ─────────────────────────────────────────────────────────
+// ─── Polling DISABLED — SSE is the only live-update path ─────────────────────
 let ipTransfersPollInterval = null;
-
-function ipStartTransferPolling() {
-    ipStopTransferPolling();
-    ipTransfersPollInterval = setInterval(async () => {
-        const rows = document.querySelectorAll('#ipTransfersBody tr');
-        const hasActive = Array.from(rows).some(r => r.textContent.includes('Processing') || r.textContent.includes('Pending'));
-        if (hasActive) {
-            await ipLoadTransfers(ipCurrentPage, true); // silent: no 'Cargando...' flash
-        } else {
-            ipStopTransferPolling();
-        }
-    }, 8000);
-}
-
+function ipStartTransferPolling() { /* DISABLED — do not re-enable, use SSE */ }
 function ipStopTransferPolling() {
-    if (ipTransfersPollInterval) {
-        clearInterval(ipTransfersPollInterval);
-        ipTransfersPollInterval = null;
-    }
+    if (ipTransfersPollInterval) { clearInterval(ipTransfersPollInterval); ipTransfersPollInterval = null; }
 }
 
 async function ipLoadTransfers(page, silent = false) {
