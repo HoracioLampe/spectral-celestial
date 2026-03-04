@@ -359,6 +359,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
             if (payload.role === 'OPERATOR' || payload.role === 'SUPER_ADMIN') {
                 document.getElementById('navConnections')?.classList.remove('hidden');
+                document.getElementById('navInstantLogs')?.classList.remove('hidden');
             }
 
             if (payload.role === 'REGISTERED') {
@@ -702,9 +703,10 @@ async function connectWallet() {
                             if (navAdmin) navAdmin.classList.add('hidden');
                             if (adminRescueFunds) adminRescueFunds.classList.add('hidden');
                             document.getElementById('navContractAdmin')?.classList.add('hidden');
-                            // OPERATOR also sees Connections Admin
+                            // OPERATOR also sees Connections Admin + own Webhook Logs
                             if (role === 'OPERATOR') {
                                 document.getElementById('navConnections')?.classList.remove('hidden');
+                                document.getElementById('navInstantLogs')?.classList.remove('hidden');
                             }
                         }
 

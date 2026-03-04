@@ -338,8 +338,32 @@ class InstantRelayerEngine {
             ...data
         });
 
-        // ── Webhook delivery ─────────────────────────────────────────────────
-        if (!transfer.webhook_url) return;
+        // ── Webhook delivery ──────────────────────────────────────────────────
+        // 1. Resolve the destination URL:
+        //    a) URL passed in the transfer record (from POST /transfer body)
+        //    b) Fallback: webhook_default_url registered for the funder in rbac_users
+        // 2. Resolve signing secret (per-wallet AES-256-GCM, fallback to env var)
+        // Both resolved in ONE query to avoid two round-trips.
+        let webhookUrl = transfer.webhook_url || null;
+        let signingSecret = process.env.WEBHOOK_SECRET || 'instant-webhook-secret';
+
+        try {
+            const { rows: userRow } = await this.pool.query(
+                'SELECT webhook_default_url, webhook_secret_enc FROM rbac_users WHERE address=$1',
+                [coldWallet.toLowerCase()]
+            );
+            if (userRow[0]) {
+                if (!webhookUrl && userRow[0].webhook_default_url) {
+                    webhookUrl = userRow[0].webhook_default_url;
+                    console.log(`[InstantRelayer] Using registered webhook URL for ${coldWallet}: ${webhookUrl}`);
+                }
+                if (userRow[0].webhook_secret_enc) {
+                    signingSecret = encryptionService.decrypt(userRow[0].webhook_secret_enc);
+                }
+            }
+        } catch (_) { /* non-blocking — falls back to transfer URL and global secret */ }
+
+        if (!webhookUrl) return; // No URL at all — skip webhook
 
         const payload = {
             event: eventType,
@@ -367,20 +391,9 @@ class InstantRelayerEngine {
         } catch (_) { /* non-blocking — payload sent without enrichment */ }
 
         let attempt = 0;
-        // Resolve signing secret: per-wallet AES-256-GCM from DB, fallback to global env var
-        let signingSecret = process.env.WEBHOOK_SECRET || 'instant-webhook-secret';
-        try {
-            const { rows: userRow } = await this.pool.query(
-                'SELECT webhook_secret_enc FROM rbac_users WHERE address=$1',
-                [transfer.funder_address.toLowerCase()]
-            );
-            if (userRow[0]?.webhook_secret_enc) {
-                signingSecret = encryptionService.decrypt(userRow[0].webhook_secret_enc);
-            }
-        } catch (_) { /* non-blocking — falls back to global secret */ }
-
         let delivered = false;
         let lastError = '';
+        let httpStatus = null;
 
         while (attempt < WEBHOOK_MAX_RETRIES && !delivered) {
             attempt++;
@@ -392,7 +405,7 @@ class InstantRelayerEngine {
                     .update(ts + body)
                     .digest('hex');
 
-                const response = await fetch(transfer.webhook_url, {
+                const response = await fetch(webhookUrl, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -403,9 +416,10 @@ class InstantRelayerEngine {
                     signal: AbortSignal.timeout(10000)
                 });
 
+                httpStatus = response.status;
                 if (response.ok) {
                     delivered = true;
-                    console.log(`[InstantRelayer] Webhook delivered: ${eventType} → ${transfer.webhook_url}`);
+                    console.log(`[InstantRelayer] Webhook delivered: ${eventType} → ${webhookUrl} (${httpStatus})`);
                 } else {
                     lastError = `HTTP ${response.status}`;
                 }
@@ -439,14 +453,15 @@ class InstantRelayerEngine {
         this.pool.query(`
             INSERT INTO instant_api_logs
               (log_type, cold_wallet, transfer_id, event_type,
-               webhook_url, webhook_payload, delivered, error_message)
-            VALUES ('webhook_sent', $1, $2, $3, $4, $5, $6, $7)
+               webhook_url, webhook_payload, http_status, delivered, error_message)
+            VALUES ('webhook_sent', $1, $2, $3, $4, $5, $6, $7, $8)
         `, [
             coldWallet,
             transfer.transfer_id,
             eventType,
             transfer.webhook_url,
             JSON.stringify(payload),
+            httpStatus,
             delivered,
             delivered ? null : lastError
         ]).catch(e => console.warn('[InstantRelayer] api_log insert failed:', e.message));

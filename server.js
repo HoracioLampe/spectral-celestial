@@ -3544,11 +3544,14 @@ app.delete('/api/v1/instant/webhook/url', authenticateToken, async (req, res) =>
 // END WEBHOOK URL ABM
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// ── GET /api/v1/instant/logs — SUPER_ADMIN only ────────────────────────────────
+// ── GET /api/v1/instant/logs — SUPER_ADMIN (all) or OPERATOR (own webhooks) ────
 // Returns paginated, filterable unified log of API requests + webhook deliveries.
 app.get('/api/v1/instant/logs', authenticateToken, async (req, res) => {
-    if (req.user.role !== 'SUPER_ADMIN') {
-        return res.status(403).json({ error: 'Access denied. SUPER_ADMIN only.' });
+    const role = req.user.role;
+    const isSuperAdmin = role === 'SUPER_ADMIN';
+    const isOperator = role === 'OPERATOR';
+    if (!isSuperAdmin && !isOperator) {
+        return res.status(403).json({ error: 'Access denied. SUPER_ADMIN or OPERATOR only.' });
     }
     try {
         const {
@@ -3567,16 +3570,26 @@ app.get('/api/v1/instant/logs', authenticateToken, async (req, res) => {
         const params = [];
         let i = 1;
 
-        if (type && type !== 'all') { conditions.push(`log_type = $${i++}`); params.push(type); }
+        // OPERATOR: always scope to their own wallet + only webhook logs
+        if (isOperator) {
+            conditions.push(`LOWER(cold_wallet) = $${i++}`);
+            params.push(req.user.address.toLowerCase());
+            // Operators only see their own webhook_sent logs (not internal api_request logs)
+            if (!type || type === 'all') {
+                conditions.push(`log_type = 'webhook_sent'`);
+            }
+        }
+
+        if (type && type !== 'all' && isSuperAdmin) { conditions.push(`log_type = $${i++}`); params.push(type); }
         if (date_from) { conditions.push(`created_at >= $${i++}`); params.push(date_from); }
         if (date_to) { conditions.push(`created_at < ($${i++}::date + interval '1 day')`); params.push(date_to); }
-        if (cold_wallet) { conditions.push(`LOWER(cold_wallet) LIKE $${i++}`); params.push(`%${cold_wallet.toLowerCase()}%`); }
+        if (cold_wallet && isSuperAdmin) { conditions.push(`LOWER(cold_wallet) LIKE $${i++}`); params.push(`%${cold_wallet.toLowerCase()}%`); }
         if (transfer_id) { conditions.push(`transfer_id = $${i++}`); params.push(transfer_id); }
         if (http_status) { conditions.push(`http_status::text LIKE $${i++}`); params.push(`${http_status}%`); }
         if (only_errors === 'true') { conditions.push(`(http_status >= 400 OR delivered = false)`); }
 
         const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-        const safeLimit = Math.min(parseInt(limit) || 50, 200); // cap at 200 to prevent full-table extraction
+        const safeLimit = Math.min(parseInt(limit) || 50, 200);
         const offset = (Math.max(1, parseInt(page)) - 1) * safeLimit;
 
         const countRes = await pool.query(
@@ -3593,7 +3606,7 @@ app.get('/api/v1/instant/logs', authenticateToken, async (req, res) => {
              ${where}
              ORDER BY created_at DESC
              LIMIT $${i++} OFFSET $${i++}`,
-            [...params, parseInt(limit), offset]
+            [...params, safeLimit, offset]
         );
 
         return res.json({
@@ -3601,8 +3614,8 @@ app.get('/api/v1/instant/logs', authenticateToken, async (req, res) => {
             pagination: {
                 total,
                 page: parseInt(page),
-                limit: parseInt(limit),
-                totalPages: Math.ceil(total / parseInt(limit))
+                limit: safeLimit,
+                totalPages: Math.ceil(total / safeLimit)
             }
         });
     } catch (err) {
