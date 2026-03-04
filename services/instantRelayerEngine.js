@@ -34,8 +34,8 @@ const MAX_FEE_GWEI_FALLBACK = 500n;
 const PRIORITY_GWEI_FALLBACK = 50n;
 const GAS_BUMP_PERCENT = 20;     // +20% per retry
 const GAS_LIMIT_INSTANT = 250000n; // V2: increased from 120k (allowance check + consumedAmount write + transferFrom)
-const WEBHOOK_MAX_RETRIES = 5;
-const WEBHOOK_BASE_DELAY_MS = 1000;
+const WEBHOOK_MAX_RETRIES = parseInt(process.env.WEBHOOK_MAX_RETRIES || '5', 10); // default 5
+const WEBHOOK_BASE_DELAY_MS = parseInt(process.env.WEBHOOK_BASE_DELAY_MS || '1000', 10); // default 1s
 
 class InstantRelayerEngine {
     constructor({ pool, rpcManager, contractAddress, faucetService, encryption, notifyInstantEvent }) {
