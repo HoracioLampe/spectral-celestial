@@ -4038,7 +4038,9 @@ function ipConnectSSE() {
         ipEventSource.onopen = () => {
             console.log('[SSE] Connected — live DB subscription active');
             ipSetLiveBadge(true);
-            ipStopTransferPolling();
+            ipStopTransferPolling(); // kill any leftover polling
+            // Sync table with current DB state (catches transfers that arrived before SSE connected)
+            ipLoadTransfers(ipCurrentPage, true);
         };
         ipEventSource.onmessage = (e) => {
             try {
@@ -4061,13 +4063,12 @@ function ipConnectSSE() {
             ipEventSource?.close();
             ipEventSource = null;
             ipSetLiveBadge(false);
-            ipStartTransferPolling(); // fallback during outage
-            setTimeout(ipConnectSSE, 5000);
+            setTimeout(ipConnectSSE, 5000); // auto-reconnect only, no polling
         };
     } catch (err) {
         console.warn('[SSE] not available:', err.message);
         ipSetLiveBadge(false);
-        ipStartTransferPolling();
+        // No polling fallback — grid stays static until SSE reconnects
     }
 }
 
@@ -4091,17 +4092,23 @@ function ipDisconnectSSE() {
     ipStopTransferPolling();
 }
 
-// ── ipPatchTransferRow — updates badge + tiempo + tx_hash cells in-place ──────
+// ── ipPatchTransferRow — updates badge + tiempo + tx_hash + intentos in-place
 // Returns true if the row was found and patched.
+// Status rank prevents SSE events from DOWNGRADING an already-advanced status.
+const STATUS_RANK = { pending: 0, processing: 1, confirmed: 2, failed: 2 };
 function ipPatchTransferRow(ev) {
     const rows = document.querySelectorAll('#ipTransfersBody tr[data-tid]');
     for (const row of rows) {
         if (row.dataset.tid !== ev.transfer_id) continue;
-        // col 3 = badge, col 5 = txhash, col 6 = fecha (skip), col 7 = tiempo, col 8 = intentos
         const cells = row.querySelectorAll('td');
-        if (cells[3]) cells[3].innerHTML = ipStatusBadge(ev.status);
+        // Guard: never downgrade status (late INSERT events after a fast confirmation)
+        const currentRank = STATUS_RANK[row.dataset.status] ?? -1;
+        const newRank = STATUS_RANK[ev.status] ?? -1;
+        if (newRank >= currentRank) {
+            row.dataset.status = ev.status;
+            if (cells[3]) cells[3].innerHTML = ipStatusBadge(ev.status);
+        }
         if (cells[6]) {
-            // Patch processing time cell
             const created = row.dataset.createdAt;
             const confirmed = ev.confirmed_at || null;
             cells[6].innerHTML = ipProcessingTime(created, confirmed, ev.status);
@@ -4110,6 +4117,9 @@ function ipPatchTransferRow(ev) {
             cells[4].innerHTML = `<a href="https://polygonscan.com/tx/${ev.tx_hash}"
                 target="_blank" class="hash-link" title="${ev.tx_hash}">
                 ${ev.tx_hash.slice(0, 10)}...↗</a>`;
+        }
+        if (ev.attempt_count != null && cells[7]) {
+            cells[7].textContent = ev.attempt_count;
         }
         // Smooth highlight
         row.style.transition = 'background 0.3s ease';
@@ -4131,6 +4141,7 @@ function ipPrependTransferRow(ev) {
     const row = document.createElement('tr');
     row.dataset.tid = ev.transfer_id;
     row.dataset.createdAt = ev.created_at || new Date().toISOString();
+    row.dataset.status = ev.status || 'pending';
     const tidShort = ev.transfer_id.slice(0, 18) + '...';
     const shortDst = ev.destination_wallet
         ? `${ev.destination_wallet.slice(0, 6)}...${ev.destination_wallet.slice(-4)}` : '—';
@@ -4266,7 +4277,7 @@ async function ipLoadTransfers(page, silent = false) {
                 const date = t.created_at ? new Date(t.created_at).toLocaleString() : '—';
                 const badge = ipStatusBadge(t.status);
                 const tiempo = ipProcessingTime(t.created_at, t.confirmed_at, t.status);
-                return `<tr data-tid="${t.transfer_id}">
+                return `<tr data-tid="${t.transfer_id}" data-status="${t.status}" data-created-at="${t.created_at || ''}">
                     <td style="font-family:monospace; font-size:0.8rem; white-space:nowrap;" title="${t.transfer_id}">
                         ${txIdShort}
                         <button class="btn-icon" onclick="copyToClipboard('${t.transfer_id}')" title="Copiar ID">📋</button>
@@ -4288,12 +4299,7 @@ async function ipLoadTransfers(page, silent = false) {
         if (tbody) tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color:#ef4444;">Error: ${err.message}</td></tr>`;
         console.error('[IP] ipLoadTransfers error:', err);
     }
-    // Start polling as fallback only if SSE is not connected and there are active transfers
-    if (!ipEventSource) {
-        const rows = document.querySelectorAll('#ipTransfersBody tr');
-        const hasActive = Array.from(rows).some(r => r.textContent.includes('Processing') || r.textContent.includes('Pending'));
-        if (hasActive && !ipTransfersPollInterval) ipStartTransferPolling();
-    }
+    // No polling — SSE handles all live updates
 }
 
 
