@@ -3544,6 +3544,47 @@ app.delete('/api/v1/instant/webhook/url', authenticateToken, async (req, res) =>
 // END WEBHOOK URL ABM
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// ── POST /api/v1/test/webhook-echo — Local test receiver (loopback only) ──────
+// Use this URL in Connections Admin to test webhook delivery without needing
+// an external server. Verifies HMAC signature and logs to console.
+app.post('/api/v1/test/webhook-echo', express.raw({ type: '*/*' }), async (req, res) => {
+    const sig = req.headers['x-webhook-signature'] || '';
+    const ts = req.headers['x-webhook-timestamp'] || '';
+    const rawBody = req.body?.toString('utf8') || '';
+
+    try {
+        const payload = JSON.parse(rawBody);
+        const funder = (payload.funder || '').toLowerCase();
+
+        // Resolve signing secret for this funder
+        let secret = process.env.WEBHOOK_SECRET || 'instant-webhook-secret';
+        try {
+            const { rows } = await pool.query(
+                'SELECT webhook_secret_enc FROM rbac_users WHERE address=$1', [funder]
+            );
+            if (rows[0]?.webhook_secret_enc) {
+                secret = encryptionService.decrypt(rows[0].webhook_secret_enc);
+            }
+        } catch (_) { }
+
+        const expected = require('crypto')
+            .createHmac('sha256', secret)
+            .update(ts + rawBody)
+            .digest('hex');
+
+        const sigOk = sig === expected;
+        console.log(`\n[WebhookEcho] 📨 ${payload.event} | ${payload.transferId}`);
+        console.log(`[WebhookEcho] Firma HMAC: ${sigOk ? '✅ válida' : '❌ INVÁLIDA'}`);
+        console.log(`[WebhookEcho] Funder: ${payload.funder} | Amount: ${payload.amount} USDC | Status: ${payload.status}`);
+        if (payload.tx_hash) console.log(`[WebhookEcho] TxHash: ${payload.tx_hash}`);
+
+        return res.status(200).json({ received: true, hmac_valid: sigOk });
+    } catch (err) {
+        console.error('[WebhookEcho] Parse error:', err.message);
+        return res.status(400).json({ error: 'Invalid JSON' });
+    }
+});
+
 // ── GET /api/v1/instant/logs — SUPER_ADMIN (all) or OPERATOR (own webhooks) ────
 // Returns paginated, filterable unified log of API requests + webhook deliveries.
 app.get('/api/v1/instant/logs', authenticateToken, async (req, res) => {
