@@ -4205,7 +4205,9 @@ function ipProcessingTime(createdAt, confirmedAt, status) {
     const end = confirmedAt ? new Date(confirmedAt) : new Date();
     const ms = end - new Date(createdAt);
     if (ms < 0) return '—';
-    const color = confirmedAt ? '#4ade80' : '#f59e0b';
+    const color = (status === 'confirmed') ? '#4ade80'
+        : (status === 'failed') ? '#ef4444'
+            : '#f59e0b'; // amber = still in progress
     let label;
     if (ms < 60000) label = `${(ms / 1000).toFixed(1)}s`;
     else label = `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000) / 1000)}s`;
