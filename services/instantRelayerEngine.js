@@ -9,7 +9,38 @@
 
 const { ethers } = require('ethers');
 const crypto = require('crypto');
+const http = require('http');
+const https = require('https');
 const encryptionService = require('./encryption'); // AES-256-GCM per-wallet secret
+
+/**
+ * Minimal HTTP POST helper — replaces fetch() so we avoid undici/Windows issues.
+ * Returns { status, ok } where ok = status >= 200 && status < 300.
+ */
+function httpPost(urlStr, headers, body) {
+    return new Promise((resolve, reject) => {
+        const url = new URL(urlStr);
+        const lib = url.protocol === 'https:' ? https : http;
+        const buf = Buffer.from(body, 'utf8');
+        const opts = {
+            hostname: url.hostname,
+            port: url.port || (url.protocol === 'https:' ? 443 : 80),
+            path: url.pathname + url.search,
+            method: 'POST',
+            headers: { ...headers, 'Content-Length': buf.length },
+            timeout: 10000
+        };
+        const req = lib.request(opts, res => {
+            res.resume(); // drain body
+            resolve({ status: res.statusCode, ok: res.statusCode >= 200 && res.statusCode < 300 });
+        });
+        req.on('timeout', () => { req.destroy(); reject(new Error('Webhook request timed out')); });
+        req.on('error', reject);
+        req.write(buf);
+        req.end();
+    });
+}
+
 
 // ─── ABI (minimal) ───────────────────────────────────────────────────────────
 
@@ -412,16 +443,11 @@ class InstantRelayerEngine {
                     .update(ts + body)
                     .digest('hex');
 
-                const response = await fetch(resolvedUrl, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Webhook-Signature': sig,
-                        'X-Webhook-Timestamp': ts,
-                    },
-                    body,
-                    signal: AbortSignal.timeout(10000)
-                });
+                const response = await httpPost(resolvedUrl, {
+                    'Content-Type': 'application/json',
+                    'X-Webhook-Signature': sig,
+                    'X-Webhook-Timestamp': ts,
+                }, body);
 
                 httpStatus = response.status;
                 if (response.ok) {
