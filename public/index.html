@@ -813,6 +813,99 @@
                         <p id="ipKeyStatus" style="margin-top:0.5rem; font-size:0.82rem; min-height:1.2em;"></p>
                     </div>
 
+                    <!-- ── Webhook URL ABM Panel ───────────────────────────── -->
+                    <div id="ipWebhookPanel" class="ip-panel hidden"
+                        style="margin-top:1.5rem; border:1px solid rgba(16,185,129,0.3); border-radius:12px; padding:1.25rem; background:rgba(16,185,129,0.04);">
+
+                        <div class="top-bar" style="margin-bottom:1rem;">
+                            <div>
+                                <h3 style="margin:0; color:#6ee7b7;">🔔 Webhook URL</h3>
+                                <p style="margin:0.25rem 0 0; font-size:0.82rem; color:#64748b;">
+                                    Tu servidor recibe eventos POST firmados con HMAC-SHA256 cuando un transfer cambia
+                                    de estado.
+                                    Un nuevo <code
+                                        style="background:rgba(0,0,0,0.3); padding:2px 6px; border-radius:4px;">whsec_...</code>
+                                    se genera y se muestra <strong>una sola vez</strong> al guardar la URL.
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- URL input row -->
+                        <div style="display:flex; gap:0.75rem; align-items:center; margin-bottom:1rem; flex-wrap:wrap;">
+                            <input id="ipWebhookUrlInput" type="url"
+                                placeholder="https://mi-servidor.com/webhooks/instant"
+                                style="flex:1; min-width:240px; background:rgba(0,0,0,0.25); border:1px solid rgba(16,185,129,0.3); border-radius:8px; padding:0.55rem 0.9rem; color:#e2e8f0; font-size:0.88rem; outline:none;" />
+                            <button class="btn btn-glass"
+                                style="border-color:rgba(16,185,129,0.5); color:#6ee7b7; font-size:0.85rem; white-space:nowrap;"
+                                onclick="ipSaveWebhook()">💾 Guardar URL</button>
+                            <button class="btn btn-glass"
+                                style="border-color:rgba(239,68,68,0.4); color:#f87171; font-size:0.85rem; white-space:nowrap;"
+                                onclick="ipClearWebhook()">🗑 Quitar</button>
+                        </div>
+
+                        <!-- Current state card -->
+                        <div id="ipWebhookInfo"
+                            style="background:rgba(0,0,0,0.2); border-radius:8px; padding:1rem; font-size:0.88rem;">
+                            <div id="ipWebhookNoConfig" class="hidden"
+                                style="text-align:center; opacity:0.6; padding:0.5rem 0;">
+                                ⚠️ Sin webhook configurado. Los transfers no enviarán notificaciones externas.
+                            </div>
+                            <div id="ipWebhookConfigured" class="hidden">
+                                <div style="display:grid; grid-template-columns:2fr 1fr 1fr; gap:1rem;">
+                                    <div>
+                                        <div
+                                            style="color:#64748b; font-size:0.75rem; text-transform:uppercase; letter-spacing:1px;">
+                                            URL destino</div>
+                                        <div id="ipWebhookCurrentUrl"
+                                            style="color:#6ee7b7; font-size:0.88rem; font-family:monospace; word-break:break-all;">
+                                            —</div>
+                                    </div>
+                                    <div>
+                                        <div
+                                            style="color:#64748b; font-size:0.75rem; text-transform:uppercase; letter-spacing:1px;">
+                                            Secret (prefijo)</div>
+                                        <div id="ipWebhookSecretPrefix"
+                                            style="color:#a5b4fc; font-size:0.88rem; font-family:monospace;">—</div>
+                                    </div>
+                                    <div>
+                                        <div
+                                            style="color:#64748b; font-size:0.75rem; text-transform:uppercase; letter-spacing:1px;">
+                                            Actualizado</div>
+                                        <div id="ipWebhookUpdatedAt" style="color:#94a3b8; font-size:0.85rem;">—</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <p id="ipWebhookStatus" style="margin-top:0.5rem; font-size:0.82rem; min-height:1.2em;"></p>
+                    </div>
+
+                    <!-- Modal: Webhook Secret (mostrado UNA sola vez) -->
+                    <div id="ipWebhookSecretModal" class="hidden"
+                        style="position:fixed; inset:0; background:rgba(0,0,0,0.8); z-index:9999; display:flex; align-items:center; justify-content:center;">
+                        <div class="glass-panel"
+                            style="max-width:560px; width:90%; padding:2rem; border:1px solid rgba(16,185,129,0.5); border-radius:16px;">
+                            <h3 style="margin:0 0 0.5rem; color:#6ee7b7;">🔐 Webhook Secret Generado</h3>
+                            <p style="font-size:0.85rem; color:#94a3b8; margin-bottom:1rem;">
+                                ⚠️ Guardá este secret ahora — <strong>no se vuelve a mostrar</strong>. Usalo para
+                                verificar la firma <code>X-Webhook-Signature</code>.
+                            </p>
+                            <div
+                                style="background:rgba(0,0,0,0.4); border:1px solid rgba(16,185,129,0.3); border-radius:8px; padding:1rem; margin-bottom:1rem;">
+                                <div style="color:#64748b; font-size:0.75rem; margin-bottom:0.4rem;">WEBHOOK SECRET
+                                </div>
+                                <div id="ipWebhookSecretDisplay"
+                                    style="font-family:monospace; font-size:0.85rem; color:#6ee7b7; word-break:break-all;">
+                                    ••••</div>
+                            </div>
+                            <div style="display:flex; gap:0.75rem;">
+                                <button class="btn btn-glass" style="border-color:rgba(16,185,129,0.5); color:#6ee7b7;"
+                                    id="ipBtnCopySecret" onclick="ipCopyWebhookSecret()">📋 Copiar Secret</button>
+                                <button class="btn btn-glass" style="border-color:rgba(239,68,68,0.4); color:#f87171;"
+                                    onclick="ipCloseWebhookSecretModal()">✅ Guardado, cerrar</button>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Modal: API Key generada (mostrada UNA sola vez) -->
                     <div id="ipKeyModal" class="hidden"
                         style="position:fixed; inset:0; background:rgba(0,0,0,0.75); z-index:9999; display:flex; align-items:center; justify-content:center;">

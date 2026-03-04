@@ -9,6 +9,7 @@
 
 const { ethers } = require('ethers');
 const crypto = require('crypto');
+const encryptionService = require('./encryption'); // AES-256-GCM per-wallet secret
 
 // ─── ABI (minimal) ───────────────────────────────────────────────────────────
 
@@ -351,7 +352,33 @@ class InstantRelayerEngine {
             ...data
         };
 
+        // Enrich payload with policy data (remaining allowance + expiry)
+        try {
+            const { rows: pol } = await this.pool.query(
+                `SELECT total_amount, consumed_amount, deadline
+                 FROM instant_policies WHERE cold_wallet=$1 AND is_active=true`,
+                [transfer.funder_address.toLowerCase()]
+            );
+            if (pol.length > 0) {
+                const remaining = parseFloat(pol[0].total_amount) - parseFloat(pol[0].consumed_amount);
+                payload.remaining_allowance = Math.max(0, remaining).toFixed(6);
+                payload.policy_expires_at = pol[0].deadline;
+            }
+        } catch (_) { /* non-blocking — payload sent without enrichment */ }
+
         let attempt = 0;
+        // Resolve signing secret: per-wallet AES-256-GCM from DB, fallback to global env var
+        let signingSecret = process.env.WEBHOOK_SECRET || 'instant-webhook-secret';
+        try {
+            const { rows: userRow } = await this.pool.query(
+                'SELECT webhook_secret_enc FROM rbac_users WHERE address=$1',
+                [transfer.funder_address.toLowerCase()]
+            );
+            if (userRow[0]?.webhook_secret_enc) {
+                signingSecret = encryptionService.decrypt(userRow[0].webhook_secret_enc);
+            }
+        } catch (_) { /* non-blocking — falls back to global secret */ }
+
         let delivered = false;
         let lastError = '';
 
@@ -360,9 +387,8 @@ class InstantRelayerEngine {
             try {
                 const ts = Date.now().toString();
                 const body = JSON.stringify(payload);
-                const secret = process.env.WEBHOOK_SECRET || 'instant-webhook-secret';
                 const sig = crypto
-                    .createHmac('sha256', secret)
+                    .createHmac('sha256', signingSecret)
                     .update(ts + body)
                     .digest('hex');
 
