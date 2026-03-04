@@ -1,0 +1,17 @@
+C:\Users\familia\.gemini\antigravity\playground\spectral-celestial\services\encryption.js:15
+            throw new Error('ENCRYPTION_KEY not set in environment variables');
+            ^
+
+Error: ENCRYPTION_KEY not set in environment variables
+    at EncryptionService.deriveKey (C:\Users\familia\.gemini\antigravity\playground\spectral-celestial\services\encryption.js:15:19)
+    at new EncryptionService (C:\Users\familia\.gemini\antigravity\playground\spectral-celestial\services\encryption.js:9:25)
+    at Object.<anonymous> (C:\Users\familia\.gemini\antigravity\playground\spectral-celestial\services\encryption.js:64:18)
+    at Module._compile (node:internal/modules/cjs/loader:1730:14)
+    at Object..js (node:internal/modules/cjs/loader:1895:10)
+    at Module.load (node:internal/modules/cjs/loader:1465:32)
+    at Function._load (node:internal/modules/cjs/loader:1282:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:322:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:235:24)
+    at Module.require (node:internal/modules/cjs/loader:1487:12)
+
+Node.js v22.17.0

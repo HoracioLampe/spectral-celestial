@@ -15,8 +15,8 @@ const { generateNonce, SiweMessage } = require('siwe');
 const jwt = require('jsonwebtoken');
 const faucetService = require('./services/faucet'); // Import Faucet Service
 const InstantRelayerEngine = require('./services/instantRelayerEngine');
+require('dotenv').config(); // ← must be before encryption service (needs ENCRYPTION_KEY)
 const encryptionService = require('./services/encryption'); // AES-256-GCM with ENCRYPTION_KEY
-require('dotenv').config();
 
 if (!process.env.JWT_SECRET) {
     throw new Error('[Security] JWT_SECRET env var is required but not set. Refusing to start.');
@@ -3455,15 +3455,15 @@ app.get('/api/v1/instant/webhook/url', authenticateToken, async (req, res) => {
             [funderAddress]
         );
         const url = rows[0]?.webhook_default_url || null;
-        // Return only a prefix hint of the secret — never the raw secret
+        const hasSecret = !!(rows[0]?.webhook_secret_enc);
         let secretPrefix = null;
-        if (rows[0]?.webhook_secret_enc) {
+        if (hasSecret) {
             try {
                 const raw = encryptionService.decrypt(rows[0].webhook_secret_enc);
                 secretPrefix = 'whsec_' + raw.slice(0, 6) + '...';
             } catch { secretPrefix = 'whsec_??????'; }
         }
-        res.json({ hasWebhook: !!url, webhook_url: url, secret_prefix: secretPrefix, updated_at: rows[0]?.updated_at || null });
+        res.json({ hasWebhook: !!url, webhook_url: url, hasSecret, secret_prefix: secretPrefix, updated_at: rows[0]?.updated_at || null });
     } catch (err) {
         console.error('[Webhook] GET /webhook/url error:', err);
         res.status(500).json({ error: err.message });
@@ -3477,20 +3477,49 @@ app.put('/api/v1/instant/webhook/url', authenticateToken, async (req, res) => {
         const { webhook_url } = req.body;
         if (!webhook_url) return res.status(400).json({ error: 'webhook_url is required' });
         try { new URL(webhook_url); } catch { return res.status(400).json({ error: 'Invalid URL format' }); }
-
-        // Auto-generate a new 32-byte secret, encrypt with AES-256-GCM (ENCRYPTION_KEY from .env)
-        const rawSecret = crypto.randomBytes(32).toString('hex'); // 64 hex chars
-        const encryptedSecret = encryptionService.encrypt(rawSecret);
-
         await pool.query(
-            'UPDATE rbac_users SET webhook_default_url=$1, webhook_secret_enc=$2, updated_at=NOW() WHERE address=$3',
-            [webhook_url, encryptedSecret, funderAddress]
+            'UPDATE rbac_users SET webhook_default_url=$1, updated_at=NOW() WHERE address=$2',
+            [webhook_url, funderAddress]
         );
-        console.log(`[Webhook] URL + secret set for ${funderAddress}: ${webhook_url}`);
-        // Return raw secret ONCE — never stored as plain text, user must save it
-        res.json({ success: true, webhook_url, webhook_secret: 'whsec_' + rawSecret, message: 'Guardá el secret — no se volverá a mostrar' });
+        console.log(`[Webhook] URL saved for ${funderAddress}: ${webhook_url}`);
+        res.json({ success: true, webhook_url });
     } catch (err) {
         console.error('[Webhook] PUT /webhook/url error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ── POST /api/v1/instant/webhook/secret — generate new HMAC secret ───────────────
+app.post('/api/v1/instant/webhook/secret', authenticateToken, async (req, res) => {
+    try {
+        const funderAddress = req.user.address.toLowerCase();
+        const rawSecret = crypto.randomBytes(32).toString('hex');
+        const encryptedSecret = encryptionService.encrypt(rawSecret);
+        await pool.query(
+            'UPDATE rbac_users SET webhook_secret_enc=$1, updated_at=NOW() WHERE address=$2',
+            [encryptedSecret, funderAddress]
+        );
+        console.log(`[Webhook] Secret generated for ${funderAddress}`);
+        // Returned ONCE — never stored plain text
+        res.json({ success: true, webhook_secret: 'whsec_' + rawSecret, message: 'Guardá el secret — no se volverá a mostrar' });
+    } catch (err) {
+        console.error('[Webhook] POST /webhook/secret error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ── DELETE /api/v1/instant/webhook/secret — revoke secret ───────────────────
+app.delete('/api/v1/instant/webhook/secret', authenticateToken, async (req, res) => {
+    try {
+        const funderAddress = req.user.address.toLowerCase();
+        await pool.query(
+            'UPDATE rbac_users SET webhook_secret_enc=NULL, updated_at=NOW() WHERE address=$1',
+            [funderAddress]
+        );
+        console.log(`[Webhook] Secret revoked for ${funderAddress}`);
+        res.json({ success: true, message: 'Secret revocado. Los nuevos webhooks no llevarán firma válida hasta generar uno nuevo.' });
+    } catch (err) {
+        console.error('[Webhook] DELETE /webhook/secret error:', err);
         res.status(500).json({ error: err.message });
     }
 });

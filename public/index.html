@@ -879,7 +879,58 @@
                         <p id="ipWebhookStatus" style="margin-top:0.5rem; font-size:0.82rem; min-height:1.2em;"></p>
                     </div>
 
-                    <!-- Modal: Webhook Secret (mostrado UNA sola vez) -->
+                    <!-- ── Webhook Secret ABM Panel ────────────────────── -->
+                    <div id="ipWebhookSecretPanel" class="ip-panel hidden"
+                        style="margin-top:1.5rem; border:1px solid rgba(139,92,246,0.3); border-radius:12px; padding:1.25rem; background:rgba(139,92,246,0.04);">
+                        <div class="top-bar" style="margin-bottom:1rem;">
+                            <div>
+                                <h3 style="margin:0; color:#c4b5fd;">&#128272; Webhook Secret (HMAC)</h3>
+                                <p style="margin:0.25rem 0 0; font-size:0.82rem; color:#64748b;">
+                                    Secret para firmar y verificar los eventos. Se muestra <strong>una sola vez</strong>
+                                    al generar.
+                                    Validá <code
+                                        style="background:rgba(0,0,0,0.3); padding:2px 6px; border-radius:4px;">X-Webhook-Signature</code>
+                                    en tu servidor.
+                                </p>
+                            </div>
+                            <div style="display:flex; gap:0.5rem;">
+                                <button class="btn btn-glass"
+                                    style="border-color:rgba(139,92,246,0.5); color:#c4b5fd; font-size:0.85rem;"
+                                    onclick="ipGenerateWebhookSecret()">&#128273; Generar / Rotar Secret</button>
+                                <button class="btn btn-glass"
+                                    style="border-color:rgba(239,68,68,0.4); color:#f87171; font-size:0.85rem;"
+                                    onclick="ipRevokeWebhookSecret()">&#128465; Revocar</button>
+                            </div>
+                        </div>
+                        <div style="background:rgba(0,0,0,0.2); border-radius:8px; padding:1rem; font-size:0.88rem;">
+                            <div id="ipSecretNoConfig" class="hidden"
+                                style="text-align:center; opacity:0.6; padding:0.5rem 0;">
+                                &#9888;&#65039; Sin secret. Los webhooks se envían sin firma HMAC válida.
+                            </div>
+                            <div id="ipSecretConfigured" class="hidden">
+                                <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
+                                    <div>
+                                        <div
+                                            style="color:#64748b; font-size:0.75rem; text-transform:uppercase; letter-spacing:1px;">
+                                            Secret (prefijo)</div>
+                                        <div id="ipSecretPrefix"
+                                            style="color:#c4b5fd; font-size:1rem; font-family:monospace; font-weight:700;">
+                                            &#8212;</div>
+                                    </div>
+                                    <div>
+                                        <div
+                                            style="color:#64748b; font-size:0.75rem; text-transform:uppercase; letter-spacing:1px;">
+                                            Actualizado</div>
+                                        <div id="ipSecretUpdatedAt" style="color:#94a3b8; font-size:0.85rem;">&#8212;
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <p id="ipSecretStatus" style="margin-top:0.5rem; font-size:0.82rem; min-height:1.2em;"></p>
+                    </div>
+
+                    <!-- Modal: Webhook Secret generado (UNA sola vez) -->
                     <div id="ipWebhookSecretModal" class="hidden"
                         style="position:fixed; inset:0; background:rgba(0,0,0,0.8); z-index:9999; display:flex; align-items:center; justify-content:center;">
                         <div class="glass-panel"

@@ -3633,6 +3633,7 @@ function showInstantPaymentSection() {
     showSection('instantPaymentSection', 'navInstantPayment', () => {
         document.getElementById('ipApiKeyPanel')?.classList.remove('hidden');
         document.getElementById('ipWebhookPanel')?.classList.remove('hidden');
+        document.getElementById('ipWebhookSecretPanel')?.classList.remove('hidden');
         ipLoadPolicy(); ipLoadTransfers(1); ipLoadApiKey(); ipLoadWebhook();
         ipConnectSSE(); // connect SSE for real-time updates
     });
@@ -4446,29 +4447,47 @@ window.ipCloseKeyModal = () => {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 async function ipLoadWebhook() {
+    // ─ URL panel ─────────────────────────────────────────
     const noConfig = document.getElementById('ipWebhookNoConfig');
     const configured = document.getElementById('ipWebhookConfigured');
+    // ─ Secret panel ──────────────────────────────────────
+    const noSecret = document.getElementById('ipSecretNoConfig');
+    const secretConf = document.getElementById('ipSecretConfigured');
     try {
         const res = await authenticatedFetch('/api/v1/instant/webhook/url');
         const data = await res.json();
+
+        // URL card
         if (!data.hasWebhook) {
             noConfig?.classList.remove('hidden');
             configured?.classList.add('hidden');
-            return;
+        } else {
+            noConfig?.classList.add('hidden');
+            configured?.classList.remove('hidden');
+            const input = document.getElementById('ipWebhookUrlInput');
+            if (input) input.value = data.webhook_url || '';
+            document.getElementById('ipWebhookCurrentUrl').textContent = data.webhook_url || '—';
+            document.getElementById('ipWebhookUpdatedAt').textContent = data.updated_at
+                ? new Date(data.updated_at).toLocaleString() : '—';
         }
-        noConfig?.classList.add('hidden');
-        configured?.classList.remove('hidden');
-        const input = document.getElementById('ipWebhookUrlInput');
-        if (input) input.value = data.webhook_url || '';
-        document.getElementById('ipWebhookCurrentUrl').textContent = data.webhook_url || '—';
-        document.getElementById('ipWebhookSecretPrefix').textContent = data.secret_prefix || '—';
-        document.getElementById('ipWebhookUpdatedAt').textContent = data.updated_at
-            ? new Date(data.updated_at).toLocaleString() : '—';
+
+        // Secret card
+        if (!data.hasSecret) {
+            noSecret?.classList.remove('hidden');
+            secretConf?.classList.add('hidden');
+        } else {
+            noSecret?.classList.add('hidden');
+            secretConf?.classList.remove('hidden');
+            document.getElementById('ipSecretPrefix').textContent = data.secret_prefix || '—';
+            document.getElementById('ipSecretUpdatedAt').textContent = data.updated_at
+                ? new Date(data.updated_at).toLocaleString() : '—';
+        }
     } catch (err) {
         console.error('[Webhook] ipLoadWebhook error:', err);
     }
 }
 
+// ─ URL management ─────────────────────────────────────────
 window.ipSaveWebhook = async () => {
     const statusEl = document.getElementById('ipWebhookStatus');
     const url = document.getElementById('ipWebhookUrlInput')?.value?.trim();
@@ -4477,16 +4496,12 @@ window.ipSaveWebhook = async () => {
     statusEl.style.color = '#60a5fa';
     try {
         const res = await authenticatedFetch('/api/v1/instant/webhook/url', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
+            method: 'PUT', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ webhook_url: url })
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Error desconocido');
-        // Show secret ONE TIME in modal
-        document.getElementById('ipWebhookSecretDisplay').textContent = data.webhook_secret || '••••';
-        document.getElementById('ipWebhookSecretModal').classList.remove('hidden');
-        statusEl.textContent = '✅ URL guardada. Guardá el secret del modal.';
+        statusEl.textContent = '✅ URL guardada.';
         statusEl.style.color = '#4ade80';
         await ipLoadWebhook();
     } catch (err) {
@@ -4504,7 +4519,7 @@ window.ipClearWebhook = async () => {
         const res = await authenticatedFetch('/api/v1/instant/webhook/url', { method: 'DELETE' });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Error desconocido');
-        statusEl.textContent = '✅ Webhook eliminado.';
+        statusEl.textContent = '✅ URL eliminada.';
         statusEl.style.color = '#4ade80';
         document.getElementById('ipWebhookUrlInput').value = '';
         await ipLoadWebhook();
@@ -4514,9 +4529,48 @@ window.ipClearWebhook = async () => {
     }
 };
 
+// ─ Secret management ──────────────────────────────────────
+window.ipGenerateWebhookSecret = async () => {
+    const statusEl = document.getElementById('ipSecretStatus');
+    if (!confirm('¿Generar / rotar el Webhook Secret? El secret anterior quedará inválido inmediatamente.')) return;
+    statusEl.textContent = '⏳ Generando...';
+    statusEl.style.color = '#60a5fa';
+    try {
+        const res = await authenticatedFetch('/api/v1/instant/webhook/secret', { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Error desconocido');
+        document.getElementById('ipWebhookSecretDisplay').textContent = data.webhook_secret || '••••';
+        document.getElementById('ipWebhookSecretModal').classList.remove('hidden');
+        statusEl.textContent = '✅ Secret generado. Guardálo del modal.';
+        statusEl.style.color = '#4ade80';
+        await ipLoadWebhook();
+    } catch (err) {
+        statusEl.textContent = '❌ ' + err.message;
+        statusEl.style.color = '#ef4444';
+    }
+};
+
+window.ipRevokeWebhookSecret = async () => {
+    const statusEl = document.getElementById('ipSecretStatus');
+    if (!confirm('¿Revocar el Webhook Secret? Los webhooks futuros no llevarán firma HMAC válida.')) return;
+    statusEl.textContent = '⏳ Revocando...';
+    statusEl.style.color = '#f59e0b';
+    try {
+        const res = await authenticatedFetch('/api/v1/instant/webhook/secret', { method: 'DELETE' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Error desconocido');
+        statusEl.textContent = '✅ Secret revocado.';
+        statusEl.style.color = '#4ade80';
+        await ipLoadWebhook();
+    } catch (err) {
+        statusEl.textContent = '❌ ' + err.message;
+        statusEl.style.color = '#ef4444';
+    }
+};
+
 window.ipCopyWebhookSecret = () => {
     const secret = document.getElementById('ipWebhookSecretDisplay')?.textContent;
-    if (!secret || secret === '••••') return;
+    if (!secret || secret.startsWith('•')) return;
     navigator.clipboard.writeText(secret).then(() => {
         const btn = document.getElementById('ipBtnCopySecret');
         if (btn) { const orig = btn.textContent; btn.textContent = '✅ Copiado!'; setTimeout(() => btn.textContent = orig, 1500); }
@@ -4524,7 +4578,6 @@ window.ipCopyWebhookSecret = () => {
 };
 
 window.ipCloseWebhookSecretModal = () => {
-    // Clear secret from DOM immediately on close
     document.getElementById('ipWebhookSecretDisplay').textContent = '••••••••••••••••';
     document.getElementById('ipWebhookSecretModal').classList.add('hidden');
 };
