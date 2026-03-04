@@ -149,6 +149,14 @@ const initInstantPaymentTables = async () => {
     } catch (err) {
         console.error('[InstantPayment] ⚠️ Migration 009 error:', err.message);
     }
+    // 010: timezone column on rbac_users (per cold wallet display timezone)
+    try {
+        const sql = fs.readFileSync(path.join(__dirname, 'migrations/010_user_timezone.sql'), 'utf8');
+        await pool.query(sql);
+        console.log('[InstantPayment] ✅ Migration 010 verified/created');
+    } catch (err) {
+        console.error('[InstantPayment] ⚠️ Migration 010 error:', err.message);
+    }
 };
 
 // Warm up the connection (don't block server start)
@@ -165,7 +173,14 @@ initSessionTable().then(async ready => {
 // Middleware
 app.set('trust proxy', 1);
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'public'), {
+    setHeaders: (res, filePath) => {
+        if (filePath.endsWith('.js') || filePath.endsWith('.css')) {
+            res.setHeader('Cache-Control', 'no-store');
+        }
+    }
+}));
+
 
 // Session Store Setup (Resilient)
 let sessionStore;
@@ -422,6 +437,55 @@ app.post('/api/faucet/send-pol', authenticateToken, async (req, res) => {
 });
 
 
+
+// ─── User Settings (Timezone) ─────────────────────────────────────────────────
+// Valid IANA timezone values (same list exposed in the frontend dropdown)
+const VALID_TIMEZONES = [
+    'UTC',
+    // Americas
+    'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles',
+    'America/Mexico_City', 'America/Bogota', 'America/Lima', 'America/Santiago',
+    'America/Argentina/Buenos_Aires', 'America/Sao_Paulo',
+    // Europe
+    'Europe/London', 'Europe/Paris', 'Europe/Berlin', 'Europe/Madrid', 'Europe/Rome',
+    'Europe/Amsterdam', 'Europe/Zurich', 'Europe/Moscow',
+    // Asia / Pacific
+    'Asia/Dubai', 'Asia/Kolkata', 'Asia/Singapore', 'Asia/Hong_Kong',
+    'Asia/Tokyo', 'Asia/Shanghai', 'Australia/Sydney', 'Pacific/Auckland'
+];
+
+// GET /api/v1/user/settings — returns current user's timezone preference
+app.get('/api/v1/user/settings', authenticateToken, async (req, res) => {
+    try {
+        const address = req.user.address.toLowerCase().trim();
+        const r = await pool.query('SELECT timezone FROM rbac_users WHERE address=$1', [address]);
+        const timezone = r.rows[0]?.timezone || 'America/Argentina/Buenos_Aires';
+        res.json({ timezone });
+    } catch (err) {
+        console.error('[UserSettings] GET error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// PUT /api/v1/user/settings — saves timezone preference for the logged-in cold wallet
+app.put('/api/v1/user/settings', authenticateToken, async (req, res) => {
+    try {
+        const address = req.user.address.toLowerCase().trim();
+        const { timezone } = req.body;
+        if (!timezone || !VALID_TIMEZONES.includes(timezone)) {
+            return res.status(400).json({ error: 'Invalid timezone. Must be a valid IANA timezone from the allowed list.' });
+        }
+        await pool.query(
+            'UPDATE rbac_users SET timezone=$1, updated_at=NOW() WHERE address=$2',
+            [timezone, address]
+        );
+        console.log(`[UserSettings] Timezone updated for ${address}: ${timezone}`);
+        res.json({ success: true, timezone });
+    } catch (err) {
+        console.error('[UserSettings] PUT error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
 
 app.get('/api/health', async (req, res) => {
     try {
@@ -2770,6 +2834,13 @@ app.post('/api/v1/instant/transfer', authApiKeyOrJWT, async (req, res) => {
         if (!transfer_id || !destination_wallet || !amount_usdc) {
             return logAndRespond(400, { error: 'transfer_id, destination_wallet and amount_usdc are required' }, 'transfer.rejected', 'Missing required fields');
         }
+        // Validate transfer_id is a valid UUID (8-4-4-4-12 hex chars)
+        const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (!UUID_REGEX.test(transfer_id)) {
+            return logAndRespond(400,
+                { error: 'Invalid transfer_id format. Must be a valid UUID (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)', received: transfer_id },
+                'transfer.rejected', `Invalid UUID format: ${transfer_id}`);
+        }
         if (!ethers.isAddress(destination_wallet)) {
             return logAndRespond(400, { error: 'Invalid destination_wallet address' }, 'transfer.rejected', 'Invalid destination_wallet');
         }
@@ -2859,11 +2930,11 @@ app.get('/api/v1/instant/transfers', authApiKeyOrJWT, async (req, res) => {
         }
         if (date_from) {
             params.push(date_from);
-            where += ` AND created_at >= $${params.length}::date`;
+            where += ` AND created_at >= $${params.length}::timestamptz`;
         }
         if (date_to) {
             params.push(date_to);
-            where += ` AND created_at < ($${params.length}::date + INTERVAL '1 day')`;
+            where += ` AND created_at <= $${params.length}::timestamptz`;
         }
         if (wallet) {
             params.push(`%${wallet.toLowerCase()}%`);

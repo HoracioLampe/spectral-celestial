@@ -1,6 +1,54 @@
 const API_TRANSACTIONS = '/api/transactions'; // v3.1.0-deploy-force
 const BATCH_PAGE_SIZE = 10;
-const TIMEZONE_CONFIG = { timeZone: 'America/Argentina/Buenos_Aires' };
+// ─── Timezone (per cold wallet, loaded from API post-login) ────────────────────
+let USER_TIMEZONE = 'America/Argentina/Buenos_Aires';
+
+// Formats any UTC date string using the user's saved timezone
+function formatDateTZ(dateStr, format) {
+    if (!dateStr) return '—';
+    try {
+        const d = new Date(dateStr);
+        if (isNaN(d.getTime())) return String(dateStr);
+        const tz = USER_TIMEZONE;
+        if (format === 'short') return d.toLocaleDateString('es-AR', { timeZone: tz });
+        if (format === 'time') return d.toLocaleTimeString('es-AR', { timeZone: tz, hour12: false });
+        return d.toLocaleString('es-AR', { timeZone: tz, hour12: false });
+    } catch { return String(dateStr); }
+}
+
+// Returns the UTC offset label for the current USER_TIMEZONE (e.g. 'UTC-03:00')
+function getTZOffsetLabel() {
+    try {
+        const fmt = new Intl.DateTimeFormat('en', { timeZone: USER_TIMEZONE, timeZoneName: 'shortOffset' });
+        const parts = fmt.formatToParts(new Date());
+        const raw = (parts.find(p => p.type === 'timeZoneName')?.value || 'GMT+0').replace('GMT', '');
+        if (!raw || raw === '+0' || raw === '-0') return 'UTC+00:00';
+        const sign = raw[0];
+        const [h, m = '0'] = raw.slice(1).split(':');
+        return `UTC${sign}${String(parseInt(h)).padStart(2, '0')}:${String(parseInt(m)).padStart(2, '0')}`;
+    } catch { return 'UTC'; }
+}
+
+// Converts a YYYY-MM-DD date string (local display date) to a UTC ISO boundary.
+// isEnd=false → start of day (00:00:00) in USER_TIMEZONE → UTC
+// isEnd=true  → end of day (23:59:59) in USER_TIMEZONE → UTC
+function toUTCBounds(dateStr, isEnd = false) {
+    if (!dateStr) return null;
+    try {
+        const [year, month, day] = dateStr.split('-').map(Number);
+        const fmt = new Intl.DateTimeFormat('en', { timeZone: USER_TIMEZONE, timeZoneName: 'shortOffset' });
+        const parts = fmt.formatToParts(new Date(`${dateStr}T12:00:00Z`));
+        const offsetStr = parts.find(p => p.type === 'timeZoneName')?.value || 'GMT+0';
+        const raw = offsetStr.replace('GMT', '') || '+0';
+        const sign = raw[0] === '-' ? -1 : 1;
+        const [h, m = '0'] = raw.replace(/^[+-]/, '').split(':');
+        const offsetMin = sign * (parseInt(h) * 60 + parseInt(m));
+        if (!isEnd) return new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0) - offsetMin * 60000).toISOString();
+        return new Date(Date.UTC(year, month - 1, day, 23, 59, 59, 999) - offsetMin * 60000).toISOString();
+    } catch { return dateStr; }
+}
+
+
 let currentBatchPage = 1;
 
 // Global Error Handler for debugging
@@ -378,6 +426,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                 // Force UI Updates
                 updateUI();
+                loadUserTimezone(); // ← alias of ipLoadTimezone: loads USER_TIMEZONE + syncs dropdown select
                 checkFaucetStatus();
                 // We do NOT call loadBatches here automatically to avoid double-fetch if updateUI does it, 
                 // but usually updateUI handles balance. loadBatches is separate.
@@ -1171,7 +1220,7 @@ function renderBatchesList(batches) {
         // Fix: Divide by 1,000,000 for display
         let totalVal = (b.total_usdc !== null && b.total_usdc !== undefined) ? parseFloat(b.total_usdc) : 0;
         const total = (b.total_usdc !== null) ? `$${(totalVal / 1000000).toFixed(6)}` : '-';
-        const date = new Date(b.created_at).toLocaleString('es-AR', TIMEZONE_CONFIG);
+        const date = formatDateTZ(b.created_at);
 
         tr.innerHTML = `
             <td style="font-weight: bold;">${b.batch_number}</td>
@@ -1375,7 +1424,7 @@ window.openBatchDetail = async function (id) {
 // Pagination State
 const txPerPage = 10; // Updated to 10 as requested
 console.log("[UI] Version 2.4.1-FIX: Filters, UI Bugs & Refund Logic");
-// TIMEZONE_CONFIG moved to top
+// USER_TIMEZONE helpers defined at top of file
 
 let allBatchTransactions = []; // Store full list
 let filteredTransactions = []; // Store filtered list for rendering
@@ -3661,6 +3710,7 @@ function showConnectionsAdminSection() {
         document.getElementById('ipWebhookSecretPanel')?.classList.remove('hidden');
         ipLoadApiKey();
         ipLoadWebhook();
+        ipLoadTimezone(); // ← pre-populate timezone dropdown from DB
     });
 }
 
@@ -3705,7 +3755,7 @@ async function ipLoadPolicy() {
         document.getElementById('ipTotalAmount').textContent = fmt(data.total_amount);
         document.getElementById('ipConsumed').textContent = fmt(data.consumed_amount);
         document.getElementById('ipRemaining').textContent = fmt(data.remaining);
-        document.getElementById('ipDeadline').textContent = new Date(data.deadline).toLocaleString();
+        document.getElementById('ipDeadline').textContent = formatDateTZ(data.deadline);
 
         const badge = document.getElementById('ipPolicyBadge');
 
@@ -4180,7 +4230,7 @@ function ipPrependTransferRow(ev) {
     const tidShort = ev.transfer_id.slice(0, 18) + '...';
     const shortDst = ev.destination_wallet
         ? `${ev.destination_wallet.slice(0, 6)}...${ev.destination_wallet.slice(-4)}` : '—';
-    const date = ev.created_at ? new Date(ev.created_at).toLocaleString() : new Date().toLocaleString();
+    const date = formatDateTZ(ev.created_at || new Date().toISOString());
     row.innerHTML = `
         <td style="font-family:monospace; font-size:0.8rem; white-space:nowrap;" title="${ev.transfer_id}">
             ${tidShort}
@@ -4259,8 +4309,8 @@ async function ipLoadTransfers(page, silent = false) {
 
     const params = new URLSearchParams({ page: ipCurrentPage, limit: 20 });
     if (status && status !== 'ALL') params.append('status', status);
-    if (dateFrom) params.append('date_from', dateFrom);
-    if (dateTo) params.append('date_to', dateTo);
+    if (dateFrom) params.append('date_from', toUTCBounds(dateFrom, false));
+    if (dateTo) params.append('date_to', toUTCBounds(dateTo, true));
     if (wallet) params.append('wallet', wallet);
     if (amount) params.append('amount', amount);
 
@@ -4295,7 +4345,7 @@ async function ipLoadTransfers(page, silent = false) {
                 const txLink = t.tx_hash
                     ? `<a href="https://polygonscan.com/tx/${t.tx_hash}" target="_blank" class="hash-link" title="${t.tx_hash}">${t.tx_hash.slice(0, 10)}...↗</a>`
                     : '—';
-                const date = t.created_at ? new Date(t.created_at).toLocaleString() : '—';
+                const date = formatDateTZ(t.created_at);
                 const badge = ipStatusBadge(t.status);
                 const tiempo = ipProcessingTime(t.created_at, t.confirmed_at, t.status);
                 return `<tr data-tid="${t.transfer_id}" data-status="${t.status}" data-created-at="${t.created_at || ''}">
@@ -4398,7 +4448,7 @@ async function ipLoadApiKey() {
         document.getElementById('ipKeyPrefix').textContent = data.prefix;
         document.getElementById('ipKeyAccessCount').textContent = data.access_count;
         document.getElementById('ipKeyLastAccess').textContent = data.last_accessed
-            ? new Date(data.last_accessed).toLocaleString() : 'Nunca';
+            ? formatDateTZ(data.last_accessed) : 'Nunca';
         if (!data.is_active) {
             keyRevoked?.classList.remove('hidden');
         } else {
@@ -4493,7 +4543,7 @@ async function ipLoadWebhook() {
             if (input) input.value = data.webhook_url || '';
             document.getElementById('ipWebhookCurrentUrl').textContent = data.webhook_url || '—';
             document.getElementById('ipWebhookUpdatedAt').textContent = data.updated_at
-                ? new Date(data.updated_at).toLocaleString() : '—';
+                ? formatDateTZ(data.updated_at) : '—';
         }
 
         // Secret card
@@ -4505,7 +4555,7 @@ async function ipLoadWebhook() {
             secretConf?.classList.remove('hidden');
             document.getElementById('ipSecretPrefix').textContent = data.secret_prefix || '—';
             document.getElementById('ipSecretUpdatedAt').textContent = data.updated_at
-                ? new Date(data.updated_at).toLocaleString() : '—';
+                ? formatDateTZ(data.updated_at) : '—';
         }
     } catch (err) {
         console.error('[Webhook] ipLoadWebhook error:', err);
@@ -4608,6 +4658,61 @@ window.ipCloseWebhookSecretModal = () => {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// === TIMEZONE SETTINGS ===
+// ═══════════════════════════════════════════════════════════════════════════════
+
+async function ipLoadTimezone() {
+    const sel = document.getElementById('ipTimezoneSelect');
+    const badge = document.getElementById('ipTimezoneBadge');
+    try {
+        const r = await authenticatedFetch('/api/v1/user/settings');
+        if (r && r.ok) {
+            const d = await r.json();
+            if (d.timezone) {
+                USER_TIMEZONE = d.timezone;
+                if (sel) sel.value = d.timezone;
+                if (badge) badge.textContent = getTZOffsetLabel();
+            }
+        }
+    } catch (err) {
+        console.error('[Timezone] ipLoadTimezone error:', err);
+    }
+}
+window.ipLoadTimezone = ipLoadTimezone;
+
+// loadUserTimezone is called at login/session-restore — delegates to ipLoadTimezone
+// so the dropdown select is always pre-populated from the DB value
+async function loadUserTimezone() {
+    return ipLoadTimezone();
+}
+window.loadUserTimezone = loadUserTimezone;
+
+
+window.ipSaveTimezone = async () => {
+    const sel = document.getElementById('ipTimezoneSelect');
+    const statusEl = document.getElementById('ipTimezoneStatus');
+    const badge = document.getElementById('ipTimezoneBadge');
+    const tz = sel?.value;
+    if (!tz) return;
+    if (statusEl) { statusEl.textContent = '⏳ Guardando...'; statusEl.style.color = '#60a5fa'; }
+    try {
+        const r = await authenticatedFetch('/api/v1/user/settings', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ timezone: tz })
+        });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || 'Error desconocido');
+        USER_TIMEZONE = tz;
+        if (badge) badge.textContent = getTZOffsetLabel();
+        if (statusEl) { statusEl.textContent = `✅ Timezone guardado. Las fechas ahora muestran ${getTZOffsetLabel()}.`; statusEl.style.color = '#4ade80'; }
+    } catch (err) {
+        if (statusEl) { statusEl.textContent = '❌ ' + err.message; statusEl.style.color = '#ef4444'; }
+    }
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+
 
 let ipLogsCurrentPage = 1;
 let ipLogsTotalPages = 1;
@@ -4625,8 +4730,8 @@ window.ipLoadLogs = async function ipLoadLogs(page) {
 
     const params = new URLSearchParams({ page: ipLogsCurrentPage, limit: 50 });
     if (type && type !== 'all') params.append('type', type);
-    if (dateFrom) params.append('date_from', dateFrom);
-    if (dateTo) params.append('date_to', dateTo);
+    if (dateFrom) params.append('date_from', toUTCBounds(dateFrom, false));
+    if (dateTo) params.append('date_to', toUTCBounds(dateTo, true));
     if (wallet) params.append('cold_wallet', wallet);
     if (transferId) params.append('transfer_id', transferId);
     if (httpStatus) params.append('http_status', httpStatus);

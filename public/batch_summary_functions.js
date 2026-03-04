@@ -26,8 +26,8 @@ window.showBatchCompletionSummary = async function (batchId) {
         document.getElementById('summaryBatchName').textContent = batch.batch_name || 'Sin nombre';
 
         // Format dates
-        const startDate = batch.start_time ? new Date(batch.start_time).toLocaleString('es-AR') : '-';
-        const endDate = batch.end_time ? new Date(batch.end_time).toLocaleString('es-AR') : '-';
+        const startDate = batch.start_time ? (window.formatDateTZ ? window.formatDateTZ(batch.start_time) : new Date(batch.start_time).toLocaleString('es-AR')) : '-';
+        const endDate = batch.end_time ? (window.formatDateTZ ? window.formatDateTZ(batch.end_time) : new Date(batch.end_time).toLocaleString('es-AR')) : '-';
         document.getElementById('summaryStartTime').textContent = startDate;
         document.getElementById('summaryEndTime').textContent = endDate;
 
@@ -97,7 +97,7 @@ window.downloadBatchReceipt = async function () {
                 (parseFloat(tx.amount_usdc || 0) / 1000000).toFixed(6),
                 `"${tx.tx_hash || 'Pendiente'}"`,
                 tx.status || 'UNKNOWN',
-                tx.updated_at ? new Date(tx.updated_at).toLocaleString('es-AR') : '-'
+                tx.updated_at ? (window.formatDateTZ ? window.formatDateTZ(tx.updated_at) : new Date(tx.updated_at).toLocaleString('es-AR')) : '-'
             ];
             csvRows.push(row.join(','));
         });

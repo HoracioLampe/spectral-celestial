@@ -754,7 +754,7 @@
                         </div>
                     </div>
 
-                    
+
                 </div> <!-- Fin instantPaymentSection -->
 
                 <!-- CONNECTIONS ADMIN SECTION (OPERATOR + SUPER_ADMIN) -->
@@ -950,6 +950,69 @@
                         <p id="ipSecretStatus" style="margin-top:0.5rem; font-size:0.82rem; min-height:1.2em;"></p>
                     </div>
 
+                    <!-- TIMEZONE PANEL -->
+                    <div id="ipTimezonePanel" class="ip-panel"
+                        style="margin-top:1.5rem; border:1px solid rgba(99,102,241,0.25); border-radius:12px; padding:1.25rem; background:rgba(99,102,241,0.04);">
+
+                        <div class="top-bar" style="margin-bottom:0.75rem;">
+                            <div>
+                                <h3 style="margin:0; color:#c4b5fd;">🕐 Timezone</h3>
+                                <p style="margin:0.25rem 0 0; font-size:0.82rem; color:#64748b;">
+                                    Zona horaria para mostrar fechas y horas en todo el panel.<br>
+                                    Los datos se almacenan siempre en UTC en la base de datos.
+                                </p>
+                            </div>
+                            <span id="ipTimezoneBadge"
+                                style="align-self:center; background:rgba(99,102,241,0.15); color:#c4b5fd; padding:4px 10px; border-radius:20px; font-size:0.8rem; font-family:monospace; border:1px solid rgba(99,102,241,0.3); white-space:nowrap;">
+                                UTC-03:00
+                            </span>
+                        </div>
+
+                        <div style="display:flex; gap:0.75rem; align-items:center; flex-wrap:wrap;">
+                            <select id="ipTimezoneSelect" class="input-glass" style="max-width:380px; flex:1;">
+                                <optgroup label="UTC">
+                                    <option value="UTC">UTC — Coordinated Universal Time (+00:00)</option>
+                                </optgroup>
+                                <optgroup label="🌎 Américas">
+                                    <option value="America/New_York">New York — EST/EDT (-05:00 / -04:00)</option>
+                                    <option value="America/Chicago">Chicago — CST/CDT (-06:00 / -05:00)</option>
+                                    <option value="America/Denver">Denver — MST/MDT (-07:00 / -06:00)</option>
+                                    <option value="America/Los_Angeles">Los Angeles — PST/PDT (-08:00 / -07:00)</option>
+                                    <option value="America/Mexico_City">Ciudad de México (-06:00 / -05:00)</option>
+                                    <option value="America/Bogota">Bogotá (-05:00)</option>
+                                    <option value="America/Lima">Lima (-05:00)</option>
+                                    <option value="America/Santiago">Santiago (-04:00 / -03:00)</option>
+                                    <option value="America/Argentina/Buenos_Aires">Buenos Aires (-03:00)</option>
+                                    <option value="America/Sao_Paulo">São Paulo (-03:00 / -02:00)</option>
+                                </optgroup>
+                                <optgroup label="🌍 Europa">
+                                    <option value="Europe/London">London — GMT/BST (+00:00 / +01:00)</option>
+                                    <option value="Europe/Paris">Paris — CET/CEST (+01:00 / +02:00)</option>
+                                    <option value="Europe/Berlin">Berlin — CET/CEST (+01:00 / +02:00)</option>
+                                    <option value="Europe/Madrid">Madrid — CET/CEST (+01:00 / +02:00)</option>
+                                    <option value="Europe/Rome">Rome — CET/CEST (+01:00 / +02:00)</option>
+                                    <option value="Europe/Amsterdam">Amsterdam — CET/CEST (+01:00 / +02:00)</option>
+                                    <option value="Europe/Zurich">Zurich — CET/CEST (+01:00 / +02:00)</option>
+                                    <option value="Europe/Moscow">Moscow — MSK (+03:00)</option>
+                                </optgroup>
+                                <optgroup label="🌏 Asia / Pacífico">
+                                    <option value="Asia/Dubai">Dubai — GST (+04:00)</option>
+                                    <option value="Asia/Kolkata">Mumbai / Kolkata — IST (+05:30)</option>
+                                    <option value="Asia/Singapore">Singapore — SGT (+08:00)</option>
+                                    <option value="Asia/Hong_Kong">Hong Kong — HKT (+08:00)</option>
+                                    <option value="Asia/Shanghai">Shanghai — CST (+08:00)</option>
+                                    <option value="Asia/Tokyo">Tokyo — JST (+09:00)</option>
+                                    <option value="Australia/Sydney">Sydney — AEDT/AEST (+11:00 / +10:00)</option>
+                                    <option value="Pacific/Auckland">Auckland — NZDT/NZST (+13:00 / +12:00)</option>
+                                </optgroup>
+                            </select>
+                            <button class="btn btn-glass"
+                                style="border-color:rgba(99,102,241,0.5); color:#c4b5fd; white-space:nowrap;"
+                                onclick="ipSaveTimezone()">💾 Guardar</button>
+                        </div>
+                        <p id="ipTimezoneStatus" style="margin-top:0.5rem; font-size:0.82rem; min-height:1.2em;"></p>
+                    </div>
+
                     <!-- Modal: Webhook Secret generado (UNA sola vez) -->
                     <div id="ipWebhookSecretModal" class="hidden"
                         style="position:fixed; inset:0; background:rgba(0,0,0,0.8); z-index:9999; display:flex; align-items:center; justify-content:center;">
@@ -966,7 +1029,7 @@
                                 </div>
                                 <div id="ipWebhookSecretDisplay"
                                     style="font-family:monospace; font-size:0.85rem; color:#6ee7b7; word-break:break-all;">
-                                    ••••</div>
+                                    ••••••••••••••••</div>
                             </div>
                             <div style="display:flex; gap:0.75rem;">
                                 <button class="btn btn-glass" style="border-color:rgba(16,185,129,0.5); color:#6ee7b7;"
@@ -986,8 +1049,8 @@
                             <div
                                 style="background:rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.4); border-radius:8px; padding:0.75rem 1rem; margin-bottom:1rem;">
                                 <p style="margin:0; font-size:0.85rem; color:#fca5a5;">⚠️ <strong>Esta es la ÚNICA vez
-                                        que
-                                        podés ver esta key.</strong> Copiala ahora y guardala en un lugar seguro.</p>
+                                        que podés ver esta key.</strong> Copiala ahora y guardala en un lugar seguro.
+                                </p>
                             </div>
                             <div style="display:flex; gap:0.5rem; align-items:center;">
                                 <code id="ipKeyDisplay"
@@ -1010,7 +1073,7 @@
                         </div>
                     </div>
 
-                
+
 
                 </div> <!-- Fin connectionsAdminSection -->
 
@@ -1026,7 +1089,8 @@
                                 Historial unificado de API requests y webhooks · Solo SUPER_ADMIN
                             </p>
                         </div>
-                        <span class="badge badge-danger" style="align-self:center;">🔒 SUPER_ADMIN</span>
+                        <span class="badge badge-danger" style="align-self:center;">🔒
+                            SUPER_ADMIN</span>
                     </div>
 
                     <!-- Filtros -->
@@ -1051,7 +1115,8 @@
                         </select>
                         <label style="display:flex; align-items:center; gap:0.4rem; white-space:nowrap;
                                   font-size:0.84rem; color:#94a3b8; cursor:pointer;">
-                            <input type="checkbox" id="ipLogOnlyErrors" style="accent-color:#ef4444;"> Solo errores
+                            <input type="checkbox" id="ipLogOnlyErrors" style="accent-color:#ef4444;">
+                            Solo errores
                         </label>
                         <button class="btn btn-glass" onclick="ipLoadLogs(1)" style="white-space:nowrap;">🔍
                             Filtrar</button>
@@ -1093,7 +1158,8 @@
                             </thead>
                             <tbody id="ipLogsBody">
                                 <tr>
-                                    <td colspan="11" style="text-align:center; opacity:0.6;">Cargando...</td>
+                                    <td colspan="11" style="text-align:center; opacity:0.6;">Cargando...
+                                    </td>
                                 </tr>
                             </tbody>
                         </table>
@@ -1118,7 +1184,8 @@
                             <h4 style="margin:0; color:#a5b4fc;">📄 Detalle JSON</h4>
                             <div style="display:flex; gap:0.5rem;">
                                 <button class="btn btn-glass" id="ipLogCopyBtn" onclick="ipCopyLogJson()"
-                                    style="font-size:0.8rem;">📋 Copiar</button>
+                                    style="font-size:0.8rem;">📋
+                                    Copiar</button>
                                 <button class="btn btn-glass"
                                     onclick="document.getElementById('ipLogDetailPanel').classList.add('hidden')"
                                     style="font-size:0.8rem;">✖ Cerrar</button>
@@ -1135,7 +1202,8 @@
                 <div id="contractAdminSection" class="glass-panel hidden">
                     <div class="top-bar">
                         <h2>🔐 Contract Admin</h2>
-                        <div id="cadLoadStatus" style="font-size:0.85rem; color:#94a3b8;">Conectá MetaMask para
+                        <div id="cadLoadStatus" style="font-size:0.85rem; color:#94a3b8;">Conectá
+                            MetaMask para
                             interactuar
                         </div>
                     </div>
@@ -1180,9 +1248,11 @@
                             <div
                                 style="font-size:0.7rem; color:#64748b; text-transform:uppercase; letter-spacing:1px; margin-bottom:0.75rem;">
                                 💰 Política Máxima de Retiros</div>
-                            <p style="font-size:0.82rem; color:#94a3b8; margin-bottom:1rem;">El owner puede cambiar
+                            <p style="font-size:0.82rem; color:#94a3b8; margin-bottom:1rem;">El owner
+                                puede cambiar
                                 el
-                                límite máximo de USDC por policy. El frontend y el contrato lo verifican al activar
+                                límite máximo de USDC por policy. El frontend y el contrato lo verifican
+                                al activar
                                 un
                                 permit.</p>
                             <div class="form-group" style="margin-bottom:0.75rem;">
@@ -1193,7 +1263,8 @@
                             <button class="btn btn-primary" style="width:100%;" onclick="cadSetMaxPolicy()">
                                 🦊 Setear vía MetaMask
                             </button>
-                            <p id="cadMaxPolicyStatus" style="margin-top:0.5rem; font-size:0.82rem;"></p>
+                            <p id="cadMaxPolicyStatus" style="margin-top:0.5rem; font-size:0.82rem;">
+                            </p>
                         </div>
                     </div>
 
@@ -1204,7 +1275,8 @@
                             🔑 Transferencia de Ownership (2-step)</div>
                         <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
                             <div>
-                                <p style="font-size:0.82rem; color:#94a3b8; margin-bottom:0.75rem;">Paso 1: Proponer
+                                <p style="font-size:0.82rem; color:#94a3b8; margin-bottom:0.75rem;">Paso
+                                    1: Proponer
                                     nuevo
                                     owner. El nuevo owner debe aceptar.</p>
                                 <div class="form-group" style="margin-bottom:0.75rem;">
@@ -1216,10 +1288,12 @@
                                     onclick="cadTransferOwnership()">
                                     🦊 Paso 1: transferOwnership()
                                 </button>
-                                <p id="cadTransferStatus" style="margin-top:0.5rem; font-size:0.82rem;"></p>
+                                <p id="cadTransferStatus" style="margin-top:0.5rem; font-size:0.82rem;">
+                                </p>
                             </div>
                             <div>
-                                <p style="font-size:0.82rem; color:#94a3b8; margin-bottom:0.75rem;">Paso 2: Si esta
+                                <p style="font-size:0.82rem; color:#94a3b8; margin-bottom:0.75rem;">Paso
+                                    2: Si esta
                                     wallet
                                     es el pending owner, aceptar la transferencia.</p>
                                 <div
@@ -1232,7 +1306,8 @@
                                     onclick="cadAcceptOwnership()">
                                     🦊 Paso 2: acceptOwnership()
                                 </button>
-                                <p id="cadAcceptStatus" style="margin-top:0.5rem; font-size:0.82rem;"></p>
+                                <p id="cadAcceptStatus" style="margin-top:0.5rem; font-size:0.82rem;">
+                                </p>
                             </div>
                         </div>
                     </div>
@@ -1244,7 +1319,8 @@
                             🚨 Operaciones de Emergencia</div>
                         <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
                             <div>
-                                <p style="font-size:0.82rem; color:#94a3b8; margin-bottom:0.75rem;">Pausa/reanuda
+                                <p style="font-size:0.82rem; color:#94a3b8; margin-bottom:0.75rem;">
+                                    Pausa/reanuda
                                     todas las
                                     transferencias e activaciones de policy del contrato.</p>
                                 <button id="cadPauseBtn" class="btn btn-glass"
@@ -1252,10 +1328,12 @@
                                     onclick="cadTogglePause()">
                                     🦊 Pausar Contrato
                                 </button>
-                                <p id="cadPauseStatus" style="margin-top:0.5rem; font-size:0.82rem;"></p>
+                                <p id="cadPauseStatus" style="margin-top:0.5rem; font-size:0.82rem;">
+                                </p>
                             </div>
                             <div>
-                                <p style="font-size:0.82rem; color:#94a3b8; margin-bottom:0.75rem;">Como owner, el
+                                <p style="font-size:0.82rem; color:#94a3b8; margin-bottom:0.75rem;">Como
+                                    owner, el
                                     SUPER_ADMIN puede resetear la policy de cualquier cold wallet.</p>
                                 <div class="form-group" style="margin-bottom:0.75rem;">
                                     <label style="font-size:0.82rem;">Dirección cold wallet</label>
@@ -1286,7 +1364,8 @@
                             </div>
                         </div>
                         <p style="font-size:0.82rem; color:#94a3b8; margin-bottom:0.75rem;">
-                            Upgradea el proxy al contrato V2 (EIP-2612 permit atómico). Solo el owner puede ejecutar
+                            Upgradea el proxy al contrato V2 (EIP-2612 permit atómico). Solo el owner
+                            puede ejecutar
                             esto
                             desde MetaMask.
                         </p>
@@ -1306,7 +1385,8 @@
                     <div class="top-bar">
                         <h2>💰 Recuperación de Fondos</h2>
                         <div id="recoveryLoadStatus" style="font-size:0.85rem; color:#94a3b8;">
-                            Gestiona el retorno de MATIC/POL desde los relayers al Faucet correspondiente.
+                            Gestiona el retorno de MATIC/POL desde los relayers al Faucet
+                            correspondiente.
                         </div>
                     </div>
 
@@ -1329,7 +1409,8 @@
                 <div class="modal-content">
                     <span class="close-modal" onclick="closeBatchModal()">&times;</span>
                     <h2>📦 Nuevo Lote</h2>
-                    <div class="grid-form" style="display: block;"> <!-- Override grid for simple stack -->
+                    <div class="grid-form" style="display: block;">
+                        <!-- Override grid for simple stack -->
                         <div class="form-group" style="margin-bottom: 1rem;">
                             <label>Número de Lote *</label>
                             <input type="text" id="newBatchNumber" class="input-glass" placeholder="Ej: LOTE-2024-001">
@@ -1344,7 +1425,8 @@
                             <textarea id="newBatchDesc" class="input-glass" rows="3"
                                 placeholder="Notas internas..."></textarea>
                         </div>
-                        <button id="btnSaveBatch" class="btn btn-primary" style="width: 100%;">Crear Lote</button>
+                        <button id="btnSaveBatch" class="btn btn-primary" style="width: 100%;">Crear
+                            Lote</button>
                     </div>
                 </div>
             </div>
@@ -1373,12 +1455,14 @@
                                 style="color: #ef4444; font-family: monospace; word-break: break-all;">---</span>
                             <button onclick="copyFaucetKey()" class="btn-icon" style="font-size: 0.7rem;">📋</button>
                         </p>
-                        <p style="font-size: 0.8rem; color: #94a3b8; margin: 0.25rem 0 0 0;">Balance: <span
-                                id="faucetBalance" style="color: #4ade80; font-weight: bold;">---</span></p>
+                        <p style="font-size: 0.8rem; color: #94a3b8; margin: 0.25rem 0 0 0;">Balance:
+                            <span id="faucetBalance" style="color: #4ade80; font-weight: bold;">---</span>
+                        </p>
                     </div>
                     <div class="form-group" style="margin-bottom: 1rem;">
                         <button onclick="generateFaucet()" class="btn-glass"
-                            style="width: 100%; border: 1px dashed rgba(255,255,255,0.2); color: #fbbf24;">✨ Generar
+                            style="width: 100%; border: 1px dashed rgba(255,255,255,0.2); color: #fbbf24;">✨
+                            Generar
                             Nueva
                             Faucet</button>
                     </div>
@@ -1460,35 +1544,42 @@
             <div class="summary-grid"
                 style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 2rem;">
                 <div class="summary-item">
-                    <div style="color: rgba(255,255,255,0.6); font-size: 0.9rem; margin-bottom: 0.5rem;">Batch ID
+                    <div style="color: rgba(255,255,255,0.6); font-size: 0.9rem; margin-bottom: 0.5rem;">
+                        Batch ID
                     </div>
-                    <div id="summaryBatchId" style="color: #fff; font-size: 1.3rem; font-weight: 600;">-</div>
+                    <div id="summaryBatchId" style="color: #fff; font-size: 1.3rem; font-weight: 600;">-
+                    </div>
                 </div>
                 <div class="summary-item">
-                    <div style="color: rgba(255,255,255,0.6); font-size: 0.9rem; margin-bottom: 0.5rem;">Nombre del
+                    <div style="color: rgba(255,255,255,0.6); font-size: 0.9rem; margin-bottom: 0.5rem;">
+                        Nombre del
                         Lote
                     </div>
                     <div id="summaryBatchName" style="color: #fff; font-size: 1.3rem; font-weight: 600;">-</div>
                 </div>
                 <div class="summary-item">
-                    <div style="color: rgba(255,255,255,0.6); font-size: 0.9rem; margin-bottom: 0.5rem;">Hora de
+                    <div style="color: rgba(255,255,255,0.6); font-size: 0.9rem; margin-bottom: 0.5rem;">
+                        Hora de
                         Inicio
                     </div>
                     <div id="summaryStartTime" style="color: #fff; font-size: 1.1rem;">-</div>
                 </div>
                 <div class="summary-item">
-                    <div style="color: rgba(255,255,255,0.6); font-size: 0.9rem; margin-bottom: 0.5rem;">Hora de Fin
+                    <div style="color: rgba(255,255,255,0.6); font-size: 0.9rem; margin-bottom: 0.5rem;">
+                        Hora de Fin
                     </div>
                     <div id="summaryEndTime" style="color: #fff; font-size: 1.1rem;">-</div>
                 </div>
                 <div class="summary-item">
-                    <div style="color: rgba(255,255,255,0.6); font-size: 0.9rem; margin-bottom: 0.5rem;">Tiempo de
+                    <div style="color: rgba(255,255,255,0.6); font-size: 0.9rem; margin-bottom: 0.5rem;">
+                        Tiempo de
                         Envío
                     </div>
                     <div id="summaryDuration" style="color: #10b981; font-size: 1.3rem; font-weight: 600;">-</div>
                 </div>
                 <div class="summary-item">
-                    <div style="color: rgba(255,255,255,0.6); font-size: 0.9rem; margin-bottom: 0.5rem;">Gas Usado
+                    <div style="color: rgba(255,255,255,0.6); font-size: 0.9rem; margin-bottom: 0.5rem;">
+                        Gas Usado
                     </div>
                     <div id="summaryGasUsed" style="color: #f59e0b; font-size: 1.3rem; font-weight: 600;">-</div>
                 </div>
@@ -1499,7 +1590,8 @@
                     <div id="summaryTxCount" style="color: #10b981; font-size: 1.3rem; font-weight: 600;">-</div>
                 </div>
                 <div class="summary-item">
-                    <div style="color: rgba(255,255,255,0.6); font-size: 0.9rem; margin-bottom: 0.5rem;">USDC
+                    <div style="color: rgba(255,255,255,0.6); font-size: 0.9rem; margin-bottom: 0.5rem;">
+                        USDC
                         Enviados
                     </div>
                     <div id="summaryUsdcSent" style="color: #3b82f6; font-size: 1.3rem; font-weight: 600;">-</div>

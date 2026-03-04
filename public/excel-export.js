@@ -169,7 +169,7 @@ async function exportToExcel() {
                 planFormatted,                                  // USDC (PLAN) - String with 6 decimals and DOT separator
                 sentFormatted,                                  // USDC ENVIADO - String with 6 decimals and DOT separator
                 tx.tx_hash || '',                               // HASH (REF) (complete hash)
-                tx.timestamp ? new Date(tx.timestamp).toLocaleString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' }) : '', // TIMESTAMP
+                tx.timestamp ? (window.formatDateTZ ? window.formatDateTZ(tx.timestamp) : new Date(tx.timestamp).toLocaleString('es-AR', { timeZone: window.USER_TIMEZONE || 'America/Argentina/Buenos_Aires' })) : '', // TIMESTAMP
                 tx.status || ''                                 // ESTADO
             ]);
         });
