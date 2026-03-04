@@ -365,6 +365,13 @@ class InstantRelayerEngine {
 
         if (!webhookUrl) return; // No URL at all — skip webhook
 
+        // Node.js native fetch (undici) on Windows can fail to connect to 'localhost'
+        // due to IPv6 resolution. Normalize to 127.0.0.1 for local URLs.
+        const resolvedUrl = webhookUrl.replace(/^(https?:\/\/)localhost(:\d+)?/, '$1127.0.0.1$2');
+        if (resolvedUrl !== webhookUrl) {
+            console.log(`[InstantRelayer] Normalized webhook URL: ${webhookUrl} → ${resolvedUrl}`);
+        }
+
         const payload = {
             event: eventType,
             transferId: transfer.transfer_id,
@@ -405,7 +412,7 @@ class InstantRelayerEngine {
                     .update(ts + body)
                     .digest('hex');
 
-                const response = await fetch(webhookUrl, {
+                const response = await fetch(resolvedUrl, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
