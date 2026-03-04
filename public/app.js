@@ -4110,14 +4110,16 @@ function ipPatchTransferRow(ev) {
         // Guard: never downgrade status (late INSERT events after a fast confirmation)
         const currentRank = STATUS_RANK[row.dataset.status] ?? -1;
         const newRank = STATUS_RANK[ev.status] ?? -1;
+        const effectiveStatus = newRank >= currentRank ? ev.status : row.dataset.status;
         if (newRank >= currentRank) {
             row.dataset.status = ev.status;
             if (cells[3]) cells[3].innerHTML = ipStatusBadge(ev.status);
         }
         if (cells[6]) {
             const created = row.dataset.createdAt;
-            const confirmed = ev.confirmed_at || null;
-            cells[6].innerHTML = ipProcessingTime(created, confirmed, ev.status);
+            // Only use confirmed_at if the event is actually an upgrade
+            const confirmed = (newRank >= currentRank ? ev.confirmed_at : null) || null;
+            cells[6].innerHTML = ipProcessingTime(created, confirmed, effectiveStatus);
         }
         if (ev.tx_hash && cells[4]) {
             cells[4].innerHTML = `<a href="https://polygonscan.com/tx/${ev.tx_hash}"
