@@ -2653,6 +2653,26 @@ app.get('/api/v1/instant/relayer/nonce', authenticateToken, async (req, res) => 
     }
 });
 
+// ── GET /api/v1/instant/usdc/nonce ────────────────────────────────────────────
+// Lee el nonce EIP-2612 del contrato USDC para la cold wallet del usuario.
+// Usa el globalRpcManager (Chainstack) — no depende del provider del wallet.
+app.get('/api/v1/instant/usdc/nonce', authenticateToken, async (req, res) => {
+    try {
+        const funderAddress = req.user.address.toLowerCase();
+        const usdcAddress = process.env.USDC_ADDRESS || '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359';
+        const USDC_NONCE_ABI = ['function nonces(address owner) view returns (uint256)'];
+
+        const provider = globalRpcManager.getProvider();
+        const usdc = new ethers.Contract(usdcAddress, USDC_NONCE_ABI, provider);
+        const nonceRaw = await usdc.nonces(funderAddress);
+
+        res.json({ nonce: nonceRaw.toString(), address: funderAddress });
+    } catch (err) {
+        console.error('[IP] GET /usdc/nonce error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // ── POST /api/v1/instant/relayer/register ─────────────────────────────────────
 // El backend registra el relayer on-chain usando la firma EIP-712 del usuario.
 app.post('/api/v1/instant/relayer/register', authenticateToken, async (req, res) => {

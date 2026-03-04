@@ -2503,7 +2503,7 @@ if (btnProcessBatch) {
 
         // --- BALANCE CHECK ---
         try {
-            const usdcContract = new ethers.Contract(USDC_ADDRESS, USDC_ABI, signer);
+            const usdcContract = new ethers.Contract(USDC_ADDRESS, USDC_ABI, provider); // usar provider (backend RPC), no signer
             const userBal = await usdcContract.balanceOf(userAddress); // BigNumber/BigInt
 
             console.log(`[BalanceCheck] Required: ${currentBatchTotalUSDC}, Found: ${userBal}`);
@@ -3880,24 +3880,24 @@ window.ipActivatePolicy = async () => {
 
         const contractAddress = statusData.contractAddress;
         const USDC_ADDRESS = '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359';
-        const USDC_READ_ABI = [
-            'function nonces(address owner) view returns (uint256)',
-            'function allowance(address owner, address spender) view returns (uint256)',
-        ];
-
         let permitSigData = null;
         try {
-            if (!signer) throw new Error('Conectá MetaMask primero');
-            const usdcRead = new ethers.Contract(USDC_ADDRESS, USDC_READ_ABI, signer.provider || signer);
+            if (!signer) throw new Error('Conectá tu wallet primero');
             const signerAddr = await signer.getAddress();
             const totalRaw = ethers.parseUnits(amount.toString(), 6);
 
+            // Leer el nonce del backend (Chainstack) — funciona con Ledger y MetaMask
+            statusEl.textContent = '⏳ Verificando nonce USDC...';
+            statusEl.style.color = '#60a5fa';
+            const nonceRes = await authenticatedFetch('/api/v1/instant/usdc/nonce');
+            const nonceData = await nonceRes.json();
+            if (!nonceRes.ok) throw new Error(nonceData.error || 'Error leyendo nonce USDC');
+            const permitNonce = BigInt(nonceData.nonce);
+
             // V2: ALWAYS sign the permit — activatePolicyWithPermit resets the allowance
             // to the exact new amount+deadline atomically. No need to check current allowance.
-            statusEl.textContent = '🦊 MetaMask: firmá el permiso USDC (sin costo de gas)...';
+            statusEl.textContent = '🔐 Firmá el permiso USDC en tu wallet (sin costo de gas)...';
             statusEl.style.color = '#f59e0b';
-
-            const permitNonce = await usdcRead.nonces(signerAddr);
             // V2: permitDeadline = deadlineUnix (same deadline for permit AND policy)
             const permitDeadline = deadlineUnix;
 
