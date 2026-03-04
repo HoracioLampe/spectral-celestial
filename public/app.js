@@ -3791,10 +3791,25 @@ async function ipLoadPolicy() {
 window.ipShowActivateForm = () => {
     const form = document.getElementById('ipActivateForm');
     form.classList.remove('hidden');
-    // Pre-fill deadline with +24 hours
+    // Pre-fill deadline with +24 hours, formatted in USER_TIMEZONE (not browser local time)
     const future = new Date(Date.now() + 24 * 60 * 60 * 1000);
-    const local = new Date(future - future.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-    document.getElementById('ipFormExpiry').value = local;
+    const tz = USER_TIMEZONE || 'UTC';
+    try {
+        // Get the datetime parts in the user's configured timezone
+        const parts = new Intl.DateTimeFormat('en-CA', {
+            timeZone: tz,
+            year: 'numeric', month: '2-digit', day: '2-digit',
+            hour: '2-digit', minute: '2-digit', hour12: false
+        }).formatToParts(future);
+        const get = (type) => parts.find(p => p.type === type)?.value || '00';
+        // Format as YYYY-MM-DDTHH:mm for datetime-local input
+        const localStr = `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}`;
+        document.getElementById('ipFormExpiry').value = localStr;
+    } catch {
+        // Fallback: use browser local time
+        const local = new Date(future - future.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+        document.getElementById('ipFormExpiry').value = local;
+    }
     form.scrollIntoView({ behavior: 'smooth' });
 };
 
@@ -3806,7 +3821,31 @@ window.ipActivatePolicy = async () => {
     if (!amount || amount <= 0) { statusEl.textContent = '❌ Monto inválido'; statusEl.style.color = '#ef4444'; return; }
     if (!expiry) { statusEl.textContent = '❌ Fecha de expiración requerida'; statusEl.style.color = '#ef4444'; return; }
 
-    const deadlineUnix = Math.floor(new Date(expiry).getTime() / 1000);
+    // Convert expiry (entered in USER_TIMEZONE) to Unix timestamp
+    // new Date("YYYY-MM-DDTHH:mm") interprets as browser local time — incorrect if USER_TIMEZONE differs.
+    // We must interpret the value as USER_TIMEZONE explicitly.
+    let deadlineUnix;
+    try {
+        const tz = USER_TIMEZONE || 'UTC';
+        const [datePart, timePart] = expiry.split('T');
+        const [year, month, day] = datePart.split('-').map(Number);
+        const [hour, minute] = timePart.split(':').map(Number);
+        // Get the UTC offset for USER_TIMEZONE at noon of that day (avoids DST edge cases)
+        const offsetParts = new Intl.DateTimeFormat('en', {
+            timeZone: tz, timeZoneName: 'shortOffset'
+        }).formatToParts(new Date(`${datePart}T12:00:00Z`));
+        const offsetStr = (offsetParts.find(p => p.type === 'timeZoneName')?.value || 'GMT+0').replace('GMT', '');
+        const sign = (offsetStr[0] === '-') ? -1 : 1;
+        const [h, m = '0'] = offsetStr.replace(/^[+-]/, '').split(':');
+        const offsetMs = sign * (parseInt(h) * 60 + parseInt(m)) * 60000;
+        // Local time in USER_TIMEZONE → UTC ms
+        const utcMs = Date.UTC(year, month - 1, day, hour, minute, 0, 0) - offsetMs;
+        deadlineUnix = Math.floor(utcMs / 1000);
+    } catch {
+        // Fallback to browser interpretation
+        deadlineUnix = Math.floor(new Date(expiry).getTime() / 1000);
+    }
+
     if (deadlineUnix <= Math.floor(Date.now() / 1000)) {
         statusEl.textContent = '❌ La fecha debe ser en el futuro';
         statusEl.style.color = '#ef4444';
