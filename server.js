@@ -1,4 +1,5 @@
 // Deployment Trigger: 2026-01-08 18:50 - Excel Export Feature
+require('dotenv').config(); // ← FIRST: must load before any service require (encryption.js needs ENCRYPTION_KEY)
 const express = require('express');
 const path = require('path');
 const { Pool, Client: PgClient } = require('pg');
@@ -13,9 +14,8 @@ const session = require('express-session');
 const pgSession = require('connect-pg-simple')(session);
 const { generateNonce, SiweMessage } = require('siwe');
 const jwt = require('jsonwebtoken');
-const faucetService = require('./services/faucet'); // Import Faucet Service
+const faucetService = require('./services/faucet');
 const InstantRelayerEngine = require('./services/instantRelayerEngine');
-require('dotenv').config(); // ← must be before encryption service (needs ENCRYPTION_KEY)
 const encryptionService = require('./services/encryption'); // AES-256-GCM with ENCRYPTION_KEY
 
 if (!process.env.JWT_SECRET) {
