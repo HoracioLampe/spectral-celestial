@@ -126,7 +126,11 @@
                         <span class="nav-icon">🧹</span> Rescatar Fondos
                     </a>
                     <a href="#" id="navInstantPayment" class="nav-link" title="Pagos Instantáneos USDC">
-                        <span class="nav-icon">⚡</span> Instant Payments
+                        <span class="nav-icon">&#9889;</span> Instant Payments
+                    </a>
+                    <a href="#" id="navConnections" class="nav-link hidden"
+                        title="Connections Admin — API Keys y Webhooks por cold wallet">
+                        <span class="nav-icon">&#128268;</span> Connections Admin
                     </a>
                     <a href="#" id="navContractAdmin" class="nav-link hidden"
                         title="Administración del Contrato (Owner)">
@@ -750,6 +754,22 @@
                         </div>
                     </div>
 
+                    
+                </div> <!-- Fin instantPaymentSection -->
+
+                <!-- CONNECTIONS ADMIN SECTION (OPERATOR + SUPER_ADMIN) -->
+                <div id="connectionsAdminSection" class="glass-panel hidden">
+
+                    <div class="top-bar">
+                        <div>
+                            <h2>&#128268; Connections Admin</h2>
+                            <p style="margin:0; font-size:0.82rem; color:#94a3b8;">
+                                API Keys y Webhooks por cold wallet &middot; OPERATOR / SUPER_ADMIN
+                            </p>
+                        </div>
+                        <span class="badge badge-info" style="align-self:center;">&#128273; OPERATOR</span>
+                    </div>
+
                     <!-- API KEY PANEL (B2B Integration) -->
                     <div id="ipApiKeyPanel" class="ip-panel hidden"
                         style="margin-top:1.5rem; border:1px solid rgba(99,102,241,0.3); border-radius:12px; padding:1.25rem; background:rgba(99,102,241,0.05);">
@@ -990,7 +1010,11 @@
                         </div>
                     </div>
 
-                </div> <!-- Fin instantPaymentSection -->
+                
+
+                </div> <!-- Fin connectionsAdminSection -->
+
+
 
 
                 <!-- INSTANT LOGS SECTION (SUPER_ADMIN only) -->

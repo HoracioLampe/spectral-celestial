@@ -355,6 +355,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 document.getElementById('navContractAdmin')?.classList.remove('hidden');
                 document.getElementById('navRecovery')?.classList.remove('hidden');
                 document.getElementById('navInstantLogs')?.classList.remove('hidden');
+                document.getElementById('navConnections')?.classList.remove('hidden');
+            }
+            if (payload.role === 'OPERATOR' || payload.role === 'SUPER_ADMIN') {
+                document.getElementById('navConnections')?.classList.remove('hidden');
             }
 
             if (payload.role === 'REGISTERED') {
@@ -677,6 +681,7 @@ async function connectWallet() {
                             if (navAdmin) navAdmin.classList.remove('hidden');
                             document.getElementById('navContractAdmin')?.classList.remove('hidden');
                             document.getElementById('navInstantLogs')?.classList.remove('hidden');
+                            document.getElementById('navConnections')?.classList.remove('hidden');
                             if (adminRescueFunds) {
                                 adminRescueFunds.classList.remove('hidden');
                                 adminRescueFunds.onclick = async (e) => {
@@ -697,6 +702,10 @@ async function connectWallet() {
                             if (navAdmin) navAdmin.classList.add('hidden');
                             if (adminRescueFunds) adminRescueFunds.classList.add('hidden');
                             document.getElementById('navContractAdmin')?.classList.add('hidden');
+                            // OPERATOR also sees Connections Admin
+                            if (role === 'OPERATOR') {
+                                document.getElementById('navConnections')?.classList.remove('hidden');
+                            }
                         }
 
                         appLayout.style.opacity = "0";
@@ -3599,9 +3608,16 @@ document.addEventListener('DOMContentLoaded', () => {
             showInstantLogsSection();
         });
     }
+    const navConn = document.getElementById('navConnections');
+    if (navConn) {
+        navConn.addEventListener('click', (e) => {
+            e.preventDefault();
+            showConnectionsAdminSection();
+        });
+    }
 });
 
-const ALL_MAIN_SECTIONS = ['batchSection', 'instantPaymentSection', 'instantLogsSection', 'contractAdminSection', 'recoverySection', 'restrictedView'];
+const ALL_MAIN_SECTIONS = ['batchSection', 'instantPaymentSection', 'instantLogsSection', 'connectionsAdminSection', 'contractAdminSection', 'recoverySection', 'restrictedView'];
 
 /**
  * Función genérica de navegación entre secciones del panel principal.
@@ -3631,11 +3647,18 @@ function showSection(sectionId, navId, onShow = null) {
 
 function showInstantPaymentSection() {
     showSection('instantPaymentSection', 'navInstantPayment', () => {
+        ipLoadPolicy(); ipLoadTransfers(1);
+        ipConnectSSE();
+    });
+}
+
+function showConnectionsAdminSection() {
+    showSection('connectionsAdminSection', 'navConnections', () => {
         document.getElementById('ipApiKeyPanel')?.classList.remove('hidden');
         document.getElementById('ipWebhookPanel')?.classList.remove('hidden');
         document.getElementById('ipWebhookSecretPanel')?.classList.remove('hidden');
-        ipLoadPolicy(); ipLoadTransfers(1); ipLoadApiKey(); ipLoadWebhook();
-        ipConnectSSE(); // connect SSE for real-time updates
+        ipLoadApiKey();
+        ipLoadWebhook();
     });
 }
 
