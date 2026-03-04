@@ -4030,7 +4030,7 @@ let ipEventSource = null;
 
 function ipConnectSSE() {
     if (ipEventSource) return;
-    const token = localStorage.getItem('authToken') || '';
+    const token = localStorage.getItem('jwt_token') || localStorage.getItem('authToken') || '';
     if (!token) return;
     const url = `/api/v1/instant/events?token=${encodeURIComponent(token)}`;
     try {
