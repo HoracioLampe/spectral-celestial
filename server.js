@@ -550,7 +550,14 @@ async function ensureUserFaucet(userAddress) {
             await faucetService.getFaucetWallet(pool, provider, userAddress);
         });
     } catch (e) {
-        console.error(`[Self-Heal] Failed for ${userAddress}: `, e.message);
+        // Log with full detail — do NOT swallow silently, faucet creation failures
+        // prevent users from sending payments. INTEGRITY_ERROR and SECURE_STORAGE_FAILED
+        // require manual intervention.
+        console.error(`[Self-Heal] ❌ FAILED for ${userAddress}: ${e.message}`);
+        if (e.message.includes('INTEGRITY_ERROR') || e.message.includes('SECURE_STORAGE_FAILED')) {
+            console.error(`[Self-Heal] ⚠️  CRITICAL: Manual intervention may be required for faucet of ${userAddress}`);
+            console.error(e.stack);
+        }
     }
 }
 
