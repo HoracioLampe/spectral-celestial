@@ -3658,6 +3658,103 @@ app.get('/api/v1/instant/accounts', authenticateToken, async (req, res) => {
     }
 });
 
+// ── GET /api/v1/instant/transactions ──────────────────────────────────────────
+// B2B transfer history for the cold_wallet derived from the API Key.
+// Auth: X-Api-Key. All query params optional; empty/absent = no filter.
+// Params: transfer_id, status, date_from (ISO UTC), date_to (ISO UTC), limit (default 50; -1 = all)
+// Order: created_at DESC
+app.get('/api/v1/instant/transactions', authApiKeyOrJWT, async (req, res) => {
+    try {
+        const coldWallet = req.user.address.toLowerCase();
+        const { transfer_id, status, date_from, date_to, limit: limitParam } = req.query;
+
+        // ── Validate params (only when non-empty) ───────────────────────────────
+        const VALID_STATUSES = ['pending', 'processing', 'confirmed', 'failed'];
+        if (status && !VALID_STATUSES.includes(status)) {
+            return res.status(400).json({ error: `Invalid status. Must be one of: ${VALID_STATUSES.join(', ')}` });
+        }
+
+        let dateFrom = null, dateTo = null;
+        if (date_from && date_from.trim() !== '') {
+            dateFrom = new Date(date_from);
+            if (isNaN(dateFrom.getTime())) return res.status(400).json({ error: 'Invalid date_from — must be ISO 8601 UTC (e.g. 2026-01-01T00:00:00Z)' });
+        }
+        if (date_to && date_to.trim() !== '') {
+            dateTo = new Date(date_to);
+            if (isNaN(dateTo.getTime())) return res.status(400).json({ error: 'Invalid date_to — must be ISO 8601 UTC (e.g. 2026-03-31T23:59:59Z)' });
+        }
+        if (dateFrom && dateTo && dateFrom > dateTo) {
+            return res.status(400).json({ error: 'date_from must be ≤ date_to' });
+        }
+
+        // ── Single transfer by ID ───────────────────────────────────────────────
+        if (transfer_id && transfer_id.trim() !== '') {
+            const row = await pool.query(
+                `SELECT transfer_id, tx_hash,
+                        funder_address AS from_wallet, destination_wallet AS to_wallet,
+                        amount_usdc AS amount, status, attempt_count AS attempts,
+                        webhook_url, created_at, confirmed_at
+                 FROM instant_transfers
+                 WHERE transfer_id = $1 AND LOWER(funder_address) = $2`,
+                [transfer_id.trim(), coldWallet]
+            );
+            if (!row.rows[0]) return res.status(404).json({ error: 'Transfer not found or does not belong to this wallet' });
+            return res.json({ cold_wallet: coldWallet, transfer: row.rows[0] });
+        }
+
+        // ── List with optional filters ──────────────────────────────────────────
+        const params = [coldWallet];
+        let where = 'WHERE LOWER(funder_address) = $1';
+
+        if (status && status.trim() !== '') {
+            params.push(status.trim());
+            where += ` AND status = $${params.length}`;
+        }
+        if (dateFrom) {
+            params.push(dateFrom.toISOString());
+            where += ` AND created_at >= $${params.length}`;
+        }
+        if (dateTo) {
+            params.push(dateTo.toISOString());
+            where += ` AND created_at <= $${params.length}`;
+        }
+
+        // Limit: default 50; -1 = all
+        const limitRaw = parseInt(limitParam, 10);
+        const limit = !isNaN(limitRaw) && limitRaw > 0 ? limitRaw : (limitRaw === -1 ? null : 50);
+        const limitClause = limit !== null ? `LIMIT ${limit}` : '';
+
+        const result = await pool.query(
+            `SELECT transfer_id, tx_hash,
+                    funder_address AS from_wallet, destination_wallet AS to_wallet,
+                    amount_usdc AS amount, status, attempt_count AS attempts,
+                    webhook_url, created_at, confirmed_at
+             FROM instant_transfers
+             ${where}
+             ORDER BY created_at DESC
+             ${limitClause}`,
+            params
+        );
+
+        // Total count (without limit) for metadata
+        const countRes = await pool.query(
+            `SELECT COUNT(*) AS total FROM instant_transfers ${where}`, params
+        );
+
+        console.log(`[IP Transactions] GET /transactions — coldWallet=${coldWallet} found=${result.rows.length}`);
+        res.json({
+            cold_wallet: coldWallet,
+            total: parseInt(countRes.rows[0].total, 10),
+            limit_applied: limit ?? 'all',
+            transfers: result.rows,
+        });
+
+    } catch (err) {
+        console.error('[IP Transactions] GET /transactions error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // ── GET /api/v1/instant/webhook/logs ──────────────────────────────────────────
 app.get('/api/v1/instant/webhook/logs', authApiKeyOrJWT, async (req, res) => {
     try {
