@@ -4137,13 +4137,14 @@ app.get('/api/v1/instant/logs', authenticateToken, async (req, res) => {
         const params = [];
         let i = 1;
 
-        // OPERATOR: always scope to their own wallet + only webhook logs
+        // OPERATOR: scope to their own wallet — sees both api_request and webhook_sent
         if (isOperator) {
             conditions.push(`LOWER(cold_wallet) = $${i++}`);
             params.push(req.user.address.toLowerCase());
-            // Operators only see their own webhook_sent logs (not internal api_request logs)
-            if (!type || type === 'all') {
-                conditions.push(`log_type = 'webhook_sent'`);
+            // Honor explicit type filter if provided; otherwise show all types
+            if (type && type !== 'all') {
+                conditions.push(`log_type = $${i++}`);
+                params.push(type);
             }
         }
 
