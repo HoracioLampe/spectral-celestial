@@ -3498,6 +3498,164 @@ app.get('/api/v1/instant/account', authApiKeyOrJWT, async (req, res) => {
     }
 });
 
+// ── GET /api/v1/instant/accounts ───────────────────────────────────────────────
+// Admin-only. Returns the same payload as /account for EVERY funder in rbac_users.
+// No params. Auth: SUPER_ADMIN JWT.
+// Strategy: 2 bulk DB queries + all per-wallet RPC calls in parallel (Promise.allSettled).
+//           Contract-level calls (paused/owner/version) executed only once.
+app.get('/api/v1/instant/accounts', authenticateToken, async (req, res) => {
+    try {
+        if (req.user.role !== 'SUPER_ADMIN') {
+            return res.status(403).json({ error: 'Forbidden: SUPER_ADMIN required' });
+        }
+
+        // ── 1. Fetch all wallets from rbac_users ────────────────────────────────
+        const walletsRes = await pool.query(
+            `SELECT LOWER(address) AS address FROM rbac_users ORDER BY created_at ASC`
+        );
+        const wallets = walletsRes.rows.map(r => r.address);
+
+        if (wallets.length === 0) return res.json({ accounts: [] });
+
+        // ── 2. Bulk DB: faucets + policies for all wallets ──────────────────────
+        const [faucetsRes, policiesRes] = await Promise.all([
+            pool.query(
+                `SELECT LOWER(funder_address) AS funder_address, LOWER(address) AS address
+                 FROM faucets WHERE LOWER(funder_address) = ANY($1)`,
+                [wallets]
+            ),
+            pool.query(
+                `SELECT * FROM instant_policies WHERE LOWER(cold_wallet) = ANY($1)`,
+                [wallets]
+            ),
+        ]);
+
+        // Index by wallet for O(1) lookup
+        const faucetMap = {};
+        faucetsRes.rows.forEach(r => { faucetMap[r.funder_address] = r.address; });
+        const policyMap = {};
+        policiesRes.rows.forEach(r => { policyMap[r.cold_wallet.toLowerCase()] = r; });
+
+        const usdcAddress = process.env.USDC_ADDRESS || '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359';
+
+        // ── 3. Contract-level calls: once for all wallets ───────────────────────
+        const [contractInfoResults] = await Promise.all([
+            Promise.allSettled([
+                globalRpcManager.execute(async (provider) => {
+                    const c = new ethers.Contract(INSTANT_CONTRACT_ADDRESS, CONTRACT_ADMIN_ABI, provider);
+                    return c.paused();
+                }),
+                globalRpcManager.execute(async (provider) => {
+                    const c = new ethers.Contract(INSTANT_CONTRACT_ADDRESS, CONTRACT_ADMIN_ABI, provider);
+                    return c.owner();
+                }),
+                globalRpcManager.execute(async (provider) => {
+                    return getInstantContract(provider).version();
+                }),
+            ]),
+        ]);
+
+        const safeVal = (r, fb) => r.status === 'fulfilled' ? r.value : fb;
+        const isPaused = safeVal(contractInfoResults[0], null);
+        const contractOwner = safeVal(contractInfoResults[1], null);
+        const contractVersion = safeVal(contractInfoResults[2], '1.x');
+
+        // ── 4. Per-wallet RPC calls (all in parallel) ───────────────────────────
+        // For each wallet with a faucet: 3 balance calls + 1 allowance call
+        const walletsWithFaucet = wallets.filter(w => faucetMap[w]);
+
+        const perWalletResults = await Promise.allSettled(
+            walletsWithFaucet.map(coldWallet => {
+                const faucetAddress = faucetMap[coldWallet];
+                return Promise.allSettled([
+                    globalRpcManager.execute(async (p) => {
+                        return new ethers.Contract(usdcAddress, USDC_BALANCE_ABI, p).balanceOf(coldWallet);
+                    }),
+                    globalRpcManager.execute(async (p) => {
+                        return new ethers.Contract(usdcAddress, USDC_BALANCE_ABI, p).balanceOf(faucetAddress);
+                    }),
+                    globalRpcManager.execute(async (p) => p.getBalance(faucetAddress)),
+                    globalRpcManager.execute(async (p) => {
+                        return new ethers.Contract(usdcAddress, USDC_BALANCE_ABI, p).allowance(coldWallet, INSTANT_CONTRACT_ADDRESS);
+                    }),
+                ]);
+            })
+        );
+
+        // ── 5. Assemble response ────────────────────────────────────────────────
+        const accounts = wallets.map(coldWallet => {
+            const faucetAddress = faucetMap[coldWallet] || null;
+            const policy = policyMap[coldWallet] || null;
+
+            // Per-wallet on-chain data
+            let funderUsdc = 0n, faucetUsdc = 0n, faucetMatic = 0n, allowance = 0n;
+            const idx = walletsWithFaucet.indexOf(coldWallet);
+            if (idx !== -1 && perWalletResults[idx]?.status === 'fulfilled') {
+                const calls = perWalletResults[idx].value;
+                funderUsdc = safeVal(calls[0], 0n);
+                faucetUsdc = safeVal(calls[1], 0n);
+                faucetMatic = safeVal(calls[2], 0n);
+                allowance = safeVal(calls[3], 0n);
+            }
+
+            // Policy status
+            let policyData = { status: 'none' };
+            if (policy) {
+                const now = Date.now();
+                const expiresAt = new Date(policy.deadline);
+                const isExpired = now > expiresAt.getTime();
+                const availableUsdc = Number(allowance) / 1e6;
+                const totalUsdc = parseFloat(policy.total_amount);
+                const consumedOnChain = Math.max(0, totalUsdc - availableUsdc);
+
+                let status;
+                if (!policy.is_active) status = 'inactive';
+                else if (isExpired) status = 'expired';
+                else if (availableUsdc === 0) status = 'exhausted';
+                else status = 'active';
+
+                policyData = {
+                    total_authorized: totalUsdc.toFixed(6),
+                    consumed: consumedOnChain.toFixed(6),
+                    available_allowance: fmtUsdc(allowance),
+                    expires_at: expiresAt.toISOString(),
+                    is_active: policy.is_active,
+                    status,
+                };
+
+                // Sync-on-read (fire-and-forget)
+                pool.query(
+                    `UPDATE instant_policies SET consumed_amount=$1, is_active=$2, updated_at=NOW()
+                     WHERE LOWER(cold_wallet)=$3`,
+                    [consumedOnChain.toFixed(6), policy.is_active && !isExpired, coldWallet]
+                ).catch(e => console.warn(`[IP Accounts] sync failed (${coldWallet.slice(0, 10)}):`, e.message));
+            }
+
+            return {
+                cold_wallet: coldWallet,
+                funder: { balance_usdc: fmtUsdc(funderUsdc) },
+                faucet: faucetAddress
+                    ? { address: faucetAddress, balance_usdc: fmtUsdc(faucetUsdc), balance_matic: fmtMatic(faucetMatic) }
+                    : null,
+                policy: policyData,
+                contract: {
+                    address: INSTANT_CONTRACT_ADDRESS,
+                    is_paused: isPaused,
+                    owner: contractOwner,
+                    version: contractVersion,
+                },
+            };
+        });
+
+        console.log(`[IP Accounts] GET /accounts — ${accounts.length} wallets`);
+        res.json({ accounts, total: accounts.length });
+
+    } catch (err) {
+        console.error('[IP Accounts] GET /accounts error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // ── GET /api/v1/instant/webhook/logs ──────────────────────────────────────────
 app.get('/api/v1/instant/webhook/logs', authApiKeyOrJWT, async (req, res) => {
     try {
