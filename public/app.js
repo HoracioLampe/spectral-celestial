@@ -4887,7 +4887,7 @@ window.ipLoadLogs = async function ipLoadLogs(page) {
 
             const errEl = log.error_message
                 ? `<span class="badge badge-danger" title="${escAttr(log.error_message)}"
-                       style="font-size:0.6rem; border-radius:6px; white-space:nowrap;
+                       style="font-size:0.5rem; border-radius:6px; white-space:nowrap; padding:0.15rem 0.3rem;
                               display:inline-block; max-width:100%; overflow:hidden; text-overflow:ellipsis;">
                        ${escHtml(log.error_message.slice(0, 20))}${log.error_message.length > 20 ? '…' : ''}</span>`
                 : '';
