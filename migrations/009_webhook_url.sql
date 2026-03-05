@@ -10,3 +10,7 @@ ALTER TABLE rbac_users
 
 ALTER TABLE rbac_users
   ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
+
+
+

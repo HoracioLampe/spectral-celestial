@@ -2621,6 +2621,19 @@ const xlsx_ip = require('xlsx');
 const INSTANT_CONTRACT_ADDRESS = process.env.INSTANT_PAYMENT_CONTRACT_ADDRESS
     || '0x971da9d642C94f6B5E3867EC891FBA7ef8287d29'; // Polygon Mainnet proxy (public address)
 
+// ── Shared ABIs for account status endpoint (module-level — not re-created per request) ──
+const USDC_BALANCE_ABI = [
+    'function balanceOf(address account) view returns (uint256)',
+    'function allowance(address owner, address spender) view returns (uint256)',
+];
+const CONTRACT_ADMIN_ABI = [
+    'function paused() view returns (bool)',
+    'function owner() view returns (address)',
+];
+// Format helpers: USDC (6 decimals raw BigInt → display string), POL (18 decimals)
+const fmtUsdc = (raw) => (Number(raw) / 1e6).toFixed(6);
+const fmtMatic = (raw) => parseFloat(ethers.formatEther(raw)).toFixed(6);
+
 // Helper: get contract instance (full ABI)
 function getInstantContract(signerOrProvider) {
     const abi = [
@@ -3344,6 +3357,118 @@ app.post('/api/v1/instant/webhook/register', authApiKeyOrJWT, async (req, res) =
 
         res.json({ success: true, webhook_url });
     } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ── GET /api/v1/instant/account ────────────────────────────────────────────────
+// B2B account status endpoint. Auth: X-Api-Key (cold_wallet derived from key — no params needed).
+// Returns: funder balance, faucet balance+address, policy status, contract info.
+// Side-effect: syncs instant_policies.consumed_amount + is_active from on-chain (fire-and-forget).
+app.get('/api/v1/instant/account', authApiKeyOrJWT, async (req, res) => {
+    try {
+        const coldWallet = req.user.address.toLowerCase();
+
+        // ── 1. DB: faucet + policy ──────────────────────────────────────────────
+        const [faucetRes, policyRes] = await Promise.all([
+            pool.query('SELECT address FROM faucets WHERE LOWER(funder_address) = $1 LIMIT 1', [coldWallet]),
+            pool.query('SELECT * FROM instant_policies WHERE LOWER(cold_wallet) = $1 LIMIT 1', [coldWallet]),
+        ]);
+
+        if (!faucetRes.rows[0]) {
+            return res.status(404).json({ error: 'No faucet configured for this wallet' });
+        }
+
+        const faucetAddress = faucetRes.rows[0].address.toLowerCase();
+        const policy = policyRes.rows[0] || null;
+
+        // ── 2. On-chain: parallel calls ─────────────────────────────────────────
+        const provider = globalRpcManager.getProvider();
+        const usdcAddress = process.env.USDC_ADDRESS || '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359';
+
+        const usdc = new ethers.Contract(usdcAddress, USDC_BALANCE_ABI, provider);
+        const contract = getInstantContract(provider);
+        const contractAdmin = new ethers.Contract(INSTANT_CONTRACT_ADDRESS, CONTRACT_ADMIN_ABI, provider);
+
+        const [
+            funderUsdcRaw,
+            faucetUsdcRaw,
+            faucetMaticRaw,
+            allowanceRaw,
+            isPaused,
+            contractOwner,
+            contractVersion,
+        ] = await Promise.all([
+            usdc.balanceOf(coldWallet),
+            usdc.balanceOf(faucetAddress),
+            provider.getBalance(faucetAddress),
+            usdc.allowance(coldWallet, INSTANT_CONTRACT_ADDRESS),
+            contractAdmin.paused(),
+            contractAdmin.owner(),
+            contract.version(),
+        ]);
+
+
+        // ── 4. Policy status ────────────────────────────────────────────────────
+        let policyData = { status: 'none' };
+
+        if (policy) {
+            const now = Date.now();
+            const expiresAt = new Date(policy.deadline);
+            const isExpired = now > expiresAt.getTime();
+            const availableUsdc = Number(allowanceRaw) / 1e6;  // live allowance in USDC
+            const totalUsdc = parseFloat(policy.total_amount);
+            const consumedOnChain = Math.max(0, totalUsdc - availableUsdc);
+
+            let status;
+            if (!policy.is_active) status = 'inactive';
+            else if (isExpired) status = 'expired';
+            else if (availableUsdc === 0) status = 'exhausted';
+            else status = 'active';
+
+            policyData = {
+                total_authorized: totalUsdc.toFixed(6),
+                consumed: consumedOnChain.toFixed(6),
+                available_allowance: fmtUsdc(allowanceRaw),
+                expires_at: expiresAt.toISOString(),
+                is_active: policy.is_active,
+                status,
+            };
+
+            // ── 4a. Sync-on-read: update DB with fresh on-chain values ──────────
+            // fire-and-forget — does not block the response
+            pool.query(
+                `UPDATE instant_policies
+                 SET consumed_amount = $1, is_active = $2, updated_at = NOW()
+                 WHERE LOWER(cold_wallet) = $3`,
+                [consumedOnChain.toFixed(6), policy.is_active && !isExpired, coldWallet]
+            ).catch(e => console.warn('[IP Account] sync-on-read failed:', e.message));
+        }
+
+        // ── 5. Respond ──────────────────────────────────────────────────────────
+        console.log(`[IP Account] GET /account — coldWallet=${coldWallet} policy.status=${policyData.status}`);
+
+        res.json({
+            cold_wallet: coldWallet,
+            funder: {
+                balance_usdc: fmtUsdc(funderUsdcRaw),
+            },
+            faucet: {
+                address: faucetAddress,
+                balance_usdc: fmtUsdc(faucetUsdcRaw),
+                balance_matic: fmtMatic(faucetMaticRaw),
+            },
+            policy: policyData,
+            contract: {
+                address: INSTANT_CONTRACT_ADDRESS,
+                is_paused: isPaused,
+                owner: contractOwner,
+                version: contractVersion,
+            },
+        });
+
+    } catch (err) {
+        console.error('[IP Account] GET /account error:', err);
         res.status(500).json({ error: err.message });
     }
 });
