@@ -3382,31 +3382,56 @@ app.get('/api/v1/instant/account', authApiKeyOrJWT, async (req, res) => {
         const faucetAddress = faucetRes.rows[0].address.toLowerCase();
         const policy = policyRes.rows[0] || null;
 
-        // ── 2. On-chain: parallel calls ─────────────────────────────────────────
-        const provider = globalRpcManager.getProvider();
+        // ── 2. On-chain: parallel calls via RPC pool balanceado ─────────────────
         const usdcAddress = process.env.USDC_ADDRESS || '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359';
 
-        const usdc = new ethers.Contract(usdcAddress, USDC_BALANCE_ABI, provider);
-        const contract = getInstantContract(provider);
-        const contractAdmin = new ethers.Contract(INSTANT_CONTRACT_ADDRESS, CONTRACT_ADMIN_ABI, provider);
-
-        const [
-            funderUsdcRaw,
-            faucetUsdcRaw,
-            faucetMaticRaw,
-            allowanceRaw,
-            isPaused,
-            contractOwner,
-            contractVersion,
-        ] = await Promise.all([
-            usdc.balanceOf(coldWallet),
-            usdc.balanceOf(faucetAddress),
-            provider.getBalance(faucetAddress),
-            usdc.allowance(coldWallet, INSTANT_CONTRACT_ADDRESS),
-            contractAdmin.paused(),
-            contractAdmin.owner(),
-            contract.version(),
+        // Cada call usa globalRpcManager.execute() → balanceo automático entre los 5 RPCs
+        // Promise.allSettled → una call fallida no tira todo el endpoint
+        const results = await Promise.allSettled([
+            globalRpcManager.execute(async (provider) => {   // [0] funder USDC balance
+                const usdc = new ethers.Contract(usdcAddress, USDC_BALANCE_ABI, provider);
+                return usdc.balanceOf(coldWallet);
+            }),
+            globalRpcManager.execute(async (provider) => {   // [1] faucet USDC balance
+                const usdc = new ethers.Contract(usdcAddress, USDC_BALANCE_ABI, provider);
+                return usdc.balanceOf(faucetAddress);
+            }),
+            globalRpcManager.execute(async (provider) => {   // [2] faucet MATIC balance
+                return provider.getBalance(faucetAddress);
+            }),
+            globalRpcManager.execute(async (provider) => {   // [3] USDC allowance (real budget)
+                const usdc = new ethers.Contract(usdcAddress, USDC_BALANCE_ABI, provider);
+                return usdc.allowance(coldWallet, INSTANT_CONTRACT_ADDRESS);
+            }),
+            globalRpcManager.execute(async (provider) => {   // [4] contract paused?
+                const c = new ethers.Contract(INSTANT_CONTRACT_ADDRESS, CONTRACT_ADMIN_ABI, provider);
+                return c.paused();
+            }),
+            globalRpcManager.execute(async (provider) => {   // [5] contract owner
+                const c = new ethers.Contract(INSTANT_CONTRACT_ADDRESS, CONTRACT_ADMIN_ABI, provider);
+                return c.owner();
+            }),
+            globalRpcManager.execute(async (provider) => {   // [6] contract version (V2 only)
+                return getInstantContract(provider).version();
+            }),
         ]);
+
+        const safeVal = (r, fallback) => r.status === 'fulfilled' ? r.value : fallback;
+        const funderUsdcRaw = safeVal(results[0], 0n);
+        const faucetUsdcRaw = safeVal(results[1], 0n);
+        const faucetMaticRaw = safeVal(results[2], 0n);
+        const allowanceRaw = safeVal(results[3], 0n);
+        const isPaused = safeVal(results[4], null);
+        const contractOwner = safeVal(results[5], null);
+        const contractVersion = safeVal(results[6], '1.x'); // V1 no tiene version()
+
+        // Log calls fallidas (no-fatal, solo diagnóstico)
+        results.forEach((r, i) => {
+            if (r.status === 'rejected') {
+                const labels = ['funder.balanceOf', 'faucet.balanceOf', 'faucet.getBalance', 'allowance', 'paused', 'owner', 'version'];
+                console.warn(`[IP Account] on-chain call failed: ${labels[i]} — ${r.reason?.message?.slice(0, 80)}`);
+            }
+        });
 
 
         // ── 4. Policy status ────────────────────────────────────────────────────
