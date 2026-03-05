@@ -3638,17 +3638,20 @@ app.get('/api/v1/instant/accounts', authenticateToken, async (req, res) => {
                     ? { address: faucetAddress, balance_usdc: fmtUsdc(faucetUsdc), balance_matic: fmtMatic(faucetMatic) }
                     : null,
                 policy: policyData,
-                contract: {
-                    address: INSTANT_CONTRACT_ADDRESS,
-                    is_paused: isPaused,
-                    owner: contractOwner,
-                    version: contractVersion,
-                },
             };
         });
 
         console.log(`[IP Accounts] GET /accounts — ${accounts.length} wallets`);
-        res.json({ accounts, total: accounts.length });
+        res.json({
+            total: accounts.length,
+            contract: {
+                address: INSTANT_CONTRACT_ADDRESS,
+                is_paused: isPaused,
+                owner: contractOwner,
+                version: contractVersion,
+            },
+            accounts,
+        });
 
     } catch (err) {
         console.error('[IP Accounts] GET /accounts error:', err);
