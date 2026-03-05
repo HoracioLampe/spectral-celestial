@@ -3223,7 +3223,7 @@ function renderRelayerBalances(explicitData) {
                 </td>
                 <td style="padding:0.75rem; color:${balanceColor}; font-weight:bold;">${balanceDisplay}</td>
                 <td style="padding:0.75rem; color:#94a3b8; font-size:0.8rem;">
-                    ${r.last_activity ? new Date(r.last_activity).toLocaleTimeString() : 'Sin actividad'}
+                    ${r.last_activity ? formatDateTZ(r.last_activity, 'time') : 'Sin actividad'}
                 </td>
                 <td style="padding:0.75rem; text-align:center; font-weight:bold; color: #fff;">
                     ${txCount}
@@ -4810,15 +4810,17 @@ window.ipLoadLogs = async function ipLoadLogs(page) {
         const escAttr = s => String(s).replace(/'/g, "&#39;").replace(/"/g, '&quot;');
 
         tbody.innerHTML = data.logs.map((log, idx) => {
-            const dt = log.created_at ? new Date(log.created_at) : null;
-            const date = dt
-                ? `<span style="font-size:0.75rem;color:#94a3b8;">${dt.toLocaleDateString()}</span><br>
-                   <span style="font-size:0.7rem;color:#64748b;">${dt.toLocaleTimeString()}</span>`
+            // Date formatted in USER_TIMEZONE
+            const dateFull = log.created_at ? formatDateTZ(log.created_at) : null;
+            const [datePart2, timePart2] = dateFull ? dateFull.split(', ') : ['—', ''];
+            const date = dateFull
+                ? `<span style="font-size:0.75rem;color:#94a3b8;">${datePart2}</span><br>
+                   <span style="font-size:0.7rem;color:#64748b;">${timePart2}</span>`
                 : '—';
 
             const typeBadge = log.log_type === 'api_request'
-                ? '<span class="badge badge-info">API Req</span>'
-                : '<span class="badge badge-warning">Webhook</span>';
+                ? '<span class="badge badge-info" style="white-space:nowrap;">API REQ</span>'
+                : '<span class="badge badge-warning" style="white-space:nowrap;">WEBH</span>';
 
             const rawEv = escHtml((log.event_type || '—').toLowerCase());
             const evShort = rawEv
