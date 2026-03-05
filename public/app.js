@@ -4819,24 +4819,26 @@ window.ipLoadLogs = async function ipLoadLogs(page) {
                 : '—';
 
             const typeBadge = log.log_type === 'api_request'
-                ? '<span class="badge badge-info" style="white-space:nowrap;">API REQ</span>'
-                : '<span class="badge badge-warning" style="white-space:nowrap;">WEBH</span>';
+                ? '<span class="badge badge-info" style="border-radius:6px; white-space:nowrap; font-size:0.62rem;">API REQ</span>'
+                : '<span class="badge badge-warning" style="border-radius:6px; white-space:nowrap; font-size:0.62rem;">WEBH</span>';
 
             const rawEv = escHtml((log.event_type || '—').toLowerCase());
             const evShort = rawEv
-                .replace('transfer.received', 'tr.<br><small>received</small>')
-                .replace('transfer.confirmed', 'tr.<br><small>confirmed</small>')
-                .replace('transfer.failed', 'tr.<br><small>failed</small>')
-                .replace('transfer.duplicate', 'tr.<br><small>duplicate</small>')
-                .replace('transfer.rejected', 'tr.<br><small>rejected</small>')
-                .replace('transfer.error', 'tr.<br><small>error</small>')
-                .replace('webhook_sent', 'wh.<br><small>sent</small>')
-                .replace('api_request', 'api<br><small>request</small>');
+                .replace('transfer.pending', 'TR.<br><small>PENDING</small>')
+                .replace('transfer.received', 'TR.<br><small>RECVD</small>')
+                .replace('transfer.confirmed', 'TR.<br><small>CONF</small>')
+                .replace('transfer.failed', 'TR.<br><small>FAILED</small>')
+                .replace('transfer.duplicate', 'TR.<br><small>DUPL</small>')
+                .replace('transfer.rejected', 'TR.<br><small>REJECT</small>')
+                .replace('transfer.error', 'TR.<br><small>ERROR</small>')
+                .replace('webhook_sent', 'WH.<br><small>SENT</small>')
+                .replace('api_request', 'API<br><small>REQ</small>');
             const evClass = rawEv.includes('fail') || rawEv.includes('error') || rawEv.includes('reject') ? 'badge-danger'
-                : rawEv.includes('confirm') || rawEv.includes('received') ? 'badge-success'
-                    : rawEv.includes('duplicate') ? 'badge-warning' : '';
+                : rawEv.includes('confirm') || rawEv.includes('received') || rawEv.includes('sent') ? 'badge-success'
+                    : rawEv.includes('pending') ? 'badge-warning'
+                        : rawEv.includes('duplicate') ? 'badge-warning' : 'badge-info';
             const eventBadge = `<span class="badge ${evClass}"
-                style="font-size:0.65rem; white-space:normal; line-height:1.25; text-align:center; display:inline-block;"
+                style="font-size:0.6rem; border-radius:6px; white-space:normal; line-height:1.2; text-align:center; display:inline-block; padding:0.2rem 0.4rem;"
                 >${evShort}</span>`;
 
             const tid = log.transfer_id || '';
@@ -4883,10 +4885,10 @@ window.ipLoadLogs = async function ipLoadLogs(page) {
                 : '—';
 
             const errEl = log.error_message
-                ? `<span class="badge badge-danger" title="${log.error_message}"
-                       style="font-size:0.6rem; line-height:1.3; white-space:normal;
-                              display:inline-block; max-width:100%; word-break:break-word;">
-                       ${log.error_message.slice(0, 50)}</span>`
+                ? `<span class="badge badge-danger" title="${escAttr(log.error_message)}"
+                       style="font-size:0.6rem; border-radius:6px; white-space:nowrap;
+                              display:inline-block; max-width:100%; overflow:hidden; text-overflow:ellipsis;">
+                       ${escHtml(log.error_message.slice(0, 20))}${log.error_message.length > 20 ? '…' : ''}</span>`
                 : '';
 
             return `<tr onclick="ipShowLogDetail(${idx})" style="cursor:pointer;" title="Click para ver detalle">
