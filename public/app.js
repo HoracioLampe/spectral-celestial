@@ -4873,11 +4873,12 @@ window.ipLoadLogs = async function ipLoadLogs(page) {
             } catch { }
 
             let httpEl = '—';
+            const badgeStyle = 'border-radius:6px; white-space:nowrap; font-size:0.7rem;';
             if (log.http_status) {
                 const hCls = log.http_status < 300 ? 'badge-success' : log.http_status < 400 ? 'badge-warning' : 'badge-danger';
-                httpEl = `<span class="badge ${hCls}">${log.http_status}</span>`;
+                httpEl = `<span class="badge ${hCls}" style="${badgeStyle}">${log.http_status}</span>`;
             } else if (log.delivered === false) {
-                httpEl = '<span class="badge badge-danger">Failed</span>';
+                httpEl = `<span class="badge badge-danger" style="${badgeStyle}">FAIL</span>`;
             }
 
             const ipEl = log.client_ip
