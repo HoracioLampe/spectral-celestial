@@ -3539,20 +3539,18 @@ app.get('/api/v1/instant/accounts', authenticateToken, async (req, res) => {
         const usdcAddress = process.env.USDC_ADDRESS || '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359';
 
         // ── 3. Contract-level calls: once for all wallets ───────────────────────
-        const [contractInfoResults] = await Promise.all([
-            Promise.allSettled([
-                globalRpcManager.execute(async (provider) => {
-                    const c = new ethers.Contract(INSTANT_CONTRACT_ADDRESS, CONTRACT_ADMIN_ABI, provider);
-                    return c.paused();
-                }),
-                globalRpcManager.execute(async (provider) => {
-                    const c = new ethers.Contract(INSTANT_CONTRACT_ADDRESS, CONTRACT_ADMIN_ABI, provider);
-                    return c.owner();
-                }),
-                globalRpcManager.execute(async (provider) => {
-                    return getInstantContract(provider).version();
-                }),
-            ]),
+        const contractInfoResults = await Promise.allSettled([
+            globalRpcManager.execute(async (provider) => {
+                const c = new ethers.Contract(INSTANT_CONTRACT_ADDRESS, CONTRACT_ADMIN_ABI, provider);
+                return c.paused();
+            }),
+            globalRpcManager.execute(async (provider) => {
+                const c = new ethers.Contract(INSTANT_CONTRACT_ADDRESS, CONTRACT_ADMIN_ABI, provider);
+                return c.owner();
+            }),
+            globalRpcManager.execute(async (provider) => {
+                return getInstantContract(provider).version();
+            }),
         ]);
 
         const safeVal = (r, fb) => r.status === 'fulfilled' ? r.value : fb;
@@ -3561,8 +3559,9 @@ app.get('/api/v1/instant/accounts', authenticateToken, async (req, res) => {
         const contractVersion = safeVal(contractInfoResults[2], '1.x');
 
         // ── 4. Per-wallet RPC calls (all in parallel) ───────────────────────────
-        // For each wallet with a faucet: 3 balance calls + 1 allowance call
         const walletsWithFaucet = wallets.filter(w => faucetMap[w]);
+        // Map wallet → result index for O(1) lookup during assembly
+        const walletFaucetIdx = new Map(walletsWithFaucet.map((w, i) => [w, i]));
 
         const perWalletResults = await Promise.allSettled(
             walletsWithFaucet.map(coldWallet => {
@@ -3589,7 +3588,7 @@ app.get('/api/v1/instant/accounts', authenticateToken, async (req, res) => {
 
             // Per-wallet on-chain data
             let funderUsdc = 0n, faucetUsdc = 0n, faucetMatic = 0n, allowance = 0n;
-            const idx = walletsWithFaucet.indexOf(coldWallet);
+            const idx = walletFaucetIdx.get(coldWallet) ?? -1;
             if (idx !== -1 && perWalletResults[idx]?.status === 'fulfilled') {
                 const calls = perWalletResults[idx].value;
                 funderUsdc = safeVal(calls[0], 0n);
