@@ -4873,7 +4873,7 @@ window.ipLoadLogs = async function ipLoadLogs(page) {
             } catch { }
 
             let httpEl = '—';
-            const badgeStyle = 'border-radius:6px; white-space:nowrap; font-size:0.7rem;';
+            const badgeStyle = 'border-radius:6px; white-space:nowrap; font-size:0.55rem; padding:0.15rem 0.3rem;';
             if (log.http_status) {
                 const hCls = log.http_status < 300 ? 'badge-success' : log.http_status < 400 ? 'badge-warning' : 'badge-danger';
                 httpEl = `<span class="badge ${hCls}" style="${badgeStyle}">${log.http_status}</span>`;
