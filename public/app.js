@@ -4819,8 +4819,8 @@ window.ipLoadLogs = async function ipLoadLogs(page) {
                 : '—';
 
             const typeBadge = log.log_type === 'api_request'
-                ? '<span class="badge badge-info" style="border-radius:6px; white-space:nowrap; font-size:0.62rem;">API REQ</span>'
-                : '<span class="badge badge-warning" style="border-radius:6px; white-space:nowrap; font-size:0.62rem;">WEBH</span>';
+                ? '<span class="badge badge-info" style="border-radius:6px; white-space:nowrap; font-size:0.62rem;">API</span>'
+                : '<span class="badge badge-warning" style="border-radius:6px; white-space:nowrap; font-size:0.62rem;">WH</span>';
 
             const rawEv = escHtml((log.event_type || '—').toLowerCase());
             const evShort = rawEv
