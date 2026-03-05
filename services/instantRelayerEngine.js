@@ -403,13 +403,20 @@ class InstantRelayerEngine {
             console.log(`[InstantRelayer] Normalized webhook URL: ${webhookUrl} → ${resolvedUrl}`);
         }
 
+        // Derive status from the event type so the payload is always accurate,
+        // regardless of the stale `transfer.status` read during the initial DB poll.
+        const eventStatusMap = {
+            'transfer.pending': 'pending',
+            'transfer.confirmed': 'confirmed',
+            'transfer.failed': 'failed',
+        };
         const payload = {
             event: eventType,
             transferId: transfer.transfer_id,
             funder: transfer.funder_address,
             to: transfer.destination_wallet,
             amount: transfer.amount_usdc,
-            status: transfer.status,
+            status: eventStatusMap[eventType] ?? transfer.status,
             timestamp: new Date().toISOString(),
             ...data
         };
