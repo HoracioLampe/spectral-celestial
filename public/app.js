@@ -4124,9 +4124,15 @@ window.ipResetPolicy = async (btn) => {
         const data = await res.json();
 
         if (res.ok && data.success) {
-            if (statusEl) { statusEl.textContent = '✅ Permit revocado. Allowance on-chain = 0.'; statusEl.style.color = '#10b981'; }
-            if (btn) btn.innerHTML = '✅ Reseteado';
-            setTimeout(() => { ipLoadPolicy(); if (btn) { btn.innerHTML = originalHTML; btn.disabled = false; } }, 2000);
+            if (btn) btn.innerHTML = '✅ Reseteado — recargando...';
+            // Hide the activate form if open
+            document.getElementById('ipActivateForm')?.classList.add('hidden');
+            // Reload the policy panel immediately + again after 3s for on-chain confirmation
+            ipLoadPolicy();
+            setTimeout(() => {
+                ipLoadPolicy();
+                if (btn) { btn.innerHTML = originalHTML; btn.disabled = false; }
+            }, 3000);
         } else {
             throw new Error(data.error || 'Error desconocido al resetear');
         }
