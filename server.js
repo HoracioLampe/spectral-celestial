@@ -3096,7 +3096,7 @@ app.post('/api/v1/instant/policy/activate', authenticateToken, async (req, res) 
         const funderAddress = req.user.address.toLowerCase();
         const { totalAmountUsdc, deadlineUnix, permitSig } = req.body;
 
-        if (!totalAmountUsdc || !deadlineUnix) {
+        if (totalAmountUsdc === undefined || totalAmountUsdc === null || !deadlineUnix) {
             return res.status(400).json({ error: 'totalAmountUsdc and deadlineUnix are required' });
         }
         if (!INSTANT_CONTRACT_ADDRESS) {
