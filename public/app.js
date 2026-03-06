@@ -460,10 +460,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             fetchBalances();
         }
-        fetchBatches();
     } else {
-        // Just load batches for context
-        fetchBatches();
+        // No session — just show landing
     }
 
     if (window.ethereum && !savedToken) {
@@ -770,7 +768,8 @@ async function connectWallet() {
 
             updateUI();
             checkFaucetStatus();
-
+            // Load Instant Payments as default view
+            setTimeout(() => showInstantPaymentSection(), 600);
 
             window.ethereum.on('accountsChanged', () => location.reload());
             window.ethereum.on('chainChanged', () => location.reload());
