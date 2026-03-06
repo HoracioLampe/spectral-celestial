@@ -401,7 +401,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (payload.role === 'SUPER_ADMIN') {
                 if (navAdmin) navAdmin.classList.remove('hidden');
                 document.getElementById('navContractAdmin')?.classList.remove('hidden');
-                document.getElementById('navRecovery')?.classList.remove('hidden');
                 document.getElementById('navInstantLogs')?.classList.remove('hidden');
                 document.getElementById('navConnections')?.classList.remove('hidden');
             }
@@ -428,9 +427,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 updateUI();
                 loadUserTimezone(); // ← alias of ipLoadTimezone: loads USER_TIMEZONE + syncs dropdown select
                 checkFaucetStatus();
-                // We do NOT call loadBatches here automatically to avoid double-fetch if updateUI does it, 
-                // but usually updateUI handles balance. loadBatches is separate.
-                loadBatches();
+                // Instant Payments is the default section for this branch
+                showInstantPaymentSection();
             }
         } catch (e) {
             // Update UI elements
@@ -772,7 +770,7 @@ async function connectWallet() {
 
             updateUI();
             checkFaucetStatus();
-            fetchBatches(); // Keep fetching batches
+
 
             window.ethereum.on('accountsChanged', () => location.reload());
             window.ethereum.on('chainChanged', () => location.reload());

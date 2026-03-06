@@ -73,13 +73,13 @@
 
             <main class="hero-section">
                 <div class="hero-text">
-                    <h1 class="glitch-text" data-text="Next-Gen Distro">Next-Gen USDC Distribution</h1>
-                    <p class="hero-subtitle">Gestión masiva de pagos con seguridad Merkle Tree y autenticación SIWE.
+                    <h1 class="glitch-text" data-text="Next-Gen Instant">Next-Gen USDC Instant Payments</h1>
+                    <p class="hero-subtitle">Gestión instantanea de pagos con autenticación SIWE.
                         Transparente, rápido y ultra-seguro.</p>
 
                     <div class="hero-features">
-                        <div class="feature-tag"><span>🛡️</span> Merkle Proofs</div>
-                        <div class="feature-tag"><span>⚡</span> Global Payroll</div>
+                        <div class="feature-tag"><span>⚡</span> Instant Payments</div>
+                        <div class="feature-tag"><span>🔐</span> EIP-712 Signed</div>
                         <div class="feature-tag"><span>🦊</span> SIWE Auth</div>
                     </div>
 
@@ -113,20 +113,12 @@
                     <img src="assets/Transparent Logo.svg" alt="DappsFactory" class="logo-img">
                 </div>
                 <nav class="side-nav">
-                    <a href="#" id="navTransacciones" class="nav-link active">
-                        <span class="nav-icon">📤</span> Transacciones
+
+                    <a href="#" id="navInstantPayment" class="nav-link active" title="Pagos Instantáneos USDC">
+                        <span class="nav-icon">&#9889;</span> Instant Payments
                     </a>
                     <a href="#" id="navAdmin" class="nav-link hidden">
                         <span class="nav-icon">⚡</span> Admin Portal
-                    </a>
-                    <a href="#" id="navRecovery" class="nav-link hidden" title="Recuperación de Fondos (Admin)">
-                        <span class="nav-icon">💰</span> Recuperar Fondos
-                    </a>
-                    <a href="#" id="adminRescueFunds" class="nav-link hidden" title="Rescatar Fondos (Sweep)">
-                        <span class="nav-icon">🧹</span> Rescatar Fondos
-                    </a>
-                    <a href="#" id="navInstantPayment" class="nav-link" title="Pagos Instantáneos USDC">
-                        <span class="nav-icon">&#9889;</span> Instant Payments
                     </a>
                     <a href="#" id="navConnections" class="nav-link hidden"
                         title="Connections Admin — API Keys y Webhooks por cold wallet">
@@ -236,8 +228,8 @@
             <!-- MAIN CONTAINER -->
             <div id="mainBatchPanel">
 
-                <!-- SECCIÓN LOTES (DEFAULT) -->
-                <div id="batchSection" class="glass-panel">
+                <!-- SECCIÓN LOTES (HIDDEN - no se usa en este branch) -->
+                <div id="batchSection" class="glass-panel hidden">
 
                     <!-- VISTA: LISTA DE LOTES -->
                     <div id="batchListView">
@@ -607,7 +599,7 @@
                 </div> <!-- Fin batchSection -->
 
                 <!-- INSTANT PAYMENT SECTION -->
-                <div id="instantPaymentSection" class="glass-panel hidden">
+                <div id="instantPaymentSection" class="glass-panel">
 
                     <!-- POLICY PANEL -->
                     <div id="ipPolicyPanel">
