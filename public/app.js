@@ -4063,71 +4063,19 @@ window.ipActivatePolicy = async () => {
 
 
 window.ipResetPolicy = async (btn) => {
-    if (!confirm('Se revocará el permit y la autorización USDC on-chain (allowance = 0).\nFirmarás con tu wallet sin costo de gas.\n\n¿Continuar?')) return;
+    if (!confirm('Se desactivar\u00e1 la pol\u00edtica y se resetear\u00e1 el permit on-chain.\nEl faucet paga el gas \u2014 no necesit\u00e1s firmar nada.\n\n\u00bfContinuar?')) return;
 
     const originalHTML = btn ? btn.innerHTML : 'Reset Permit';
-    const statusEl = document.getElementById('ipActivateStatus');
 
     try {
-        if (btn) { btn.innerHTML = '⏳ Cargando...'; btn.disabled = true; }
+        if (btn) { btn.innerHTML = '\u23f3 Reseteando...'; btn.disabled = true; }
 
-        // Load contract config
-        const cfgRes = await authenticatedFetch('/api/v1/instant/admin/config');
-        const config = await cfgRes.json();
-        const contractAddress = config.contractAddress;
-        const USDC_ADDRESS = '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359';
-
-        if (!contractAddress) throw new Error('Contrato no configurado');
-        if (!signer) throw new Error('Conectá MetaMask primero');
-
-        // Deadline = now + 2 min (minimum valid for TX submission)
-        const resetDeadline = Math.floor(Date.now() / 1000) + 120;
-
-        // Read USDC permit nonce from backend
-        if (btn) btn.innerHTML = '⏳ Nonce USDC...';
-        if (statusEl) { statusEl.textContent = '⏳ Leyendo nonce USDC...'; statusEl.style.color = '#60a5fa'; }
-        const nonceRes = await authenticatedFetch('/api/v1/instant/usdc/nonce');
-        const nonceData = await nonceRes.json();
-        if (!nonceRes.ok) throw new Error(nonceData.error || 'Error leyendo nonce USDC');
-        const permitNonce = BigInt(nonceData.nonce);
-        const signerAddr = await signer.getAddress();
-
-        // Sign EIP-2612 permit with value = 0 (revokes allowance)
-        if (btn) btn.innerHTML = '🦊 Firmá en MetaMask...';
-        if (statusEl) { statusEl.textContent = '🔐 Firmá el permit de revocación (sin costo de gas)...'; statusEl.style.color = '#f59e0b'; }
-
-        const rawSig = await signer.signTypedData(
-            { name: 'USD Coin', version: '2', chainId: 137, verifyingContract: USDC_ADDRESS },
-            {
-                Permit: [
-                    { name: 'owner', type: 'address' },
-                    { name: 'spender', type: 'address' },
-                    { name: 'value', type: 'uint256' },
-                    { name: 'nonce', type: 'uint256' },
-                    { name: 'deadline', type: 'uint256' },
-                ]
-            },
-            { owner: signerAddr, spender: contractAddress, value: 0n, nonce: permitNonce, deadline: BigInt(resetDeadline) }
-        );
-        const { v, r, s } = ethers.Signature.from(rawSig);
-        const permitSigData = { v, r, s, deadline: resetDeadline, owner: signerAddr, value: '0' };
-
-        if (btn) btn.innerHTML = '⏳ Reseteando on-chain...';
-        if (statusEl) { statusEl.textContent = '⏳ El faucet está revocando el allowance on-chain...'; statusEl.style.color = '#60a5fa'; }
-
-        // Reuse activate endpoint with amount=0 — sets allowance to 0 and deactivates policy
-        const res = await authenticatedFetch('/api/v1/instant/policy/activate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ totalAmountUsdc: 0, deadlineUnix: resetDeadline, permitSig: permitSigData })
-        });
+        const res = await authenticatedFetch('/api/v1/instant/policy/reset', { method: 'POST' });
         const data = await res.json();
 
         if (res.ok && data.success) {
-            if (btn) btn.innerHTML = '✅ Reseteado — recargando...';
-            // Hide the activate form if open
+            if (btn) btn.innerHTML = '\u2705 Reseteado \u2014 recargando...';
             document.getElementById('ipActivateForm')?.classList.add('hidden');
-            // Reload the policy panel immediately + again after 3s for on-chain confirmation
             ipLoadPolicy();
             setTimeout(() => {
                 ipLoadPolicy();
@@ -4138,10 +4086,13 @@ window.ipResetPolicy = async (btn) => {
         }
     } catch (err) {
         console.error('[IP] ipResetPolicy error:', err);
-        if (statusEl) { statusEl.textContent = '❌ Error: ' + err.message; statusEl.style.color = '#ef4444'; }
+        alert('\u274c Error al resetear: ' + err.message);
         if (btn) { btn.innerHTML = originalHTML; btn.disabled = false; }
     }
 };
+
+
+
 
 window.ipRevokeAllowance = async (btn) => {
     const statusEl = document.getElementById('ipActivateStatus');
