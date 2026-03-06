@@ -3751,7 +3751,10 @@ async function ipLoadPolicy() {
         document.getElementById('ipTotalAmount').textContent = fmt(data.total_amount);
         document.getElementById('ipConsumed').textContent = fmt(data.consumed_amount);
         document.getElementById('ipRemaining').textContent = fmt(data.remaining);
-        document.getElementById('ipDeadline').textContent = formatDateTZ(data.deadline);
+        const deadlineEl = document.getElementById('ipDeadline');
+        deadlineEl.textContent = formatDateTZ(data.deadline);
+        // Store raw UTC unix timestamp for pre-filling the update form
+        deadlineEl.dataset.utcTs = data.deadline;
 
         const badge = document.getElementById('ipPolicyBadge');
 
@@ -3787,23 +3790,39 @@ async function ipLoadPolicy() {
 window.ipShowActivateForm = () => {
     const form = document.getElementById('ipActivateForm');
     form.classList.remove('hidden');
-    // Pre-fill deadline with +24 hours, formatted in USER_TIMEZONE (not browser local time)
-    const future = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
     const tz = USER_TIMEZONE || 'UTC';
+
+    // ── Pre-fill with current policy values if available ──────────────────
+    const currentAmountEl = document.getElementById('ipTotalAmount');
+    const currentDeadlineEl = document.getElementById('ipDeadline');
+
+    // Try to read current amount (strip $ and spaces)
+    if (currentAmountEl && currentAmountEl.textContent && currentAmountEl.textContent !== '—') {
+        const raw = currentAmountEl.textContent.replace(/[^0-9.]/g, '');
+        if (raw) document.getElementById('ipFormAmount').value = raw;
+    }
+
+    // Pre-fill deadline: try current policy deadline, fallback to now+24h
+    let targetDate = new Date(Date.now() + 24 * 60 * 60 * 1000); // default +24h
+    // ipDeadline element shows a formatted date string — we try to parse it
+    // Store raw UTC timestamp in a data attribute set by ipLoadPolicy
+    const deadlineRaw = currentDeadlineEl?.dataset?.utcTs;
+    if (deadlineRaw && !isNaN(Number(deadlineRaw))) {
+        targetDate = new Date(Number(deadlineRaw) * 1000);
+    }
+
     try {
-        // Get the datetime parts in the user's configured timezone
         const parts = new Intl.DateTimeFormat('en-CA', {
             timeZone: tz,
             year: 'numeric', month: '2-digit', day: '2-digit',
             hour: '2-digit', minute: '2-digit', hour12: false
-        }).formatToParts(future);
+        }).formatToParts(targetDate);
         const get = (type) => parts.find(p => p.type === type)?.value || '00';
-        // Format as YYYY-MM-DDTHH:mm for datetime-local input
         const localStr = `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}`;
         document.getElementById('ipFormExpiry').value = localStr;
     } catch {
-        // Fallback: use browser local time
-        const local = new Date(future - future.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+        const local = new Date(targetDate - targetDate.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
         document.getElementById('ipFormExpiry').value = local;
     }
     form.scrollIntoView({ behavior: 'smooth' });
@@ -4044,40 +4063,77 @@ window.ipActivatePolicy = async () => {
 
 
 window.ipResetPolicy = async (btn) => {
-    if (!confirm('¿Estás seguro de desactivar la política? Se detendrán los pagos instantáneos inmediatamente (vía Servidor/Faucet).')) return;
+    if (!confirm('Se revocará el permit y la autorización USDC on-chain (allowance = 0).\nFirmarás con tu wallet sin costo de gas.\n\n¿Continuar?')) return;
 
     const originalHTML = btn ? btn.innerHTML : 'Reset Permit';
-    const originalDisabled = btn ? btn.disabled : false;
+    const statusEl = document.getElementById('ipActivateStatus');
 
     try {
-        if (btn) {
-            btn.innerHTML = '⏳ Servidor...';
-            btn.disabled = true;
-        }
+        if (btn) { btn.innerHTML = '⏳ Cargando...'; btn.disabled = true; }
 
-        const res = await authenticatedFetch('/api/v1/instant/policy/reset', { method: 'POST' });
+        // Load contract config
+        const cfgRes = await authenticatedFetch('/api/v1/instant/admin/config');
+        const config = await cfgRes.json();
+        const contractAddress = config.contractAddress;
+        const USDC_ADDRESS = '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359';
+
+        if (!contractAddress) throw new Error('Contrato no configurado');
+        if (!signer) throw new Error('Conectá MetaMask primero');
+
+        // Deadline = now + 2 min (minimum valid for TX submission)
+        const resetDeadline = Math.floor(Date.now() / 1000) + 120;
+
+        // Read USDC permit nonce from backend
+        if (btn) btn.innerHTML = '⏳ Nonce USDC...';
+        if (statusEl) { statusEl.textContent = '⏳ Leyendo nonce USDC...'; statusEl.style.color = '#60a5fa'; }
+        const nonceRes = await authenticatedFetch('/api/v1/instant/usdc/nonce');
+        const nonceData = await nonceRes.json();
+        if (!nonceRes.ok) throw new Error(nonceData.error || 'Error leyendo nonce USDC');
+        const permitNonce = BigInt(nonceData.nonce);
+        const signerAddr = await signer.getAddress();
+
+        // Sign EIP-2612 permit with value = 0 (revokes allowance)
+        if (btn) btn.innerHTML = '🦊 Firmá en MetaMask...';
+        if (statusEl) { statusEl.textContent = '🔐 Firmá el permit de revocación (sin costo de gas)...'; statusEl.style.color = '#f59e0b'; }
+
+        const rawSig = await signer.signTypedData(
+            { name: 'USD Coin', version: '2', chainId: 137, verifyingContract: USDC_ADDRESS },
+            {
+                Permit: [
+                    { name: 'owner', type: 'address' },
+                    { name: 'spender', type: 'address' },
+                    { name: 'value', type: 'uint256' },
+                    { name: 'nonce', type: 'uint256' },
+                    { name: 'deadline', type: 'uint256' },
+                ]
+            },
+            { owner: signerAddr, spender: contractAddress, value: 0n, nonce: permitNonce, deadline: BigInt(resetDeadline) }
+        );
+        const { v, r, s } = ethers.Signature.from(rawSig);
+        const permitSigData = { v, r, s, deadline: resetDeadline, owner: signerAddr, value: '0' };
+
+        if (btn) btn.innerHTML = '⏳ Reseteando on-chain...';
+        if (statusEl) { statusEl.textContent = '⏳ El faucet está revocando el allowance on-chain...'; statusEl.style.color = '#60a5fa'; }
+
+        // Reuse activate endpoint with amount=0 — sets allowance to 0 and deactivates policy
+        const res = await authenticatedFetch('/api/v1/instant/policy/activate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ totalAmountUsdc: 0, deadlineUnix: resetDeadline, permitSig: permitSigData })
+        });
         const data = await res.json();
 
-        if (res.ok) {
-            if (btn) btn.innerHTML = '✅ OK Servidor';
-
-            // Preguntar si desea revocar en la blockchain también (MetaMask)
-            if (confirm('Política desactivada en el servidor. ¿Deseas también REVOCAR la aprobación de USDC en tu wallet (MetaMask) para máxima seguridad?\n\n(Esto requiere una firma y gasto de gas)')) {
-                await ipRevokeAllowance(btn);
-            } else {
-                if (btn) btn.innerHTML = '✅ Reset parcial (Servidor)';
-                setTimeout(() => ipLoadPolicy(), 2000);
-            }
+        if (res.ok && data.success) {
+            if (statusEl) { statusEl.textContent = '✅ Permit revocado. Allowance on-chain = 0.'; statusEl.style.color = '#10b981'; }
+            if (btn) btn.innerHTML = '✅ Reseteado';
+            setTimeout(() => { ipLoadPolicy(); if (btn) { btn.innerHTML = originalHTML; btn.disabled = false; } }, 2000);
         } else {
-            throw new Error(data.error || 'Error desconocido');
+            throw new Error(data.error || 'Error desconocido al resetear');
         }
     } catch (err) {
         console.error('[IP] ipResetPolicy error:', err);
-        alert('❌ Error al resetear: ' + err.message);
-        if (btn) {
-            btn.innerHTML = originalHTML;
-            btn.disabled = originalDisabled;
-        }
+        if (statusEl) { statusEl.textContent = '❌ Error: ' + err.message; statusEl.style.color = '#ef4444'; }
+        if (btn) { btn.innerHTML = originalHTML; btn.disabled = false; }
     }
 };
 
