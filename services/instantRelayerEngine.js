@@ -115,15 +115,75 @@ class InstantRelayerEngine {
         try {
             await client.query('BEGIN');
 
+            // ── Recovery 1: Stuck 'processing' transfers ──────────────────────
+            // If the server crashed while waiting for a receipt, transfers can be
+            // stuck in 'processing' forever (the poll only picks up 'pending').
+            // Reset any that have been in 'processing' for more than 3 minutes.
+            const { rows: rescued } = await client.query(`
+                UPDATE instant_transfers
+                SET status='pending', updated_at=NOW()
+                WHERE status = 'processing'
+                  AND updated_at < NOW() - INTERVAL '3 minutes'
+                RETURNING transfer_id, amount_usdc
+            `);
+            if (rescued.length > 0) {
+                console.log(`[InstantRelayer] ♻️ Rescued ${rescued.length} stuck processing transfer(s):`, rescued.map(r => r.transfer_id));
+            }
+
             // Clean up any 'pending' transfers that already hit max retries (e.g. after server restart)
-            await client.query(`
+            const { rows: maxedOut } = await client.query(`
                 UPDATE instant_transfers
                 SET status='failed', error_message=COALESCE(error_message, 'Max retries exceeded'), updated_at=NOW()
                 WHERE status = 'pending' AND attempt_count >= $1
+                RETURNING id, transfer_id, funder_address, destination_wallet, amount_usdc, webhook_url, attempt_count
             `, [MAX_RETRIES]);
+            await client.query('COMMIT');
+
+            // Fire webhooks for any transfers just marked failed due to max retries
+            for (const transfer of maxedOut) {
+                console.log(`[InstantRelayer] ⚠️ Max retries exceeded for ${transfer.transfer_id}. Firing failed webhook.`);
+                await this._sendWebhook(transfer, 'transfer.failed', { error: 'Max retries exceeded' });
+            }
+
+            // ── Recovery 2: Undelivered webhooks for already-resolved transfers ─
+            // If a transfer is confirmed or failed but the webhook was never delivered,
+            // retry it now. Only retry if below WEBHOOK_MAX_RETRIES to avoid infinite loops.
+            const { rows: pendingWebhooks } = await this.pool.query(`
+                SELECT DISTINCT ON (wl.transfer_id)
+                    wl.event_type,
+                    t.id, t.transfer_id, t.funder_address, t.destination_wallet,
+                    t.amount_usdc, t.status, t.tx_hash, t.webhook_url, t.attempt_count
+                FROM instant_webhook_logs wl
+                JOIN instant_transfers t ON t.transfer_id = wl.transfer_id
+                WHERE wl.delivered = false
+                  AND wl.attempt_count < $1
+                  AND t.status IN ('confirmed', 'failed')
+                ORDER BY wl.transfer_id, wl.created_at DESC
+            `, [WEBHOOK_MAX_RETRIES]);
+            for (const transfer of pendingWebhooks) {
+                console.log(`[InstantRelayer] 📨 Retrying undelivered webhook for ${transfer.transfer_id} (${transfer.event_type})`);
+                await this._sendWebhook(transfer, transfer.event_type, {
+                    ...(transfer.tx_hash ? { tx_hash: transfer.tx_hash } : {}),
+                    ...(transfer.status === 'failed' ? { error: 'Webhook retry after delivery failure' } : {})
+                });
+            }
+
+
+        } catch (err) {
+            await client.query('ROLLBACK').catch(() => { });
+            console.error('[InstantRelayer] DB error during poll:', err.message);
+            client.release();
+            return;
+        }
+        client.release();
+
+        // ── Normal processing: pick one pending transfer ──────────────────────
+        const client2 = await this.pool.connect();
+        try {
+            await client2.query('BEGIN');
 
             // Take one pending transfer with row lock (SKIP LOCKED = no blocking)
-            const { rows } = await client.query(`
+            const { rows } = await client2.query(`
                 SELECT * FROM instant_transfers
                 WHERE status = 'pending' AND attempt_count < $1
                 ORDER BY created_at ASC
@@ -132,27 +192,29 @@ class InstantRelayerEngine {
             `, [MAX_RETRIES]);
 
             if (rows.length === 0) {
-                await client.query('COMMIT');
+                await client2.query('COMMIT');
+                client2.release();
                 return;
             }
 
             const transfer = rows[0];
 
             // Mark as processing
-            await client.query(
+            await client2.query(
                 `UPDATE instant_transfers SET status='processing', attempt_count=attempt_count+1, updated_at=NOW() WHERE id=$1`,
                 [transfer.id]
             );
-            await client.query('COMMIT');
+            await client2.query('COMMIT');
+            client2.release();
 
             await this._executeTransfer(transfer);
         } catch (err) {
-            await client.query('ROLLBACK').catch(() => { });
+            await client2.query('ROLLBACK').catch(() => { });
             console.error('[InstantRelayer] DB error during poll:', err.message);
-        } finally {
-            client.release();
+            client2.release();
         }
     }
+
 
     // ─── Transfer Execution ───────────────────────────────────────────────────
 
@@ -246,15 +308,35 @@ class InstantRelayerEngine {
         } catch (err) {
             console.error(`[InstantRelayer] ❌ Transfer ${transfer_id} failed (attempt ${attempt_count}): ${err.message}`);
 
-            const isFinal = attempt_count >= MAX_RETRIES;
+            // ── Permanent vs transient failure detection ──────────────────────────
+            // Permanent = contract revert (no point retrying — the TX will always fail).
+            //   • ethers v6 sets err.code === 'CALL_EXCEPTION' for any revert.
+            //   • Fallback: check message keywords for envs where code may not propagate.
+            //   • Also catches our own 'Transaction reverted on-chain' (receipt.status=0).
+            // Transient = network issue, nonce, timeout, gas oracle — worth retrying.
+            const errCode = err.code || '';
+            const errMsg = (err.message || '').toLowerCase();
+            const isContractRevert =
+                errCode === 'CALL_EXCEPTION' ||      // ethers.js canonical code for ANY revert
+                errMsg.includes('revert') ||          // "execution reverted: ..." or "Transaction reverted on-chain"
+                errMsg.includes('call revert') ||     // older ethers compat
+                errMsg.includes('insufficient') ||    // ERC-20 balance/allowance errors
+                errMsg.includes('exceeds balance') || // transferFrom ERC-20 specific
+                errMsg.includes('paused') ||          // contract paused guard
+                errMsg.includes('already') ||         // AlreadyExecuted idempotency guard
+                errMsg.includes('expired');            // PolicyExpired guard
+
+            const isFinal = isContractRevert || attempt_count >= MAX_RETRIES;
             const newStatus = isFinal ? 'failed' : 'pending';
 
             await this._updateStatus(id, newStatus, null, err.message);
 
             if (isFinal) {
+                console.log(`[InstantRelayer] ⚠️ Final failure for ${transfer_id} (${isContractRevert ? 'contract revert' : 'max retries'}). Firing webhook.`);
                 await this._sendWebhook(transfer, 'transfer.failed', { error: err.message });
             }
         }
+
     }
 
     // ─── Gas Management ───────────────────────────────────────────────────────

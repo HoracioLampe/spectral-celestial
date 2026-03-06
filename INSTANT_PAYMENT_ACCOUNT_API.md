@@ -306,3 +306,78 @@ history.transfers.forEach(t => {
 3. **tx_hash:** es `null` para transferencias `pending` o `failed` antes de ser enviadas a la blockchain.
 4. **policy.available_allowance:** representa el allowance ERC-20 real on-chain (no el valor en DB). Es el presupuesto disponible real para el relayer.
 5. **Sync-on-read:** cada llamada a `/account` y `/accounts` actualiza automáticamente el estado de la política en la base de datos con los valores on-chain actuales.
+
+---
+
+## Comportamiento ante fallo on-chain por fondos insuficientes
+
+Este es un caso especial que **no es rechazado por el API** (el API no hace validación on-chain del saldo USDC por diseño — ver nota abajo), pero sí produce un resultado determinístico y notificable.
+
+### Escenario
+
+- La cold wallet tiene permit activo + allowance suficiente **en la política DB**, pero el saldo real de USDC en la wallet es 0 (o menor al monto).
+- El API acepta la transferencia y devuelve `201 pending`.
+- El relayer intenta ejecutar `executeTransfer()` en el contrato.
+- El contrato revierte (revert por `transferFrom` fallido — sin fondos).
+
+### ¿Por qué el API no valida el saldo on-chain?
+
+Si el API leyera el saldo on-chain y luego el relayer ejecutara la TX, existiría una **ventana de race condition (TOCTOU)**: el saldo podría cambiar entre la lectura y la ejecución. La garantía real la da el contrato, que es **atómico**. Por eso el revert se maneja en el relayer, no en el API.
+
+### Respuesta del API al crear la transferencia
+
+```http
+HTTP/1.1 201 Created
+```
+```json
+{
+  "success": true,
+  "transfer_id": "abc123...",
+  "status": "pending",
+  "message": "Transfer queued successfully"
+}
+```
+
+No se devuelve error en el HTTP response inicial. El fallo se comunica **vía webhook**.
+
+### Webhook de fallo que recibirás
+
+El relayer detecta que el error del contrato es un revert permanente (no un problema transitorio de red) y dispara el webhook de fallo **en el primer intento**, sin reintentar.
+
+```json
+{
+  "event": "transfer.failed",
+  "transferId": "abc123-...",
+  "funder": "0x09c31e3a...",
+  "to": "0xdestino...",
+  "amount": 10.5,
+  "status": "failed",
+  "timestamp": "2026-03-06T20:00:00.000Z",
+  "error": "execution reverted: ERC20: transfer amount exceeds balance",
+  "remaining_allowance": "19.500000",
+  "policy_expires_at": "2026-03-10T00:00:00.000Z"
+}
+```
+
+### Campo `error` — valores posibles
+
+| Valor de `error` | Causa |
+|-----------------|-------|
+| `execution reverted: ERC20: transfer amount exceeds balance` | Saldo USDC insuficiente en la cold wallet |
+| `execution reverted: InsufficientAllowance` | El allowance ERC-20 fue revocado antes de la ejecución |
+| `execution reverted: PolicyExpired` | La política venció entre el encolamiento y la ejecución |
+| `execution reverted: AlreadyExecuted` | El `transferId` ya fue procesado on-chain (idempotencia) |
+| `execution reverted: Paused` | El contrato fue pausado por el admin |
+| `execution reverted: <cualquier otro motivo>` | Cualquier revert no contemplado — el relayer lo detecta vía `CALL_EXCEPTION` (ethers.js) y dispara el webhook inmediatamente sin reintentar |
+
+### Cómo detectarlo en tu integración
+
+```javascript
+webhook.on('transfer.failed', (payload) => {
+  if (payload.error && payload.error.includes('transfer amount exceeds balance')) {
+    // Fondos insuficientes en la cold wallet — notificar al usuario
+    console.error('La wallet no tenia fondos suficientes al momento de la ejecucion');
+  }
+});
+```
+

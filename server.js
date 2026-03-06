@@ -2893,6 +2893,10 @@ app.post('/api/v1/instant/transfer', authApiKeyOrJWT, async (req, res) => {
         }
 
         // ── 5. Check active policy ────────────────────────────────────────────
+        // NOTE: We intentionally do NOT check on-chain USDC balance here (TOCTOU risk).
+        // The contract's executeTransfer is atomic and will revert if balance is insufficient.
+        // The relayer engine detects that revert and immediately marks the transfer as failed
+        // and fires the webhook — without wasting retries on a doomed TX.
         const policy = await pool.query(
             'SELECT * FROM instant_policies WHERE cold_wallet=$1 AND is_active=true',
             [funderAddress]
