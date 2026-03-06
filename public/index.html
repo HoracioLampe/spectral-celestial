@@ -655,8 +655,15 @@
                             <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-bottom:1rem;">
                                 <div class="form-group">
                                     <label>Monto total USDC</label>
-                                    <input id="ipFormAmount" type="number" class="input-glass" placeholder="10000"
-                                        step="0.01" min="0">
+                                    <input id="ipFormAmount" type="text" inputmode="decimal" class="input-glass"
+                                        placeholder="10000" oninput="
+                                            let v = this.value.replace(/[^0-9.]/g, '');
+                                            const parts = v.split('.');
+                                            if (parts.length > 2) v = parts[0] + '.' + parts.slice(1).join('');
+                                            if (parts[1] && parts[1].length > 6) v = parts[0] + '.' + parts[1].slice(0, 6);
+                                            this.value = v;
+                                        "
+                                        onkeydown="if(['-','e','E','+'].includes(event.key)) event.preventDefault();">
                                 </div>
                                 <div class="form-group">
                                     <label>Fecha de expiración</label>
