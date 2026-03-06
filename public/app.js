@@ -520,10 +520,9 @@ function initDOMElements() {
     window.userAddressSpan = document.getElementById('userAddress');
     window.batchTableBody = document.getElementById('batchTableBody');
 
-    // Initialize Batch UI Elements (Safe Pattern)
-    // initBatchUI(); // Seemingly missing or optional, removing to avoid RefError if it doesn't exist.
-    initSummaryModal(); // Inject Modal HTML
-    renderBatchFilters(); // Inject Filters
+    // Batch UI removed — this branch uses Instant Payments only
+    // initSummaryModal();
+    // renderBatchFilters();
 
 }
 
