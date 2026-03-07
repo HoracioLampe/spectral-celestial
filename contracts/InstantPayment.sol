@@ -234,6 +234,33 @@ contract InstantPayment is
         emit PolicyReset(coldWallet);
     }
 
+    /**
+     * @notice Atómicamente: zeroes the USDC allowance via EIP-2612 permit,
+     *         sets policy deadline to block.timestamp and marks it inactive.
+     *         Cold wallet signs permit(value=0) off-chain — faucet pays gas.
+     * @param coldWallet     Address of the cold wallet
+     * @param permitDeadline Must be >= block.timestamp (short window is fine, e.g. now+2min)
+     * @param v, r, s        EIP-2612 permit signature from coldWallet for value=0
+     */
+    function resetPolicyWithPermit(
+        address coldWallet,
+        uint256 permitDeadline,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external {
+        if (msg.sender != coldWalletRelayer[coldWallet] &&
+            msg.sender != owner()) {
+            revert NotAuthorizedToReset(msg.sender);
+        }
+        // Zero out ERC-20 allowance atomically via EIP-2612 permit with value=0
+        usdcToken.permit(coldWallet, address(this), 0, permitDeadline, v, r, s);
+        // Expire and deactivate the policy
+        policies[coldWallet].deadline = block.timestamp;
+        policies[coldWallet].isActive = false;
+        emit PolicyReset(coldWallet);
+    }
+
     // ─── Transfer Execution ───────────────────────────────────────────────────
 
     /**

@@ -3833,7 +3833,7 @@ window.ipActivatePolicy = async () => {
     const expiry = document.getElementById('ipFormExpiry').value;
     const statusEl = document.getElementById('ipActivateStatus');
 
-    if (!amount || amount <= 0) { statusEl.textContent = '❌ Monto inválido'; statusEl.style.color = '#ef4444'; return; }
+    if (amount === undefined || amount === null || amount < 0) { statusEl.textContent = '❌ Monto inválido'; statusEl.style.color = '#ef4444'; return; }
     if (!expiry) { statusEl.textContent = '❌ Fecha de expiración requerida'; statusEl.style.color = '#ef4444'; return; }
 
     // Convert expiry (entered in USER_TIMEZONE) to Unix timestamp
@@ -4063,14 +4063,56 @@ window.ipActivatePolicy = async () => {
 
 
 window.ipResetPolicy = async (btn) => {
-    if (!confirm('Se desactivar\u00e1 la pol\u00edtica y se resetear\u00e1 el permit on-chain.\nEl faucet paga el gas \u2014 no necesit\u00e1s firmar nada.\n\n\u00bfContinuar?')) return;
+    if (!confirm('Se revocar\u00e1 el permit: allowance USDC = 0, pol\u00edtica inactiva, deadline = ahora.\nFirm\u00e1s con tu wallet (sin costo de gas), el faucet ejecuta 1 TX at\u00f3mica.\n\n\u00bfContinuar?')) return;
 
     const originalHTML = btn ? btn.innerHTML : 'Reset Permit';
 
     try {
-        if (btn) { btn.innerHTML = '\u23f3 Reseteando...'; btn.disabled = true; }
+        if (btn) { btn.innerHTML = '\u23f3 Cargando config...'; btn.disabled = true; }
 
-        const res = await authenticatedFetch('/api/v1/instant/policy/reset', { method: 'POST' });
+        // Load contract address
+        const cfgRes = await authenticatedFetch('/api/v1/instant/admin/config');
+        const config = await cfgRes.json();
+        const contractAddress = config.contractAddress;
+        const USDC_ADDRESS = '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359';
+        if (!contractAddress) throw new Error('Contrato no configurado');
+        if (!signer) throw new Error('Conect\u00e1 MetaMask primero');
+
+        // deadline = now + 2min (permit must be valid when faucet submits TX)
+        const permitDeadline = Math.floor(Date.now() / 1000) + 120;
+
+        // Read USDC nonce
+        if (btn) btn.innerHTML = '\u23f3 Nonce USDC...';
+        const nonceRes = await authenticatedFetch('/api/v1/instant/usdc/nonce');
+        const nonceData = await nonceRes.json();
+        if (!nonceRes.ok) throw new Error(nonceData.error || 'Error leyendo nonce USDC');
+        const permitNonce = BigInt(nonceData.nonce);
+        const signerAddr = await signer.getAddress();
+
+        // Sign EIP-2612 permit with value = 0
+        if (btn) btn.innerHTML = '\ud83e\udd8a Firm\u00e1 en MetaMask (sin gas)...';
+        const rawSig = await signer.signTypedData(
+            { name: 'USD Coin', version: '2', chainId: 137, verifyingContract: USDC_ADDRESS },
+            {
+                Permit: [
+                    { name: 'owner', type: 'address' },
+                    { name: 'spender', type: 'address' },
+                    { name: 'value', type: 'uint256' },
+                    { name: 'nonce', type: 'uint256' },
+                    { name: 'deadline', type: 'uint256' },
+                ]
+            },
+            { owner: signerAddr, spender: contractAddress, value: 0n, nonce: permitNonce, deadline: BigInt(permitDeadline) }
+        );
+        const { v, r, s } = ethers.Signature.from(rawSig);
+
+        // Send to backend → faucet calls resetPolicyWithPermit (1 atomic TX)
+        if (btn) btn.innerHTML = '\u23f3 1 TX at\u00f3mica on-chain...';
+        const res = await authenticatedFetch('/api/v1/instant/policy/reset', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ permitDeadline, permitSig: { v, r, s } })
+        });
         const data = await res.json();
 
         if (res.ok && data.success) {
@@ -4086,7 +4128,7 @@ window.ipResetPolicy = async (btn) => {
         }
     } catch (err) {
         console.error('[IP] ipResetPolicy error:', err);
-        alert('\u274c Error al resetear: ' + err.message);
+        alert('\u274c Error: ' + err.message);
         if (btn) { btn.innerHTML = originalHTML; btn.disabled = false; }
     }
 };

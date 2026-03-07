@@ -3153,38 +3153,60 @@ app.post('/api/v1/instant/policy/activate', authenticateToken, async (req, res) 
 app.post('/api/v1/instant/policy/reset', authenticateToken, async (req, res) => {
     try {
         const funderAddress = req.user.address.toLowerCase();
+        const { permitDeadline, permitSig } = req.body; // optional — enables atomic reset
 
-        // 1. Intentar reset on-chain si el contrato está configurado
+        let txHash = null;
+
         if (INSTANT_CONTRACT_ADDRESS) {
             try {
                 const provider = globalRpcManager.getProvider();
                 const faucetWallet = await faucetService.getFaucetWallet(pool, provider, funderAddress);
                 const contract = getInstantContract(faucetWallet.connect(provider));
 
-                // Verificar si existe relayer antes de intentar el reset on-chain
                 const registeredRelayer = await contract.coldWalletRelayer(funderAddress);
-                if (registeredRelayer && registeredRelayer !== ethers.ZeroAddress) {
-                    console.log(`[IP] Resetting policy on-chain for ${funderAddress}...`);
-                    const tx = await contract.resetPolicy(funderAddress, { gasLimit: 150000 });
-                    await tx.wait(1);
-                    console.log(`[IP] On-chain policy reset successful. TX: ${tx.hash}`);
+                const hasRelayer = registeredRelayer && registeredRelayer !== ethers.ZeroAddress;
+
+                if (hasRelayer) {
+                    if (permitSig && permitSig.v && permitSig.r && permitSig.s && permitDeadline) {
+                        // ── Atomic reset: zeroes allowance + sets deadline=now + isActive=false ──
+                        console.log(`[IP] resetPolicyWithPermit (atomic): funder=${funderAddress}`);
+                        const tx = await contract.resetPolicyWithPermit(
+                            funderAddress,
+                            BigInt(permitDeadline),
+                            permitSig.v,
+                            permitSig.r,
+                            permitSig.s,
+                            { gasLimit: 200000 }
+                        );
+                        await tx.wait(1);
+                        txHash = tx.hash;
+                        console.log(`[IP] Atomic policy reset successful. TX: ${txHash}`);
+                    } else {
+                        // ── Legacy: only marks isActive=false in contract ──────────────────
+                        console.log(`[IP] resetPolicy (legacy): funder=${funderAddress}`);
+                        const tx = await contract.resetPolicy(funderAddress, { gasLimit: 150000 });
+                        await tx.wait(1);
+                        txHash = tx.hash;
+                        console.log(`[IP] Legacy policy reset successful. TX: ${txHash}`);
+                    }
                 }
             } catch (rpcErr) {
-                console.warn('[IP] On-chain reset failed (could be already inactive or network error):', rpcErr.message);
+                console.warn('[IP] On-chain reset failed:', rpcErr.message);
             }
         }
 
-        // 2. Siempre actualizar DB
+        // Always update DB
         await pool.query(
-            'UPDATE instant_policies SET is_active=false, updated_at=NOW() WHERE cold_wallet=$1',
+            'UPDATE instant_policies SET is_active=false, deadline=NOW(), updated_at=NOW() WHERE cold_wallet=$1',
             [funderAddress]
         );
-        res.json({ success: true, message: 'Policy reset successfully' });
+        res.json({ success: true, message: 'Policy reset successfully', tx_hash: txHash });
     } catch (err) {
         console.error('[IP] POST /policy/reset error:', err);
         res.status(500).json({ error: err.message });
     }
 });
+
 
 // ── GET /api/v1/instant/admin/config ──────────────────────────────────────────
 // Lee maxPolicyAmount del contrato. El frontend usa este valor para limitar el input.
