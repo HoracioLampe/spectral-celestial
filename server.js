@@ -3294,9 +3294,10 @@ app.get('/api/v1/instant/admin/status', authenticateToken, async (req, res) => {
             'function pendingOwner() view returns (address)',
             'function paused() view returns (bool)',
             'function maxPolicyAmount() view returns (uint256)',
+            'function version() view returns (string)',
         ];
 
-        let owner = null, pendingOwner = null, isPaused = false, maxPolicyAmountUsdc = null;
+        let owner = null, pendingOwner = null, isPaused = false, maxPolicyAmountUsdc = null, contractVersion = null;
         const zeroAddr = ethers.ZeroAddress;
 
         try {
@@ -3304,11 +3305,12 @@ app.get('/api/v1/instant/admin/status', authenticateToken, async (req, res) => {
             const contract = new ethers.Contract(INSTANT_CONTRACT_ADDRESS, fullAbi, provider);
 
             // Leer cada getter individualmente — si uno falla, los otros siguen
-            [owner, pendingOwner, isPaused, maxPolicyAmountUsdc] = await Promise.all([
+            [owner, pendingOwner, isPaused, maxPolicyAmountUsdc, contractVersion] = await Promise.all([
                 contract.owner().catch(() => null),
                 contract.pendingOwner().catch(() => zeroAddr),
                 contract.paused().catch(() => false),
                 contract.maxPolicyAmount().catch(() => null).then(v => v != null ? Number(v) / 1_000_000 : null),
+                contract.version().catch(() => 'N/A'),
             ]);
         } catch (rpcErr) {
             console.warn('[IP] GET /admin/status: RPC read failed:', rpcErr.message);
@@ -3326,6 +3328,7 @@ app.get('/api/v1/instant/admin/status', authenticateToken, async (req, res) => {
             pendingOwner,
             isPaused,
             maxPolicyAmountUsdc,
+            contractVersion,
         });
     } catch (err) {
         console.error('[IP] GET /admin/status error:', err);

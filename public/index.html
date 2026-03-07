@@ -1215,6 +1215,11 @@
                                         style="font-family:monospace; font-size:0.8rem;">—</a>
                                 </div>
                                 <div style="display:flex; justify-content:space-between; align-items:center;">
+                                    <span style="color:#94a3b8;">Versión impl</span>
+                                    <span id="cadVersionDisplay"
+                                        style="font-family:monospace; font-size:0.85rem; color:#a78bfa;">—</span>
+                                </div>
+                                <div style="display:flex; justify-content:space-between; align-items:center;">
                                     <span style="color:#94a3b8;">Owner actual</span>
                                     <a id="cadOwnerLink" href="#" target="_blank" class="hash-link"
                                         style="font-family:monospace; font-size:0.8rem;">—</a>
@@ -1354,20 +1359,21 @@
                                     style="font-family:monospace; color:#c4b5fd;">0x971da9d642C94f6B5E3867EC891FBA7ef8287d29</span>
                             </div>
                             <div style="margin-top:0.35rem;">Nueva impl: <span id="cadUpgradeImplAddr"
-                                    style="font-family:monospace; color:#4ade80;">0xbfc16912aE0b3DAb4e43fC4D4FcF33CF5ddb23C0</span>
+                                    style="font-family:monospace; color:#4ade80;">0x856aDdbe1A065275f06c1Ae40e96e90484e7ca87</span>
                             </div>
                         </div>
                         <p style="font-size:0.82rem; color:#94a3b8; margin-bottom:0.75rem;">
-                            Upgradea el proxy al contrato V2 (EIP-2612 permit atómico). Solo el owner
-                            puede ejecutar
-                            esto
-                            desde MetaMask.
+                            Paso 1: deploya la nueva impl (firmás en MetaMask).
+                            Paso 2: upgradea el proxy al address mostrado arriba.
                         </p>
-                        <button class="btn btn-glass"
-                            style="width:100%; border-color:rgba(168,85,247,0.4); color:#a855f7;"
-                            onclick="cadUpgradeToV2()">
-                            🦊 upgradeToAndCall(V2)
-                        </button>
+                        <div style="display:flex; gap:0.5rem; margin-bottom:0.5rem;">
+                            <button class="btn btn-glass"
+                                style="flex:1; border-color:rgba(168,85,247,0.4); color:#a855f7;"
+                                onclick="cadDeployImpl()">🚀 Deploy nueva impl</button>
+                            <button class="btn btn-glass"
+                                style="flex:1; border-color:rgba(168,85,247,0.4); color:#a855f7;"
+                                onclick="cadDoUpgrade()">⬆️ upgradeToAndCall</button>
+                        </div>
                         <p id="cadUpgradeStatus" style="margin-top:0.5rem; font-size:0.82rem;"></p>
                     </div>
 

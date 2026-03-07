@@ -5221,7 +5221,10 @@ async function cadLoadContractStatus() {
             return;
         }
 
-        const { owner, pendingOwner, isPaused, maxPolicyAmountUsdc, contractAddress } = data;
+        const { owner, pendingOwner, isPaused, maxPolicyAmountUsdc, contractAddress, contractVersion } = data;
+
+        const versionEl = document.getElementById('cadVersionDisplay');
+        if (versionEl) versionEl.textContent = contractVersion || 'N/A';
 
         const explorerBase = 'https://polygonscan.com/address/';
         const addrHtml = (addr) => {
@@ -5375,20 +5378,40 @@ window.cadResetPolicyAdmin = async () => {
  * Solo puede ejecutarlo el owner del proxy (0x9795E3A0D7824C651adF3880f976EbfdB0121E62).
  * La nueva implementación agrega activatePolicyWithPermit (atómica, sin double-deadline).
  */
-window.cadUpgradeToV2 = async () => {
+// ── Deploy nueva implementación desde MetaMask ──────────────────────────────
+window.cadDeployImpl = async () => {
     const statusEl = document.getElementById('cadUpgradeStatus');
-    const PROXY_ADDRESS = '0x971da9d642C94f6B5E3867EC891FBA7ef8287d29';
-
-    if (!confirm(
-        `⬆️ Upgrade del contrato InstantPayment a la NUEVA V2\n\n` +
-        `Paso 1: Deployar nueva implementación (firmás TX con MetaMask)\n` +
-        `Paso 2: Upgrade del proxy al nuevo address (firmás TX con MetaMask)\n\n` +
-        `¿Continuar? Solo el owner puede ejecutar esto.`
-    )) return;
-
+    if (!confirm('🚀 Deployar nueva implementación de InstantPaymentV2 desde MetaMask.\nVos pagás el gas. La dirección se auto-completará.\n\n¿Continuar?')) return;
     try {
         if (!signer) throw new Error('Conectá MetaMask primero');
+        statusEl.textContent = '⏳ Obteniendo bytecode de la DB...'; statusEl.style.color = '#f59e0b';
+        const bcRes = await authenticatedFetch('/api/v1/instant/admin/v2-bytecode');
+        const bcData = await bcRes.json();
+        if (!bcRes.ok || !bcData.bytecode) throw new Error(bcData.error || 'Sin bytecode');
+        statusEl.textContent = `🦊 Firmá el deploy en MetaMask... (v${bcData.version || '?'})`;
+        const deployTx = await signer.sendTransaction({ data: bcData.bytecode, gasLimit: 3000000 });
+        statusEl.textContent = '⏳ Confirmando deploy en Polygon...'; statusEl.style.color = '#60a5fa';
+        const receipt = await deployTx.wait(1);
+        const newAddr = receipt.contractAddress;
+        if (!newAddr) throw new Error('No contractAddress en el receipt');
+        document.getElementById('cadUpgradeImplAddr').textContent = newAddr;
+        statusEl.textContent = `✅ Nueva impl deployada: ${newAddr} — Ahora clická "upgradeToAndCall"`;
+        statusEl.style.color = '#4ade80';
+    } catch (err) {
+        statusEl.textContent = '❌ ' + err.message;
+        statusEl.style.color = '#ef4444';
+    }
+};
 
+// ── Upgrade proxy al impl mostrado en el campo ──────────────────────────────
+window.cadDoUpgrade = async () => {
+    const statusEl = document.getElementById('cadUpgradeStatus');
+    const PROXY_ADDRESS = '0x971da9d642C94f6B5E3867EC891FBA7ef8287d29';
+    const newImpl = document.getElementById('cadUpgradeImplAddr')?.textContent?.trim();
+    if (!newImpl || !newImpl.startsWith('0x')) { statusEl.textContent = '❌ Sin impl address'; statusEl.style.color = '#ef4444'; return; }
+    if (!confirm(`⬆️ Upgrade del proxy a:\n${newImpl}\n\nSolo el owner puede hacer esto. ¿Continuar?`)) return;
+    try {
+        if (!signer) throw new Error('Conectá MetaMask primero');
         const UUPS_ABI = [
             'function upgradeToAndCall(address newImplementation, bytes calldata data) external payable',
             'function owner() view returns (address)',
@@ -5397,42 +5420,23 @@ window.cadUpgradeToV2 = async () => {
         const owner = await proxy.owner();
         const callerAddr = await signer.getAddress();
         if (owner.toLowerCase() !== callerAddr.toLowerCase()) {
-            throw new Error(`Solo el owner puede hacer el upgrade.\nOwner: ${owner}\nConectado: ${callerAddr}`);
+            throw new Error(`Solo el owner puede upgradear.\nOwner: ${owner}\nConectado: ${callerAddr}`);
         }
-
-        // ── PASO 1: Deploy nueva implementación ──────────────────────────────
-        statusEl.textContent = '⏳ Paso 1/2: Obteniendo bytecode...'; statusEl.style.color = '#f59e0b';
-        const bcRes = await authenticatedFetch('/api/v1/instant/admin/v2-bytecode');
-        const bcData = await bcRes.json();
-        if (!bcRes.ok || !bcData.bytecode) throw new Error(bcData.error || 'No se pudo obtener el bytecode');
-
-        statusEl.textContent = '🦊 Paso 1/2: Firmá el deploy en MetaMask...'; statusEl.style.color = '#f59e0b';
-        const deployTx = await signer.sendTransaction({ data: bcData.bytecode, gasLimit: 3000000 });
-        statusEl.textContent = '⏳ Paso 1/2: Confirmando deploy en Polygon...'; statusEl.style.color = '#60a5fa';
-        const deployReceipt = await deployTx.wait(1);
-        const newImplAddress = deployReceipt.contractAddress;
-        if (!newImplAddress) throw new Error('Deploy falló — no contractAddress en el receipt');
-
-        // Update UI with new impl address
-        const implSpan = document.getElementById('cadUpgradeImplAddr');
-        if (implSpan) implSpan.textContent = newImplAddress;
-        statusEl.textContent = `✅ Paso 1/2 OK! Nueva impl: ${newImplAddress.slice(0, 10)}...`; statusEl.style.color = '#4ade80';
-
-        // ── PASO 2: upgradeToAndCall ──────────────────────────────────────────
-        await new Promise(r => setTimeout(r, 1500));
-        statusEl.textContent = '🦊 Paso 2/2: Firmá el upgrade en MetaMask...'; statusEl.style.color = '#f59e0b';
-        const upgradeTx = await proxy.upgradeToAndCall(newImplAddress, '0x', { gasLimit: 300000 });
-        statusEl.textContent = '⏳ Paso 2/2: Confirmando upgrade en Polygon...'; statusEl.style.color = '#60a5fa';
-        await upgradeTx.wait(1);
-
-        statusEl.textContent = `✅ Upgrade exitoso! Nueva impl: ${newImplAddress} | TX: ${upgradeTx.hash.slice(0, 10)}... Reload para ver cambios.`;
+        statusEl.textContent = '🦊 Firmá el upgrade en MetaMask...'; statusEl.style.color = '#f59e0b';
+        const tx = await proxy.upgradeToAndCall(newImpl, '0x', { gasLimit: 300000 });
+        statusEl.textContent = '⏳ Confirmando en Polygon...'; statusEl.style.color = '#60a5fa';
+        await tx.wait(1);
+        statusEl.textContent = `✅ Upgrade exitoso! TX: ${tx.hash.slice(0, 12)}... Reload para ver cambios.`;
         statusEl.style.color = '#4ade80';
-        console.log('[CAD] Upgraded to new impl:', newImplAddress, 'TX:', upgradeTx.hash);
+        console.log('[CAD] Upgraded to:', newImpl, 'TX:', tx.hash);
     } catch (err) {
         statusEl.textContent = '❌ ' + err.message;
         statusEl.style.color = '#ef4444';
     }
 };
+
+// kept for backward compat — delegates to cadDoUpgrade
+window.cadUpgradeToV2 = cadDoUpgrade;
 
 
 
