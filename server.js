@@ -3081,15 +3081,22 @@ app.get('/api/v1/instant/policy', authenticateToken, async (req, res) => {
         );
         if (rows.length === 0) return res.json({ hasPolicy: false });
         const p = rows[0];
+        const isExpired = new Date(p.deadline) < new Date();
+        const isActive = p.is_active && !isExpired;
+        // DISPONIBLE = 0 si la policy no está activa — aunque el ERC-20 allowance exista,
+        // no se puede ejecutar ninguna transferencia sin una policy activa.
+        const remaining = isActive
+            ? Math.max(0, parseFloat(p.total_amount) - parseFloat(p.consumed_amount))
+            : 0;
         res.json({
             hasPolicy: true,
             cold_wallet: p.cold_wallet,
             total_amount: parseFloat(p.total_amount),
             consumed_amount: parseFloat(p.consumed_amount),
-            remaining: Math.max(0, parseFloat(p.total_amount) - parseFloat(p.consumed_amount)),
+            remaining,
             deadline: p.deadline,
             is_active: p.is_active,
-            is_expired: new Date(p.deadline) < new Date(),
+            is_expired: isExpired,
             contract_address: INSTANT_CONTRACT_ADDRESS
         });
     } catch (err) {
