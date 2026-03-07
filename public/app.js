@@ -3720,27 +3720,13 @@ function showRecoverySection() {
     showSection('recoverySection', 'navRecovery', () => loadRecoveryBatches());
 }
 
-let ipLogsPoller = null;
-
-function ipLogsStartPolling() {
-    if (ipLogsPoller) clearInterval(ipLogsPoller);
-    ipLogsPoller = setInterval(() => {
-        const section = document.getElementById('instantLogsSection');
-        // Auto-stop if section is no longer visible
-        if (!section || section.style.display === 'none') {
-            clearInterval(ipLogsPoller);
-            ipLogsPoller = null;
-            return;
-        }
-        ipLoadLogs(1); // reload page 1 silently
-    }, 5000);
-}
+let ipLogsPoller = null; // kept for future use
 
 function showInstantLogsSection() {
     ipConnectSSE();
     showSection('instantLogsSection', 'navInstantLogs', () => ipLoadLogs(1));
-    ipLogsStartPolling(); // auto-refresh every 5s while on this section
 }
+
 
 // ── Policy ───────────────────────────────────────────────────────────────────
 
@@ -4234,11 +4220,11 @@ function ipConnectSSE() {
                 if (ev.type === 'heartbeat') return;
                 console.log('[SSE]', ev.type, ev.transfer_id?.slice(0, 12));
 
-                // ── ip_log.new: auto-refresh IP Logs if currently visible ──────
+                // ── ip_log.new: silently refresh IP Logs (no flicker) ────────
                 if (ev.type === 'ip_log.new') {
                     const logsSection = document.getElementById('instantLogsSection');
                     if (logsSection && logsSection.style.display !== 'none') {
-                        ipLoadLogs(1);
+                        ipLoadLogs(1, true); // silent = no "Cargando..."
                     }
                     return;
                 }
@@ -4835,7 +4821,7 @@ window.ipSaveTimezone = async () => {
 let ipLogsCurrentPage = 1;
 let ipLogsTotalPages = 1;
 
-window.ipLoadLogs = async function ipLoadLogs(page) {
+window.ipLoadLogs = async function ipLoadLogs(page, silent = false) {
     ipLogsCurrentPage = Math.max(1, page || 1);
 
     const type = document.getElementById('ipLogTypeFilter')?.value || 'all';
@@ -4856,7 +4842,16 @@ window.ipLoadLogs = async function ipLoadLogs(page) {
     if (onlyErrors) params.append('only_errors', onlyErrors);
 
     const tbody = document.getElementById('ipLogsBody');
-    if (tbody) tbody.innerHTML = '<tr><td colspan="11" style="text-align:center; opacity:0.6;">Cargando...</td></tr>';
+    if (!silent) {
+        // Full reload: show loading spinner
+        if (tbody) tbody.innerHTML = '<tr><td colspan="11" style="text-align:center; opacity:0.6;">Cargando...</td></tr>';
+    } else {
+        // Silent refresh: fade table while fetching, restore after
+        if (tbody) {
+            tbody.style.transition = 'opacity 0.2s ease';
+            tbody.style.opacity = '0.4';
+        }
+    }
     document.getElementById('ipLogDetailPanel')?.classList.add('hidden');
 
     try {
@@ -4985,8 +4980,14 @@ window.ipLoadLogs = async function ipLoadLogs(page) {
             </tr>`;
         }).join('');
 
+        // Restore opacity after silent refresh
+        if (silent && tbody) requestAnimationFrame(() => { tbody.style.opacity = '1'; });
+
     } catch (err) {
-        if (tbody) tbody.innerHTML = `<tr><td colspan="11" style="text-align:center; color:#ef4444;">Error: ${err.message}</td></tr>`;
+        if (tbody) {
+            tbody.innerHTML = `<tr><td colspan="11" style="text-align:center; color:#ef4444;">Error: ${err.message}</td></tr>`;
+            tbody.style.opacity = '1';
+        }
         console.error('[IP Logs] error:', err);
     }
 };
