@@ -3214,9 +3214,9 @@ app.get('/api/v1/instant/admin/v2-bytecode', authenticateToken, async (req, res)
     try {
         if (req.user.role !== 'SUPER_ADMIN') return res.status(403).json({ error: 'Forbidden' });
 
-        // Read latest bytecode from contract_upgrades table
+        // Read latest bytecode from contract_upgrades (any contract name — always the latest)
         const dbRes = await pool.query(
-            "SELECT id, version, contract, bytecode FROM contract_upgrades WHERE contract = 'InstantPaymentV2' ORDER BY id DESC LIMIT 1"
+            'SELECT id, version, contract, bytecode FROM contract_upgrades ORDER BY id DESC LIMIT 1'
         );
         if (dbRes.rows.length > 0) {
             const { id, version, contract, bytecode } = dbRes.rows[0];
