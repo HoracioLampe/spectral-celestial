@@ -3208,21 +3208,38 @@ app.post('/api/v1/instant/policy/reset', authenticateToken, async (req, res) => 
 });
 
 // ── GET /api/v1/instant/admin/v2-bytecode ─────────────────────────────────────
-// Devuelve el bytecode compilado de InstantPaymentV2. Solo SUPER_ADMIN.
-// El frontend lo usa para deployer la nueva impl desde MetaMask.
+// Devuelve el bytecode más reciente de InstantPaymentV2 (tabla contract_upgrades).
+// Para actualizar: node scripts/upload-v2-bytecode.cjs
 app.get('/api/v1/instant/admin/v2-bytecode', authenticateToken, async (req, res) => {
     try {
         if (req.user.role !== 'SUPER_ADMIN') return res.status(403).json({ error: 'Forbidden' });
-        const fs = await import('fs');
-        const path = await import('path');
-        const artifactPath = path.join(process.cwd(), 'artifacts/contracts/InstantPaymentV2.sol/InstantPaymentV2.json');
-        const artifact = JSON.parse(fs.readFileSync(artifactPath, 'utf8'));
-        res.json({ bytecode: artifact.bytecode });
+
+        // Read latest bytecode from contract_upgrades table
+        const dbRes = await pool.query(
+            "SELECT id, version, contract, bytecode FROM contract_upgrades WHERE contract = 'InstantPaymentV2' ORDER BY id DESC LIMIT 1"
+        );
+        if (dbRes.rows.length > 0) {
+            const { id, version, contract, bytecode } = dbRes.rows[0];
+            return res.json({ bytecode, version, contract, upgrade_id: id, source: 'db' });
+        }
+
+        // Fallback: try local artifact (only works in dev)
+        try {
+            const fs = await import('fs');
+            const path = await import('path');
+            const artifactPath = path.join(process.cwd(), 'artifacts/contracts/InstantPaymentV2.sol/InstantPaymentV2.json');
+            const artifact = JSON.parse(fs.readFileSync(artifactPath, 'utf8'));
+            return res.json({ bytecode: artifact.bytecode, source: 'file' });
+        } catch (_) { /* not available in prod */ }
+
+        res.status(404).json({ error: 'Bytecode no disponible. Ejecutá localmente: node scripts/upload-v2-bytecode.cjs' });
     } catch (err) {
         console.error('[CAD] v2-bytecode error:', err.message);
-        res.status(500).json({ error: 'Artifact not found — run: npx hardhat compile' });
+        res.status(500).json({ error: err.message });
     }
 });
+
+
 
 // ── GET /api/v1/instant/admin/config ──────────────────────────────────────────
 // Lee maxPolicyAmount del contrato. El frontend usa este valor para limitar el input.
