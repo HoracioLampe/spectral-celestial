@@ -3195,12 +3195,31 @@ app.post('/api/v1/instant/policy/reset', authenticateToken, async (req, res) => 
             }
         }
 
-        // Always update DB — reset all display values to zero
+        // ── Sync DB from chain (source of truth) ─────────────────────────
+        // After on-chain TX, read actual state from getPolicyBalance() and store it.
+        // Fallback to zeros if RPC unavailable.
+        let dbConsumed = 0, dbAllowance = 0, dbIsActive = false, dbDeadline = 'NOW()';
+        if (INSTANT_CONTRACT_ADDRESS && txHash) {
+            try {
+                const readProvider = globalRpcManager.getProvider();
+                const readContract = getInstantContract(readProvider);
+                const [, consumed, remaining, deadline, isActive] =
+                    await readContract.getPolicyBalance(funderAddress);
+                dbConsumed = Number(consumed) / 1_000_000;  // to display USDC
+                dbAllowance = Number(remaining) / 1_000_000;
+                dbIsActive = isActive;
+                dbDeadline = new Date(Number(deadline) * 1000).toISOString();
+                console.log(`[IP] Synced DB from chain: consumed=${dbConsumed}, allowance=${dbAllowance}, active=${dbIsActive}`);
+            } catch (syncErr) {
+                console.warn('[IP] Chain sync failed, using zeros:', syncErr.message);
+            }
+        }
+
         await pool.query(
             `UPDATE instant_policies
-             SET is_active=false, deadline=NOW(), consumed_amount=0, allowance=0, updated_at=NOW()
+             SET is_active=$2, deadline=$3::timestamptz, consumed_amount=$4, allowance=$5, updated_at=NOW()
              WHERE cold_wallet=$1`,
-            [funderAddress]
+            [funderAddress, dbIsActive, dbDeadline, dbConsumed, dbAllowance]
         );
         res.json({ success: true, message: 'Policy reset successfully', tx_hash: txHash });
     } catch (err) {
