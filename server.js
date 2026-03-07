@@ -168,7 +168,16 @@ const initInstantPaymentTables = async () => {
     } catch (err) {
         console.error('[InstantPayment] ⚠️ Migration 010 error:', err.message);
     }
+    // 011: allowance column on instant_policies (on-chain sync)
+    try {
+        const sql = fs.readFileSync(path.join(__dirname, 'migrations/011_instant_policy_allowance.sql'), 'utf8');
+        await pool.query(sql);
+        console.log('[InstantPayment] ✅ Migration 011 verified/created');
+    } catch (err) {
+        console.error('[InstantPayment] ⚠️ Migration 011 error:', err.message);
+    }
 };
+
 
 // Warm up the connection (don't block server start)
 let dbReady = false;
