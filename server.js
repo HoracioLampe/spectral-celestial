@@ -3195,9 +3195,11 @@ app.post('/api/v1/instant/policy/reset', authenticateToken, async (req, res) => 
             }
         }
 
-        // Always update DB
+        // Always update DB — reset all display values to zero
         await pool.query(
-            'UPDATE instant_policies SET is_active=false, deadline=NOW(), updated_at=NOW() WHERE cold_wallet=$1',
+            `UPDATE instant_policies
+             SET is_active=false, deadline=NOW(), consumed_amount=0, allowance=0, updated_at=NOW()
+             WHERE cold_wallet=$1`,
             [funderAddress]
         );
         res.json({ success: true, message: 'Policy reset successfully', tx_hash: txHash });
