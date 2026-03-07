@@ -193,7 +193,7 @@ contract InstantPaymentV2 is
         bytes32 r,
         bytes32 s
     ) external onlyRelayerOf(coldWallet) whenNotPaused {
-        if (amount == 0) revert ZeroAmount();
+        // amount=0 allowed: enables atomic reset (zeroes ERC-20 allowance via permit)
         if (amount > maxPolicyAmount) revert ExceedsMaxPolicyAmount(amount, maxPolicyAmount);
         if (deadline <= block.timestamp) revert PolicyExpired(coldWallet);
 
