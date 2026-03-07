@@ -586,7 +586,10 @@ class InstantRelayerEngine {
             httpStatus,
             delivered,
             delivered ? null : lastError
-        ]).catch(e => console.warn('[InstantRelayer] api_log insert failed:', e.message));
+        ]).then(() => {
+            // Notify IP Logs page about the new webhook log entry
+            this._notify(coldWallet, 'ip_log.new', { event: eventType });
+        }).catch(e => console.warn('[InstantRelayer] api_log insert failed:', e.message));
     }
 }
 
