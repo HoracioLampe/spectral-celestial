@@ -2617,7 +2617,10 @@ app.get('/api/v1/instant/events', async (req, res) => {
     // Register client
     if (!sseClients.has(coldWallet)) sseClients.set(coldWallet, new Set());
     sseClients.get(coldWallet).add(res);
-    console.log(`[SSE] Client connected: ${coldWallet.slice(0, 10)}... (total: ${sseClients.get(coldWallet).size})`);
+    // SUPER_ADMIN also subscribed to admin broadcast set (for IP Logs live updates)
+    const isAdmin = req.user?.role === 'SUPER_ADMIN';
+    if (isAdmin) sseAdminClients.add(res);
+    console.log(`[SSE] Client connected: ${coldWallet.slice(0, 10)}... role=${req.user?.role} (total: ${sseClients.get(coldWallet).size})`);
 
     // Heartbeat every 25s to keep connection alive through proxies
     const heartbeat = setInterval(() => {
@@ -2629,6 +2632,7 @@ app.get('/api/v1/instant/events', async (req, res) => {
         clearInterval(heartbeat);
         const set = sseClients.get(coldWallet);
         if (set) { set.delete(res); if (set.size === 0) sseClients.delete(coldWallet); }
+        if (isAdmin) sseAdminClients.delete(res);
         console.log(`[SSE] Client disconnected: ${coldWallet.slice(0, 10)}...`);
     });
 });
@@ -2845,7 +2849,11 @@ app.post('/api/v1/instant/transfer', authApiKeyOrJWT, async (req, res) => {
             errorMsg,
             clientIp,
             JSON.stringify(safeHeaders)
-        ]).catch(e => console.warn('[IP] api_log insert failed:', e.message));
+        ]).then(() => {
+            // Notify all SUPER_ADMIN SSE clients so IP Logs auto-refreshes
+            const logPayload = JSON.stringify({ type: 'ip_log.new', event: eventType, ts: Date.now() });
+            sseAdminClients.forEach(r => { try { r.write(`data: ${logPayload}\n\n`); } catch (_) { } });
+        }).catch(e => console.warn('[IP] api_log insert failed:', e.message));
 
         return res.status(statusCode).json(responseJson);
     };

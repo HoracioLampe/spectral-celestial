@@ -3721,7 +3721,8 @@ function showRecoverySection() {
 }
 
 function showInstantLogsSection() {
-    ipDisconnectSSE();
+    // Stay connected to SSE — SUPER_ADMIN receives ip_log.new events for auto-refresh
+    ipConnectSSE();
     showSection('instantLogsSection', 'navInstantLogs', () => ipLoadLogs(1));
 }
 
@@ -4216,6 +4217,15 @@ function ipConnectSSE() {
                 const ev = JSON.parse(e.data);
                 if (ev.type === 'heartbeat') return;
                 console.log('[SSE]', ev.type, ev.transfer_id?.slice(0, 12));
+
+                // ── ip_log.new: auto-refresh IP Logs if currently visible ──────
+                if (ev.type === 'ip_log.new') {
+                    const logsSection = document.getElementById('instantLogsSection');
+                    if (logsSection && logsSection.style.display !== 'none') {
+                        ipLoadLogs(1);
+                    }
+                    return;
+                }
 
                 // ── Smart update: patch row in-place, prepend if new ──────────
                 if (ev.transfer_id) {
