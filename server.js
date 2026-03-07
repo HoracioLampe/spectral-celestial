@@ -3233,9 +3233,11 @@ app.post('/api/v1/instant/policy/reset', authenticateToken, async (req, res) => 
 
         await pool.query(
             `UPDATE instant_policies
-             SET is_active=$2, deadline=$3::timestamptz, consumed_amount=$4, allowance=$5, updated_at=NOW()
+             SET is_active=$2, deadline=$3::timestamptz,
+                 total_amount=0, consumed_amount=0, allowance=0,
+                 updated_at=NOW()
              WHERE cold_wallet=$1`,
-            [funderAddress, dbIsActive, dbDeadline, dbConsumed, dbAllowance]
+            [funderAddress, dbIsActive, dbDeadline]
         );
         res.json({ success: true, message: 'Policy reset successfully', tx_hash: txHash });
     } catch (err) {
