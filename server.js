@@ -3207,6 +3207,22 @@ app.post('/api/v1/instant/policy/reset', authenticateToken, async (req, res) => 
     }
 });
 
+// ── GET /api/v1/instant/admin/v2-bytecode ─────────────────────────────────────
+// Devuelve el bytecode compilado de InstantPaymentV2. Solo SUPER_ADMIN.
+// El frontend lo usa para deployer la nueva impl desde MetaMask.
+app.get('/api/v1/instant/admin/v2-bytecode', authenticateToken, async (req, res) => {
+    try {
+        if (req.user.role !== 'SUPER_ADMIN') return res.status(403).json({ error: 'Forbidden' });
+        const fs = await import('fs');
+        const path = await import('path');
+        const artifactPath = path.join(process.cwd(), 'artifacts/contracts/InstantPaymentV2.sol/InstantPaymentV2.json');
+        const artifact = JSON.parse(fs.readFileSync(artifactPath, 'utf8'));
+        res.json({ bytecode: artifact.bytecode });
+    } catch (err) {
+        console.error('[CAD] v2-bytecode error:', err.message);
+        res.status(500).json({ error: 'Artifact not found — run: npx hardhat compile' });
+    }
+});
 
 // ── GET /api/v1/instant/admin/config ──────────────────────────────────────────
 // Lee maxPolicyAmount del contrato. El frontend usa este valor para limitar el input.
