@@ -3720,10 +3720,26 @@ function showRecoverySection() {
     showSection('recoverySection', 'navRecovery', () => loadRecoveryBatches());
 }
 
+let ipLogsPoller = null;
+
+function ipLogsStartPolling() {
+    if (ipLogsPoller) clearInterval(ipLogsPoller);
+    ipLogsPoller = setInterval(() => {
+        const section = document.getElementById('instantLogsSection');
+        // Auto-stop if section is no longer visible
+        if (!section || section.style.display === 'none') {
+            clearInterval(ipLogsPoller);
+            ipLogsPoller = null;
+            return;
+        }
+        ipLoadLogs(1); // reload page 1 silently
+    }, 5000);
+}
+
 function showInstantLogsSection() {
-    // Stay connected to SSE — SUPER_ADMIN receives ip_log.new events for auto-refresh
     ipConnectSSE();
     showSection('instantLogsSection', 'navInstantLogs', () => ipLoadLogs(1));
+    ipLogsStartPolling(); // auto-refresh every 5s while on this section
 }
 
 // ── Policy ───────────────────────────────────────────────────────────────────
