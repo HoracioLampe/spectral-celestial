@@ -3559,10 +3559,12 @@ app.get('/api/v1/instant/account', authApiKeyOrJWT, async (req, res) => {
             else if (availableUsdc === 0) status = 'exhausted';
             else status = 'active';
 
+            const isEffectivelyActive = status === 'active';
+
             policyData = {
-                total_authorized: totalUsdc.toFixed(6),
-                consumed: consumedOnChain.toFixed(6),
-                available_allowance: fmtUsdc(allowanceRaw),
+                total_authorized: isEffectivelyActive ? totalUsdc.toFixed(6) : '0.000000',
+                consumed: isEffectivelyActive ? consumedOnChain.toFixed(6) : '0.000000',
+                available_allowance: isEffectivelyActive ? fmtUsdc(allowanceRaw) : '0.000000',
                 expires_at: expiresAt.toISOString(),
                 is_active: policy.is_active,
                 status,
