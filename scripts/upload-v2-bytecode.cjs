@@ -9,7 +9,7 @@ const { Pool } = require('pg');
 const fs = require('fs');
 const path = require('path');
 
-const CONTRACT_NAME = process.argv[3] || 'InstantPaymentV2';
+const CONTRACT_NAME = process.argv[2] || 'InstantPaymentV2';
 
 // Auto-detect version from Solidity source (reads the version() function return value)
 function detectVersion(contractName) {
