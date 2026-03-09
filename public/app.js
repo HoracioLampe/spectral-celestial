@@ -71,6 +71,13 @@ let renewalQueue = [];
 async function authenticatedFetch(url, options = {}) {
     let token = AUTH_TOKEN || localStorage.getItem('jwt_token');
 
+    // Guard: if token is missing or literally the string "null"/"undefined",
+    // return a synthetic 401 immediately — avoids sending "Bearer null" to the
+    // server which causes spurious "jwt malformed" log spam before session restore.
+    if (!token || token === 'null' || token === 'undefined') {
+        return new Response(JSON.stringify({ error: 'Token missing' }), { status: 401, headers: { 'Content-Type': 'application/json' } });
+    }
+
     const executeRequest = async (t) => {
         const headers = {
             ...options.headers,
