@@ -425,7 +425,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                 // Force UI Updates
                 updateUI();
-                loadUserTimezone(); // ← alias of ipLoadTimezone: loads USER_TIMEZONE + syncs dropdown select
+                await loadUserTimezone(); // ← await: USER_TIMEZONE must be set before rendering dates
                 checkFaucetStatus();
                 // Instant Payments is the default section for this branch
                 showInstantPaymentSection();
@@ -766,8 +766,9 @@ async function connectWallet() {
             if (userAddressSpan) userAddressSpan.textContent = `${userAddress.substring(0, 6)}...${userAddress.substring(38)}`;
 
             updateUI();
+            await loadUserTimezone(); // ← await: USER_TIMEZONE from DB must be set before rendering dates
             checkFaucetStatus();
-            // Load Instant Payments as default view
+            // Load Instant Payments as default view (delay for transition animation)
             setTimeout(() => showInstantPaymentSection(), 600);
 
             window.ethereum.on('accountsChanged', () => location.reload());
